@@ -15,7 +15,7 @@ export const MindMap: React.FC<MindMapProps> = ({ content, theme, language = 'en
   const containerRef = useRef<HTMLDivElement>(null);
   const [svg, setSvg] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
-  const [scale, setScale] = useState(1.2); // Start slightly larger
+  const [scale, setScale] = useState(1.2);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const isDragging = useRef(false);
   const lastPos = useRef({ x: 0, y: 0 });
@@ -25,12 +25,13 @@ export const MindMap: React.FC<MindMapProps> = ({ content, theme, language = 'en
     // Cyber/Neon Theme Configuration
     const isDark = theme === 'dark';
     
-    // Core palette
-    const primaryColor = isDark ? '#06b6d4' : '#0891b2'; // Cyan
-    const secondaryColor = isDark ? '#8b5cf6' : '#7c3aed'; // Violet
-    const bgColor = isDark ? '#1e293b' : '#f1f5f9'; // Slate 800/100
-    const lineColor = isDark ? '#64748b' : '#94a3b8'; // Slate 500/400
-    const textColor = isDark ? '#f8fafc' : '#0f172a'; // Slate 50/900
+    // Vibrant Neon Palette
+    const primaryColor = isDark ? '#22d3ee' : '#0891b2'; // Cyan-400 : Cyan-700
+    const secondaryColor = isDark ? '#a78bfa' : '#7c3aed'; // Violet-400 : Violet-700
+    const tertiaryColor = isDark ? '#34d399' : '#059669'; // Emerald-400 : Emerald-700
+    const bgColor = isDark ? '#0f172a' : '#ffffff'; // Slate-900 : White
+    const textColor = isDark ? '#f1f5f9' : '#1e293b'; // Slate-100 : Slate-800
+    const lineColor = isDark ? '#475569' : '#94a3b8'; // Slate-600 : Slate-400
 
     mermaid.initialize({
       startOnLoad: false,
@@ -40,7 +41,7 @@ export const MindMap: React.FC<MindMapProps> = ({ content, theme, language = 'en
       flowchart: { htmlLabels: true },
       mindmap: {
         useMaxWidth: false,
-        padding: 20,
+        padding: 40, // More space
       },
       themeVariables: {
         primaryColor: primaryColor,
@@ -48,13 +49,16 @@ export const MindMap: React.FC<MindMapProps> = ({ content, theme, language = 'en
         primaryBorderColor: primaryColor,
         lineColor: lineColor,
         secondaryColor: secondaryColor,
-        tertiaryColor: bgColor,
+        tertiaryColor: tertiaryColor,
         fontFamily: 'JetBrains Mono, monospace',
-        fontSize: '16px', // Increase font size
+        fontSize: '18px', // Larger font for readability
         
-        // Mindmap specific (mapped from base theme vars usually, but we explicit some)
+        // Specific MindMap Variables to enforce the look
         mindmapShapeBorderColor: primaryColor,
-        mindmapBkgColor: 'rgba(0,0,0,0)', // Transparent nodes often look cooler in cyber theme
+        mindmapBkgColor: isDark ? 'rgba(15, 23, 42, 0.8)' : 'rgba(255, 255, 255, 0.8)',
+        mainBkg: bgColor,
+        nodeBorder: primaryColor,
+        clusterBkg: 'rgba(255,255,255,0.05)',
       }
     });
   }, [theme]);
@@ -69,11 +73,11 @@ export const MindMap: React.FC<MindMapProps> = ({ content, theme, language = 'en
         // Attempt to render
         const { svg: generatedSvg } = await mermaid.render(id, content);
         
-        // Hack: Remove max-width and fixed height to allow scaling
+        // Style injection to fix sizing and add glow
         const cleanSvg = generatedSvg
           .replace(/max-width:[^;]+;/g, '')
           .replace(/height:[^;]+;/g, '')
-          .replace(/style="[^"]*"/, 'style="overflow: visible;"'); // Ensure overflow is visible
+          .replace(/style="[^"]*"/, 'style="overflow: visible;"');
 
         setSvg(cleanSvg);
         // Reset view on new content
@@ -114,11 +118,17 @@ export const MindMap: React.FC<MindMapProps> = ({ content, theme, language = 'en
   };
 
   return (
-    <div className="w-full h-full bg-paper-50 dark:bg-cyber-900 overflow-hidden relative group font-mono">
-      {/* Background Grid Pattern for style */}
-      <div className="absolute inset-0 opacity-5 pointer-events-none" 
-           style={{ backgroundImage: `radial-gradient(${theme === 'dark' ? '#fff' : '#000'} 1px, transparent 1px)`, backgroundSize: '20px 20px' }}>
+    <div className="w-full h-full bg-paper-50 dark:bg-cyber-900 overflow-hidden relative group font-mono selection:bg-cyan-500/30">
+      {/* Background Grid Pattern */}
+      <div className="absolute inset-0 opacity-10 pointer-events-none" 
+           style={{ 
+             backgroundImage: `linear-gradient(${theme === 'dark' ? '#334155' : '#cbd5e1'} 1px, transparent 1px), linear-gradient(90deg, ${theme === 'dark' ? '#334155' : '#cbd5e1'} 1px, transparent 1px)`, 
+             backgroundSize: '40px 40px' 
+           }}>
       </div>
+      
+      {/* Radial fade for background */}
+      <div className="absolute inset-0 pointer-events-none bg-radial-fade"></div>
 
       {/* Controls */}
       <div className="absolute bottom-6 right-6 z-20 flex flex-col gap-2 opacity-50 group-hover:opacity-100 transition-opacity">
@@ -136,7 +146,7 @@ export const MindMap: React.FC<MindMapProps> = ({ content, theme, language = 'en
         <div className="flex flex-col items-center justify-center h-full text-red-500 p-8 text-center animate-fadeIn z-10 relative">
             <AlertTriangle size={48} className="mb-4" />
             <h3 className="font-bold text-lg">{t.mindMapError}</h3>
-            <p className="opacity-80 mt-2 mb-4 text-sm max-w-md bg-red-50 dark:bg-red-900/20 p-2 rounded">{error}</p>
+            <p className="opacity-80 mt-2 mb-4 text-sm max-w-md bg-red-50 dark:bg-red-900/20 p-2 rounded font-mono">{error}</p>
         </div>
       ) : (
         <div 
@@ -154,7 +164,7 @@ export const MindMap: React.FC<MindMapProps> = ({ content, theme, language = 'en
                     transition: isDragging.current ? 'none' : 'transform 0.1s ease-out'
                 }}
                 dangerouslySetInnerHTML={{ __html: svg }}
-                className="mermaid-container [&>svg]:overflow-visible [&_g.node_rect]:fill-transparent [&_g.node_rect]:stroke-2 [&_g.node_rect]:stroke-cyan-500 dark:[&_g.node_rect]:stroke-cyan-400 [&_g.node_path]:stroke-2 [&_g.node_path]:stroke-violet-500 dark:[&_g.node_path]:stroke-violet-400"
+                className={`mermaid-container [&>svg]:overflow-visible [&_g.node]:transition-all [&_path]:stroke-[2px] ${theme === 'dark' ? '[&_path]:stroke-cyan-400 [&_rect]:stroke-cyan-500 [&_rect]:stroke-[2px]' : ''}`}
             />
         </div>
       )}

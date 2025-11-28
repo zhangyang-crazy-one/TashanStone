@@ -1,11 +1,15 @@
 
 import { MarkdownFile } from '../types';
 import { GoogleGenAI } from "@google/genai";
+import * as pdfjsLib from 'pdfjs-dist';
+
+// Configure PDF.js Worker using the ESM build + minified worker script
+// We use .mjs to match the ESM module type of the main library to prevent "Failed to fetch dynamically imported module" errors
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.worker.min.mjs';
 
 declare global {
   interface Window {
     showDirectoryPicker: () => Promise<FileSystemDirectoryHandle>;
-    pdfjsLib: any;
   }
 }
 
@@ -31,9 +35,7 @@ export const readDirectory = async (
         isLocal: true
       });
     } else if (entry.kind === 'directory') {
-      // Optional: Recursion could go here, but keeping it flat-ish for now or one level deep
-      // const subFiles = await readDirectory(entry as FileSystemDirectoryHandle, entry.name);
-      // files.push(...subFiles);
+      // Optional: Recursion could go here
     }
   }
   return files;
@@ -50,7 +52,10 @@ export const saveFileToDisk = async (file: MarkdownFile): Promise<void> => {
 // PDF Processing
 export const processPdfFile = async (file: File, apiKey?: string): Promise<string> => {
   const arrayBuffer = await file.arrayBuffer();
-  const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  
+  // Use the imported module instead of window.pdfjsLib
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  
   let fullText = "";
   let useVision = false;
 
@@ -70,11 +75,10 @@ export const processPdfFile = async (file: File, apiKey?: string): Promise<strin
 
   // If detected as scan and we have an API Key, use Vision Model
   if (useVision && apiKey) {
-    // console.log("Detected scanned PDF, using Vision model...");
     fullText = ""; // Reset
     const ai = new GoogleGenAI({ apiKey });
     
-    for (let i = 1; i <= Math.min(pdf.numPages, 5); i++) { // Limit to 5 pages to save tokens/time for demo
+    for (let i = 1; i <= Math.min(pdf.numPages, 5); i++) { // Limit to 5 pages
       const page = await pdf.getPage(i);
       const viewport = page.getViewport({ scale: 1.5 });
       const canvas = document.createElement('canvas');

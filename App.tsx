@@ -190,24 +190,41 @@ const App: React.FC = () => {
 
   const handleOpenFolder = async () => {
     if (!('showDirectoryPicker' in window)) {
-      showToast(t.errorOpenDir, true);
-      return;
+      throw new Error("Directory Picker not supported");
     }
-    try {
-      const dirHandle = await window.showDirectoryPicker();
-      const loadedFiles = await readDirectory(dirHandle);
-      if (loadedFiles.length > 0) {
-        setFiles(loadedFiles);
-        setActiveFileId(loadedFiles[0].id);
-        showToast(`${t.filesLoaded}: ${loadedFiles.length}`);
-      } else {
-        showToast(t.noFilesFound);
+    const dirHandle = await window.showDirectoryPicker();
+    const loadedFiles = await readDirectory(dirHandle);
+    if (loadedFiles.length > 0) {
+      setFiles(loadedFiles);
+      setActiveFileId(loadedFiles[0].id);
+      showToast(`${t.filesLoaded}: ${loadedFiles.length}`);
+    } else {
+      showToast(t.noFilesFound);
+    }
+  };
+
+  const handleImportFolderFiles = async (fileList: FileList) => {
+    const newFiles: MarkdownFile[] = [];
+    for (let i = 0; i < fileList.length; i++) {
+      const file = fileList[i];
+      if (file.name.endsWith('.md')) {
+         const content = await file.text();
+         newFiles.push({
+           id: generateId() + '-' + i,
+           name: file.name.replace('.md', ''),
+           content: content,
+           lastModified: file.lastModified,
+           isLocal: false
+         });
       }
-    } catch (e: any) {
-      console.error(e);
-      if (e.name !== 'AbortError') {
-        showToast(t.errorOpenDir, true);
-      }
+    }
+    
+    if (newFiles.length > 0) {
+      setFiles(newFiles);
+      setActiveFileId(newFiles[0].id);
+      showToast(`${t.filesLoaded}: ${newFiles.length}`);
+    } else {
+      showToast(t.noFilesFound);
     }
   };
 
@@ -342,6 +359,7 @@ const App: React.FC = () => {
         isOpen={isSidebarOpen}
         onCloseMobile={() => setIsSidebarOpen(false)}
         onOpenFolder={handleOpenFolder}
+        onImportFolderFiles={handleImportFolderFiles}
         onImportPdf={handleImportPdf}
         language={lang}
       />

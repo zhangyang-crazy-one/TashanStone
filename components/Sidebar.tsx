@@ -12,7 +12,8 @@ interface SidebarProps {
   onDeleteFile: (id: string) => void;
   isOpen: boolean;
   onCloseMobile: () => void;
-  onOpenFolder: () => void;
+  onOpenFolder: () => Promise<void>;
+  onImportFolderFiles?: (files: FileList) => void;
   onImportPdf: (file: File) => void;
   language?: Language;
 }
@@ -26,15 +27,35 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isOpen,
   onCloseMobile,
   onOpenFolder,
+  onImportFolderFiles,
   onImportPdf,
   language = 'en'
 }) => {
   const pdfInputRef = useRef<HTMLInputElement>(null);
+  const dirInputRef = useRef<HTMLInputElement>(null);
   const t = translations[language];
 
   const handlePdfUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       onImportPdf(e.target.files[0]);
+      e.target.value = ''; // Reset
+    }
+  };
+  
+  const handleDirUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0 && onImportFolderFiles) {
+      onImportFolderFiles(e.target.files);
+      e.target.value = ''; // Reset
+    }
+  };
+
+  const handleOpenFolderClick = async () => {
+    try {
+      await onOpenFolder();
+    } catch (e) {
+      // Fallback if window.showDirectoryPicker fails or is blocked
+      console.warn("Falling back to input directory picker", e);
+      dirInputRef.current?.click();
     }
   };
 
@@ -74,7 +95,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           <div className="grid grid-cols-2 gap-2">
             <button
-              onClick={onOpenFolder}
+              onClick={handleOpenFolderClick}
               className="flex items-center justify-center gap-2 py-2 px-2 rounded-md bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-700 text-slate-700 dark:text-slate-300 hover:bg-paper-200 dark:hover:bg-cyber-700 transition-colors text-xs font-medium"
             >
               <FolderInput size={14} />
@@ -93,6 +114,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
               ref={pdfInputRef} 
               className="hidden" 
               onChange={handlePdfUpload}
+            />
+            {/* Fallback for Directory Picker */}
+            <input 
+              type="file" 
+              ref={dirInputRef}
+              className="hidden"
+              // @ts-ignore - non-standard attribute but necessary for folder selection fallback
+              webkitdirectory="" 
+              directory="" 
+              multiple 
+              onChange={handleDirUpload} 
             />
           </div>
         </div>

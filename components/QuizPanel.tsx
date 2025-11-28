@@ -35,7 +35,6 @@ export const QuizPanel: React.FC<QuizPanelProps> = ({ quiz, aiConfig, theme, onC
     );
   }
   
-  // Guard against undefined active question even if list is not empty (e.g. index OOB)
   if (!activeQuestion) {
      return (
         <div className="w-full h-full p-6 flex items-center justify-center text-slate-500">
@@ -45,7 +44,7 @@ export const QuizPanel: React.FC<QuizPanelProps> = ({ quiz, aiConfig, theme, onC
   }
 
   const handleOptionSelect = (option: string) => {
-    if (activeQuestion.isCorrect !== undefined) return; // Prevent changing if already graded
+    if (activeQuestion.isCorrect !== undefined) return; 
     const updatedQuestions = [...currentQuiz.questions];
     updatedQuestions[activeQuestionIdx] = {
       ...activeQuestion,
@@ -68,11 +67,9 @@ export const QuizPanel: React.FC<QuizPanelProps> = ({ quiz, aiConfig, theme, onC
     const q = activeQuestion;
     if (!q.userAnswer) return;
 
-    // Local check for single/multiple
     if (q.type !== 'text') {
       let isCorrect = false;
       if (Array.isArray(q.correctAnswer)) {
-          // Simplified check for multiple choice (exact match)
           const correctSet = new Set(q.correctAnswer);
           const userVal = Array.isArray(q.userAnswer) ? q.userAnswer : [q.userAnswer];
           const userSet = new Set(userVal);
@@ -85,7 +82,6 @@ export const QuizPanel: React.FC<QuizPanelProps> = ({ quiz, aiConfig, theme, onC
       updatedQuestions[activeQuestionIdx] = { ...q, isCorrect };
       setCurrentQuiz({ ...currentQuiz, questions: updatedQuestions });
     } else {
-      // AI Grading for text
       setGradingIds(prev => [...prev, q.id]);
       try {
         const grading = await gradeQuizQuestion(q.question, q.userAnswer as string, contextContent, aiConfig);

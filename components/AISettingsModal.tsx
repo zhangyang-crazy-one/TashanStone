@@ -34,6 +34,12 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
   const [activeTab, setActiveTab] = useState<Tab>('ai');
   const [tempConfig, setTempConfig] = useState<AIConfig>(config);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Use config state for language during edit, but respect prop for UI labels initially
+  // Actually, we should probably use tempConfig.language for the UI inside the modal to show immediate preview? 
+  // Standard practice is usually UI follows app state until saved, but user asked "click save settings... system options don't turn into Chinese".
+  // This implies they want the UI to update. The App updates lang prop when `onSave` is called.
+  // So using `translations[language]` is correct.
   const t = translations[language];
 
   React.useEffect(() => {
@@ -58,7 +64,6 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
         const content = e.target?.result as string;
         const json = JSON.parse(content);
         
-        // Strict Validation
         if (!json.name || !json.type || !json.colors) {
           alert('Invalid Theme: Missing name, type ("light"|"dark"), or colors object.');
           return;
@@ -274,7 +279,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                            <span className="font-bold text-slate-800 dark:text-slate-200 truncate">{theme.name}</span>
                            {activeThemeId === theme.id && <Check size={16} className="text-cyan-500 shrink-0" />}
                         </div>
-                        <span className="text-xs text-slate-500 capitalize">{theme.type} Mode</span>
+                        <span className="text-xs text-slate-500 capitalize">{theme.type === 'dark' ? t.darkMode : t.lightMode}</span>
                       </div>
 
                       {theme.isCustom && (
@@ -284,7 +289,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                             if (confirm(`Delete theme "${theme.name}"?`)) onDeleteTheme(theme.id);
                           }}
                           className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                          title="Delete Theme"
+                          title={t.deleteTheme}
                         >
                            <Trash2 size={16} />
                         </button>

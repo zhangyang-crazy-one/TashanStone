@@ -128,14 +128,6 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" integrity="sha384-n8MVd4RsNIU0tAv4ct0nTaAbDJwPJzDEaqSD1odI+WdtXRGWt2kTvGFasHpSy3SV" crossorigin="anonymous">
     
-    <!-- PDF.js for parsing -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    <script>
-      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-    </script>
-    <!-- Mermaid for Mindmaps -->
-    <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
-
     <style>
       ::-webkit-scrollbar {
         width: 8px;
@@ -170,6 +162,11 @@
         overflow-y: hidden;
         padding: 1rem 0;
       }
+      
+      /* Fancy Background for MindMap */
+      .bg-radial-fade {
+        background: radial-gradient(circle at center, transparent 0%, rgb(var(--bg-main)) 100%);
+      }
     </style>
   <script type="importmap">
 {
@@ -187,7 +184,8 @@
     "clsx": "https://aistudiocdn.com/clsx@^2.1.0",
     "tailwind-merge": "https://aistudiocdn.com/tailwind-merge@^2.2.0",
     "d3": "https://aistudiocdn.com/d3@^7.9.0",
-    "mermaid": "https://aistudiocdn.com/mermaid@^11.12.1"
+    "mermaid": "https://aistudiocdn.com/mermaid@^11.12.1",
+    "pdfjs-dist": "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/+esm"
   }
 }
 </script>

@@ -52,7 +52,10 @@ export const translations = {
     importFail: "Import failed",
     errorOpenDir: "Directory access not supported or denied.",
     mindMapError: "Mind Map Render Failed",
-    dragToPan: "Drag to Pan"
+    dragToPan: "Drag to Pan",
+    lightMode: "Light Mode",
+    darkMode: "Dark Mode",
+    deleteTheme: "Delete Theme"
   },
   zh: {
     explorer: "资源管理器",
@@ -106,7 +109,10 @@ export const translations = {
     importFail: "导入失败",
     errorOpenDir: "不支持文件夹访问或已被拒绝。",
     mindMapError: "思维导图渲染失败",
-    dragToPan: "拖动平移"
+    dragToPan: "拖动平移",
+    lightMode: "亮色模式",
+    darkMode: "暗色模式",
+    deleteTheme: "删除主题"
   }
 };
 
