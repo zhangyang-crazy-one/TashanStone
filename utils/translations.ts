@@ -1,10 +1,12 @@
 
+
 export const translations = {
   en: {
     explorer: "Explorer",
     newFile: "New File",
     openDir: "Open Dir",
     pdfImport: "PDF Import",
+    quizImport: "Import Quiz",
     filesStored: "files stored",
     filename: "Filename",
     polish: "Polish",
@@ -55,13 +57,16 @@ export const translations = {
     dragToPan: "Drag to Pan",
     lightMode: "Light Mode",
     darkMode: "Dark Mode",
-    deleteTheme: "Delete Theme"
+    deleteTheme: "Delete Theme",
+    processingFile: "Processing file...",
+    analyzingQuiz: "AI is analyzing quiz content..."
   },
   zh: {
     explorer: "资源管理器",
     newFile: "新建文件",
     openDir: "打开文件夹",
     pdfImport: "导入 PDF",
+    quizImport: "导入试题",
     filesStored: "个文件",
     filename: "文件名",
     polish: "润色",
@@ -112,7 +117,9 @@ export const translations = {
     dragToPan: "拖动平移",
     lightMode: "亮色模式",
     darkMode: "暗色模式",
-    deleteTheme: "删除主题"
+    deleteTheme: "删除主题",
+    processingFile: "正在处理文件...",
+    analyzingQuiz: "AI正在分析试卷内容..."
   }
 };
 

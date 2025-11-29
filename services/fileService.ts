@@ -1,7 +1,9 @@
 
+
 import { MarkdownFile } from '../types';
 import { GoogleGenAI } from "@google/genai";
 import * as pdfjsLib from 'pdfjs-dist';
+import mammoth from 'mammoth';
 
 // Configure PDF.js Worker
 // Handle ESM import inconsistencies (sometimes it's on .default, sometimes root)
@@ -54,6 +56,31 @@ export const saveFileToDisk = async (file: MarkdownFile): Promise<void> => {
     await writable.write(file.content);
     await writable.close();
   }
+};
+
+// Generic Text Extractor for Import
+export const extractTextFromFile = async (file: File, apiKey?: string): Promise<string> => {
+  const name = file.name.toLowerCase();
+  
+  if (name.endsWith('.pdf')) {
+    return processPdfFile(file, apiKey);
+  } else if (name.endsWith('.docx') || name.endsWith('.doc')) {
+    return processDocxFile(file);
+  } else if (name.endsWith('.csv') || name.endsWith('.txt') || name.endsWith('.md')) {
+    return await file.text();
+  } else {
+    throw new Error("Unsupported file format for text extraction.");
+  }
+};
+
+const processDocxFile = async (file: File): Promise<string> => {
+    try {
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await mammoth.extractRawText({ arrayBuffer });
+        return result.value;
+    } catch (e: any) {
+        throw new Error(`DOCX processing failed: ${e.message}`);
+    }
 };
 
 // PDF Processing

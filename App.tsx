@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Toolbar } from './components/Toolbar';
 import { Editor } from './components/Editor';
@@ -10,9 +11,9 @@ import { KnowledgeGraph } from './components/KnowledgeGraph';
 import { QuizPanel } from './components/QuizPanel';
 import { MindMap } from './components/MindMap';
 import { ViewMode, AIState, MarkdownFile, AIConfig, ChatMessage, GraphData, AppTheme, Quiz } from './types';
-import { polishContent, expandContent, generateAIResponse, generateKnowledgeGraph, synthesizeKnowledgeBase, generateQuiz, generateMindMap } from './services/aiService';
+import { polishContent, expandContent, generateAIResponse, generateKnowledgeGraph, synthesizeKnowledgeBase, generateQuiz, generateMindMap, extractQuizFromRawContent } from './services/aiService';
 import { applyTheme, getAllThemes, getSavedThemeId, saveCustomTheme, deleteCustomTheme, DEFAULT_THEMES } from './services/themeService';
-import { readDirectory, saveFileToDisk, processPdfFile } from './services/fileService';
+import { readDirectory, saveFileToDisk, processPdfFile, extractTextFromFile } from './services/fileService';
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
 import { translations, Language } from './utils/translations';
 
@@ -229,7 +230,7 @@ const App: React.FC = () => {
   };
 
   const handleImportPdf = async (file: File) => {
-    setAiState({ isThinking: true, message: "Reading PDF...", error: null });
+    setAiState({ isThinking: true, message: t.processingFile, error: null });
     try {
       const mdContent = await processPdfFile(file, aiConfig.apiKey);
       const newFile: MarkdownFile = {
@@ -240,6 +241,28 @@ const App: React.FC = () => {
       };
       setFiles(prev => [...prev, newFile]);
       setActiveFileId(newFile.id);
+      showToast(t.importSuccess);
+    } catch (e: any) {
+      showToast(`${t.importFail}: ${e.message}`, true);
+    } finally {
+      setAiState(prev => ({ ...prev, isThinking: false, message: null }));
+    }
+  };
+
+  const handleImportQuiz = async (file: File) => {
+    setAiState({ isThinking: true, message: t.processingFile, error: null });
+    try {
+      // 1. Extract Text
+      const textContent = await extractTextFromFile(file, aiConfig.apiKey);
+      
+      setAiState({ isThinking: true, message: t.analyzingQuiz, error: null });
+      
+      // 2. Process with AI to get Quiz JSON
+      const quiz = await extractQuizFromRawContent(textContent, aiConfig);
+      
+      // 3. Set Quiz State
+      setCurrentQuiz(quiz);
+      setViewMode(ViewMode.Quiz);
       showToast(t.importSuccess);
     } catch (e: any) {
       showToast(`${t.importFail}: ${e.message}`, true);
@@ -361,6 +384,7 @@ const App: React.FC = () => {
         onOpenFolder={handleOpenFolder}
         onImportFolderFiles={handleImportFolderFiles}
         onImportPdf={handleImportPdf}
+        onImportQuiz={handleImportQuiz}
         language={lang}
       />
 

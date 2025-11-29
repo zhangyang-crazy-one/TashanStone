@@ -1,6 +1,7 @@
 
+
 import React, { useRef, useState, useEffect } from 'react';
-import { FileText, Plus, Trash2, FolderOpen, Search, X, FolderInput, FileType, List, AlignLeft, ChevronRight } from 'lucide-react';
+import { FileText, Plus, Trash2, FolderOpen, Search, X, FolderInput, FileType, List, AlignLeft, ChevronRight, GraduationCap } from 'lucide-react';
 import { MarkdownFile } from '../types';
 import { translations, Language } from '../utils/translations';
 
@@ -15,6 +16,7 @@ interface SidebarProps {
   onOpenFolder: () => Promise<void>;
   onImportFolderFiles?: (files: FileList) => void;
   onImportPdf: (file: File) => void;
+  onImportQuiz?: (file: File) => void;
   language?: Language;
 }
 
@@ -35,12 +37,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenFolder,
   onImportFolderFiles,
   onImportPdf,
+  onImportQuiz,
   language = 'en'
 }) => {
   const [activeTab, setActiveTab] = useState<'files' | 'outline'>('files');
   const [outline, setOutline] = useState<OutlineItem[]>([]);
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const dirInputRef = useRef<HTMLInputElement>(null);
+  const quizInputRef = useRef<HTMLInputElement>(null);
   const t = translations[language];
 
   // Derive active file content
@@ -71,6 +75,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       onImportPdf(e.target.files[0]);
     }
     if (pdfInputRef.current) pdfInputRef.current.value = '';
+  };
+
+  const handleQuizUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0 && onImportQuiz) {
+        onImportQuiz(e.target.files[0]);
+    }
+    if (quizInputRef.current) quizInputRef.current.value = '';
   };
 
   const handleDirUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -156,7 +167,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </button>
                  </div>
                  
+                 {/* Quiz Import Button */}
+                 <button 
+                   onClick={() => quizInputRef.current?.click()}
+                   className="w-full flex items-center justify-center gap-2 p-2 bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-700 hover:border-violet-500 text-slate-600 dark:text-slate-300 rounded-lg transition-all text-xs"
+                 >
+                   <GraduationCap size={16} className="text-violet-500" />
+                   {t.quizImport} (PDF, DOCX, CSV)
+                 </button>
+                 
                  <input type="file" accept=".pdf" ref={pdfInputRef} className="hidden" onChange={handlePdfUpload} />
+                 <input type="file" accept=".csv,.pdf,.md,.txt,.docx,.doc" ref={quizInputRef} className="hidden" onChange={handleQuizUpload} />
                  <input 
                    type="file" 
                    ref={dirInputRef} 
@@ -232,7 +253,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         
         {/* Footer info */}
         <div className="p-3 border-t border-paper-200 dark:border-cyber-700 bg-paper-50 dark:bg-cyber-800/50 text-xs text-slate-400 text-center">
-           NeonMark v2.0
+           NeonMark v2.1
         </div>
       </div>
     </>

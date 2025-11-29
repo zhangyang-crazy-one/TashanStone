@@ -1,4 +1,5 @@
 
+
 import { GoogleGenAI, FunctionDeclaration, Type } from "@google/genai";
 import { AIConfig, MarkdownFile, GraphData, Quiz } from "../types";
 
@@ -392,6 +393,54 @@ export const generateMindMap = async (content: string, config: AIConfig): Promis
   return clean;
 };
 
+export const extractQuizFromRawContent = async (content: string, config: AIConfig): Promise<Quiz> => {
+   const langPrompt = config.language === 'zh' 
+    ? "IMPORTANT: If generating new content, use Chinese. If extracting, preserve original language." 
+    : "Use English.";
+
+   const prompt = `Analyze the document content below to create a Quiz JSON.
+   
+   MODES:
+   1. **Extraction Mode**: If the content IS ALREADY a test paper (contains questions like "1.", "Q1", multiple choice options), you MUST EXTRACT every single question exactly as written. Do not summarize or skip any. Preserve options.
+   2. **Generation Mode**: If the content is informational text (notes, articles), GENERATE high-quality questions based on it.
+   
+   OUTPUT FORMAT:
+   Return strictly valid JSON matching this schema:
+   {
+    "id": "quiz-extracted-${Date.now()}",
+    "title": "Extracted Exam",
+    "description": "Quiz extracted or generated from uploaded document.",
+    "questions": [
+      {
+        "id": "q1",
+        "type": "single", // Use 'single', 'multiple', or 'text'
+        "question": "The question text?",
+        "options": ["A", "B", "C", "D"], // Required for single/multiple
+        "correctAnswer": "A", // Or ["A", "B"] for multiple. If unknown, leave empty string or infer best answer.
+        "explanation": "Detailed explanation of why this is the correct answer."
+      }
+    ],
+    "isGraded": false
+   }
+
+   ${langPrompt}
+
+   DOCUMENT CONTENT:
+   ${content.substring(0, 45000)}
+   `;
+
+   const systemPrompt = "You are an Exam Parser AI. Your priority is to strictly extract existing questions if they exist. Otherwise, generate educational questions. Output valid JSON only.";
+
+   try {
+    const jsonStr = await generateAIResponse(prompt, config, systemPrompt, true);
+    const cleanedJson = extractJson(jsonStr);
+    return JSON.parse(cleanedJson) as Quiz;
+  } catch (e) {
+    console.error("Quiz Extraction Error", e);
+    throw new Error("Failed to process document into a quiz. The AI response was not valid JSON.");
+  }
+};
+
 export const generateQuiz = async (content: string, config: AIConfig): Promise<Quiz> => {
   // Strategy: 1 question per 300 words, minimum 3, max 15.
   const wordCount = content.split(/\s+/).length;
@@ -444,11 +493,41 @@ export const generateQuiz = async (content: string, config: AIConfig): Promise<Q
   }
 };
 
-export const gradeQuizQuestion = async (question: string, userAnswer: string, context: string, config: AIConfig): Promise<string> => {
-  const prompt = `Question: ${question}
-  User Answer: ${userAnswer}
-  Context: ${context.substring(0, 5000)}
+export const gradeQuizQuestion = async (
+  question: string, 
+  userAnswer: string, 
+  context: string, 
+  config: AIConfig
+): Promise<{isCorrect: boolean, explanation: string}> => {
+  const langPrompt = config.language === 'zh' 
+    ? "IMPORTANT: Provide the explanation in Chinese." 
+    : "Provide the explanation in English.";
+
+  const prompt = `Task: Grade the user's answer to a quiz question.
   
-  Grade this answer. Provide a short explanation and state if it is Correct or Incorrect. ${config.language === 'zh' ? "Reply in Chinese." : ""}`;
-  return generateAIResponse(prompt, config, "You are a helpful teaching assistant.");
+  Question: ${question}
+  User Answer: ${userAnswer}
+  Context (for reference): ${context.substring(0, 2000)} ...
+
+  Instructions:
+  1. Determine if the User Answer is correct based on the Context or general knowledge.
+  2. Provide a helpful explanation of why it is correct or incorrect.
+  3. ${langPrompt}
+  4. Return strictly valid JSON:
+  {
+    "isCorrect": boolean,
+    "explanation": "string"
+  }
+  `;
+  
+  const systemPrompt = "You are a Grade 8 Teacher. You are strict but fair. Output valid JSON only.";
+  
+  try {
+     const jsonStr = await generateAIResponse(prompt, config, systemPrompt, true);
+     const cleaned = extractJson(jsonStr);
+     return JSON.parse(cleaned);
+  } catch (e) {
+     console.error("Grading failed", e);
+     return { isCorrect: false, explanation: "AI Grading failed to parse response. Please check your network or try again." };
+  }
 };

@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { Quiz, AIConfig, Theme, MistakeRecord } from '../types';
 import { CheckCircle2, XCircle, HelpCircle, Download, BookOpen, AlertTriangle, ArrowRight, ArrowLeft, RotateCcw, BookmarkX, Trash2 } from 'lucide-react';
@@ -104,28 +105,30 @@ export const QuizPanel: React.FC<QuizPanelProps> = ({ quiz, aiConfig, theme, onC
     } else {
       setGradingIds(prev => [...prev, q.id]);
       try {
-        const grading = await gradeQuizQuestion(q.question, q.userAnswer as string, contextContent, aiConfig);
+        const result = await gradeQuizQuestion(q.question, q.userAnswer as string, contextContent, aiConfig);
         const updatedQuestions = [...currentQuiz.questions];
-        const isCorrect = grading.toLowerCase().includes("correct") && !grading.toLowerCase().includes("incorrect");
+        
         updatedQuestions[activeQuestionIdx] = { 
           ...q, 
-          isCorrect, 
-          explanation: grading 
+          isCorrect: result.isCorrect, 
+          explanation: result.explanation 
         };
         setCurrentQuiz({ ...currentQuiz, questions: updatedQuestions });
         
-        if (!isCorrect) {
+        if (!result.isCorrect) {
            const mistake: MistakeRecord = {
               id: `${currentQuiz.id}-${q.id}-${Date.now()}`,
               question: q.question,
               userAnswer: q.userAnswer as string,
               correctAnswer: "(AI Graded)",
-              explanation: grading,
+              explanation: result.explanation,
               timestamp: Date.now(),
               quizTitle: currentQuiz.title
           };
           saveMistake(mistake);
         }
+      } catch (err) {
+        console.error("Grading failed", err);
       } finally {
         setGradingIds(prev => prev.filter(id => id !== q.id));
       }
