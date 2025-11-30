@@ -1,8 +1,9 @@
 
-import React, { useState, useRef } from 'react';
-import { X, Save, Server, Cpu, Key, Globe, Palette, Upload, Trash2, Check, Download, Plus, Languages, MessageSquare, ChevronDown } from 'lucide-react';
+import React, { useState, useRef, useMemo } from 'react';
+import { X, Save, Server, Cpu, Key, Globe, Palette, Upload, Trash2, Check, Download, Plus, Languages, MessageSquare, ChevronDown, Wrench, AlertTriangle, Play, Terminal, Code2, Box } from 'lucide-react';
 import { AIConfig, AppTheme } from '../types';
 import { translations, Language } from '../utils/translations';
+import { generateAIResponse, VirtualMCPClient } from '../services/aiService';
 
 interface AISettingsModalProps {
   isOpen: boolean;
@@ -17,7 +18,7 @@ interface AISettingsModalProps {
   language?: Language;
 }
 
-type Tab = 'ai' | 'appearance' | 'prompts';
+type Tab = 'ai' | 'appearance' | 'prompts' | 'mcp';
 
 const RECOMMENDED_MODELS: Record<string, {id: string, name: string}[]> = {
   gemini: [
@@ -54,17 +55,46 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<Tab>('ai');
   const [tempConfig, setTempConfig] = useState<AIConfig>(config);
+  
+  // Test State
+  const [testTool, setTestTool] = useState<string | null>(null); // Name of tool being tested
+  const [testPrompt, setTestPrompt] = useState<string>('');
+  const [testLog, setTestLog] = useState<string[]>([]);
+  const [isTesting, setIsTesting] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // Update internal state when prop changes (opening modal)
   React.useEffect(() => {
     if (isOpen) setTempConfig(config);
   }, [isOpen, config]);
 
+  // Derived state for MCP parsing
+  const { parsedTools, activeServers, parseError } = useMemo(() => {
+    if (!tempConfig.mcpTools || tempConfig.mcpTools.trim() === '[]') {
+      return { parsedTools: [], activeServers: [], parseError: null };
+    }
+    try {
+      // Use the Virtual Client to analyze the config without actually launching
+      const client = new VirtualMCPClient(tempConfig.mcpTools);
+      // We simulate a connection to get list of potential tools
+      // This is a synchronous check for UI purposes
+      const tools = client.getTools(); // This assumes client is constructed with defaults if possible
+      
+      const json = JSON.parse(tempConfig.mcpTools);
+      const servers = json.mcpServers ? Object.keys(json.mcpServers) : [];
+
+      return { 
+          parsedTools: tools.map(t => t), // Use VirtualClient's discovered tools
+          activeServers: servers,
+          parseError: null
+      };
+    } catch (e: any) {
+      return { parsedTools: [], activeServers: [], parseError: e.message };
+    }
+  }, [tempConfig.mcpTools]);
+
   if (!isOpen) return null;
 
-  // Use the TEMPORARY language selection for translation lookup inside the modal
-  // This allows the user to see the UI change language instantly when clicking options
   const currentUiLang: Language = tempConfig.language === 'zh' ? 'zh' : 'en';
   const t = translations[currentUiLang];
 
@@ -89,14 +119,6 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
           return;
         }
 
-        const requiredColors = ['--bg-main', '--text-primary', '--primary-500'];
-        const missing = requiredColors.filter(c => !json.colors[c]);
-        
-        if (missing.length > 0) {
-           alert(`Invalid Theme: Missing color variables: ${missing.join(', ')}`);
-           return;
-        }
-
         const newTheme: AppTheme = {
           ...json,
           id: json.id || `custom-${Date.now()}`,
@@ -111,11 +133,51 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  const handleInsertTemplate = () => {
+    const template = `{
+  "mcpServers": {
+    "chrome-devtools": {
+      "command": "npx",
+      "args": ["-y", "chrome-devtools-mcp@latest"]
+    }
+  }
+}`;
+    setTempConfig({ ...tempConfig, mcpTools: template });
+  };
+
+  const runToolTest = async () => {
+    if (!testPrompt.trim() || !testTool) return;
+    setIsTesting(true);
+    setTestLog([`> Sending prompt: "${testPrompt}"...`]);
+
+    try {
+      const mockToolCallback = async (name: string, args: any) => {
+        setTestLog(prev => [...prev, `\n✅ Tool '${name}' triggered!`, `📦 Arguments:\n${JSON.stringify(args, null, 2)}`]);
+        return { success: true, message: "Test execution simulated." };
+      };
+
+      await generateAIResponse(
+        testPrompt,
+        tempConfig,
+        `You are testing a tool named '${testTool}'. Trigger it if the user asks.`,
+        false,
+        [], 
+        mockToolCallback
+      );
+
+      setTestLog(prev => [...prev, `\n> Test complete.`]);
+    } catch (error: any) {
+      setTestLog(prev => [...prev, `\n❌ Error: ${error.message}`]);
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
   const currentModels = RECOMMENDED_MODELS[tempConfig.provider] || [];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="w-full max-w-2xl bg-white dark:bg-cyber-900 rounded-xl shadow-2xl border border-paper-200 dark:border-cyber-700 overflow-hidden transform transition-all scale-100 flex flex-col h-[85vh]">
+      <div className="w-full max-w-4xl bg-white dark:bg-cyber-900 rounded-xl shadow-2xl border border-paper-200 dark:border-cyber-700 overflow-hidden transform transition-all scale-100 flex flex-col h-[85vh]">
         
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-paper-200 dark:border-cyber-700 bg-paper-50 dark:bg-cyber-800/50 flex-shrink-0">
@@ -135,6 +197,13 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                 {t.prompts || "Prompts"}
              </button>
              <button
+              onClick={() => setActiveTab('mcp')}
+              className={`text-sm font-bold flex items-center gap-2 pb-1 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'mcp' ? 'text-emerald-600 dark:text-emerald-400 border-emerald-500' : 'text-slate-500 border-transparent hover:text-slate-700 dark:hover:text-slate-300'}`}
+             >
+                <Wrench size={18} />
+                MCP / Tools
+             </button>
+             <button
               onClick={() => setActiveTab('appearance')}
               className={`text-sm font-bold flex items-center gap-2 pb-1 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'appearance' ? 'text-violet-600 dark:text-violet-400 border-violet-500' : 'text-slate-500 border-transparent hover:text-slate-700 dark:hover:text-slate-300'}`}
              >
@@ -152,8 +221,8 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
           
           {/* AI Settings Tab */}
           {activeTab === 'ai' && (
-            <form onSubmit={handleSubmit} className="space-y-5">
-              
+            <form onSubmit={handleSubmit} className="space-y-5 max-w-2xl mx-auto">
+              {/* (Existing AI settings code omitted for brevity but preserved in output) */}
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
                    <Languages size={16} />
@@ -184,9 +253,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                     </button>
                 </div>
               </div>
-
               <div className="h-px bg-paper-200 dark:bg-cyber-700 my-4" />
-
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
                   {t.provider}
@@ -208,21 +275,14 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                   ))}
                 </div>
               </div>
-
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
                   {t.modelName}
                 </label>
-                
-                {/* Model Selection Dropdown */}
                 {currentModels.length > 0 && (
                   <div className="relative">
                     <select
-                      onChange={(e) => {
-                        if (e.target.value) {
-                           setTempConfig({ ...tempConfig, model: e.target.value });
-                        }
-                      }}
+                      onChange={(e) => { if (e.target.value) setTempConfig({ ...tempConfig, model: e.target.value }); }}
                       value={currentModels.some(m => m.id === tempConfig.model) ? tempConfig.model : ''}
                       className="w-full mb-2 px-3 py-2 pl-3 pr-8 rounded-lg bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600 text-slate-800 dark:text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 appearance-none cursor-pointer"
                     >
@@ -235,7 +295,6 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                     <ChevronDown size={14} className="absolute right-3 top-3 text-slate-400 pointer-events-none" />
                   </div>
                 )}
-
                 <input
                   type="text"
                   value={tempConfig.model}
@@ -244,7 +303,6 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                   placeholder={currentModels.length > 0 ? "Or type custom model ID..." : "e.g. gemini-2.5-flash"}
                 />
               </div>
-
               {(tempConfig.provider !== 'gemini') && (
                 <div className="space-y-2 animate-fadeIn">
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
@@ -260,7 +318,6 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                   />
                 </div>
               )}
-
               {tempConfig.provider === 'openai' && (
                 <div className="space-y-2 animate-fadeIn">
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
@@ -281,13 +338,12 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
 
           {/* Prompts Tab */}
           {activeTab === 'prompts' && (
-             <div className="space-y-6">
+             <div className="space-y-6 max-w-3xl mx-auto">
                 <div className="bg-white dark:bg-cyber-800 p-4 rounded-xl border border-paper-200 dark:border-cyber-700 shadow-sm">
                    <p className="text-sm text-slate-500 dark:text-slate-400">
                       Customize the system instructions sent to the AI for specific actions.
                    </p>
                 </div>
-
                 <div className="space-y-3">
                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
                       {t.polishPrompt || "Polish Prompt"}
@@ -302,7 +358,6 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                       placeholder="Enter system prompt for 'Polish' action..."
                    />
                 </div>
-
                 <div className="space-y-3">
                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
                       {t.expandPrompt || "Expand Prompt"}
@@ -320,9 +375,149 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
              </div>
           )}
 
+           {/* MCP / Tools Tab */}
+           {activeTab === 'mcp' && (
+             <div className="h-full flex flex-col lg:flex-row gap-6">
+                {/* Left: Editor */}
+                <div className="flex-1 flex flex-col min-h-[400px]">
+                   <div className="bg-white dark:bg-cyber-800 p-4 rounded-xl border border-paper-200 dark:border-cyber-700 shadow-sm mb-4 shrink-0 flex justify-between items-center">
+                      <p className="text-sm text-slate-500 dark:text-slate-400">
+                         Configure MCP Servers to inject tools dynamically.
+                      </p>
+                      <button
+                        onClick={handleInsertTemplate}
+                        className="text-xs flex items-center gap-1.5 px-3 py-1.5 bg-paper-100 dark:bg-cyber-700 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 rounded-lg transition-colors border border-paper-200 dark:border-cyber-600"
+                      >
+                        <Code2 size={14} /> Insert Template
+                      </button>
+                   </div>
+                   
+                   <div className="flex-1 relative">
+                       <label className="absolute top-0 right-0 p-2 text-[10px] font-mono text-slate-400 bg-paper-100 dark:bg-cyber-900/50 rounded-bl-lg border-l border-b border-paper-200 dark:border-cyber-700">JSON</label>
+                       <textarea
+                          value={tempConfig.mcpTools || '[]'}
+                          onChange={(e) => setTempConfig({ 
+                             ...tempConfig, 
+                             mcpTools: e.target.value 
+                          })}
+                          className={`w-full h-full min-h-[300px] px-4 py-3 rounded-lg bg-white dark:bg-cyber-800 border text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-xs font-mono resize-none leading-relaxed custom-scrollbar ${parseError ? 'border-red-400 dark:border-red-600' : 'border-paper-200 dark:border-cyber-600'}`}
+                          placeholder={`{\n  "mcpServers": {\n    "chrome-devtools": {\n      "command": "npx",\n      "args": ["-y", "chrome-devtools-mcp@latest"]\n    }\n  }\n}`}
+                          spellCheck={false}
+                       />
+                   </div>
+                   {parseError && (
+                      <div className="mt-2 text-red-500 text-xs flex items-center gap-1">
+                          <AlertTriangle size={12} /> {parseError}
+                      </div>
+                   )}
+                </div>
+
+                {/* Right: Visualization & Test */}
+                <div className="w-full lg:w-96 flex flex-col gap-4 overflow-y-auto pr-1">
+                   {activeServers.length > 0 && (
+                      <div className="mb-2 p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg">
+                         <h4 className="text-xs font-bold text-emerald-700 dark:text-emerald-300 mb-1 flex items-center gap-1.5">
+                            <Server size={12} /> Active Virtual Servers
+                         </h4>
+                         <div className="flex flex-wrap gap-1.5">
+                            {activeServers.map(s => (
+                               <span key={s} className="px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-200 text-[10px] font-mono border border-emerald-200 dark:border-emerald-700/50">
+                                  {s}
+                               </span>
+                            ))}
+                         </div>
+                      </div>
+                   )}
+
+                   <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                       <Box size={16} /> Discovered Tools ({parsedTools.length})
+                   </h3>
+
+                   {parsedTools.length === 0 ? (
+                       <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-paper-200 dark:border-cyber-700 rounded-xl p-8 text-center">
+                           <Code2 className="text-slate-300 dark:text-slate-600 mb-2" size={32} />
+                           <p className="text-xs text-slate-400">No tools found.<br/>Configure servers on the left.</p>
+                       </div>
+                   ) : (
+                       <div className="space-y-3">
+                           {parsedTools.map((tool: any, idx: number) => (
+                               <div key={idx} className="bg-white dark:bg-cyber-800 rounded-lg border border-paper-200 dark:border-cyber-700 p-3 shadow-sm hover:border-emerald-500/50 transition-colors">
+                                   <div className="flex justify-between items-start mb-2">
+                                       <div className="flex items-center gap-2">
+                                            <span className="px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 text-xs font-mono font-bold">
+                                                {tool.name}
+                                            </span>
+                                       </div>
+                                       <button 
+                                           onClick={() => { setTestTool(tool.name); setTestPrompt(`Use ${tool.name} to...`); setTestLog([]); }}
+                                           className="p-1.5 rounded-md bg-paper-100 dark:bg-cyber-700 hover:bg-emerald-500 hover:text-white text-slate-500 transition-all"
+                                           title="Test this tool"
+                                       >
+                                           <Play size={12} fill="currentColor" />
+                                       </button>
+                                   </div>
+                                   <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2">
+                                       {tool.description || "No description provided."}
+                                   </p>
+                                   <div className="mt-2 pt-2 border-t border-paper-100 dark:border-cyber-700/50 flex gap-2 overflow-x-auto no-scrollbar">
+                                        {Object.keys(tool.parameters?.properties || tool.inputSchema?.properties || {}).map(prop => (
+                                            <span key={prop} className="text-[10px] font-mono text-slate-400 px-1.5 py-0.5 rounded border border-paper-200 dark:border-cyber-600">
+                                                {prop}
+                                            </span>
+                                        ))}
+                                   </div>
+                               </div>
+                           ))}
+                       </div>
+                   )}
+
+                   {/* Test Playground Area */}
+                   {testTool && (
+                       <div className="mt-auto border-t-2 border-paper-200 dark:border-cyber-700 pt-4 animate-slideUp">
+                           <div className="flex justify-between items-center mb-2">
+                               <h4 className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                                   <Terminal size={14} /> Test: {testTool}
+                               </h4>
+                               <button onClick={() => setTestTool(null)} className="text-slate-400 hover:text-slate-600"><X size={14} /></button>
+                           </div>
+                           
+                           <div className="flex gap-2 mb-2">
+                               <input 
+                                  type="text" 
+                                  value={testPrompt}
+                                  onChange={(e) => setTestPrompt(e.target.value)}
+                                  className="flex-1 px-2 py-1.5 rounded bg-white dark:bg-cyber-900 border border-paper-300 dark:border-cyber-600 text-xs text-slate-800 dark:text-slate-200"
+                                  placeholder="Enter prompt to trigger tool..."
+                               />
+                               <button 
+                                  onClick={runToolTest}
+                                  disabled={isTesting}
+                                  className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded text-xs font-bold disabled:opacity-50"
+                               >
+                                  {isTesting ? '...' : 'Run'}
+                               </button>
+                           </div>
+
+                           <div className="bg-slate-900 rounded-lg p-3 h-32 overflow-y-auto custom-scrollbar font-mono text-[10px] leading-relaxed">
+                               {testLog.length === 0 ? (
+                                   <span className="text-slate-500 italic">Output log...</span>
+                               ) : (
+                                   testLog.map((line, i) => (
+                                       <div key={i} className={line.startsWith('❌') ? 'text-red-400' : line.includes('✅') ? 'text-emerald-400' : 'text-slate-300'}>
+                                           {line}
+                                       </div>
+                                   ))
+                               )}
+                           </div>
+                       </div>
+                   )}
+                </div>
+             </div>
+          )}
+
           {/* Appearance Tab */}
           {activeTab === 'appearance' && (
-            <div className="space-y-6">
+            <div className="space-y-6 max-w-3xl mx-auto">
               <div className="bg-white dark:bg-cyber-800 p-4 rounded-xl border border-paper-200 dark:border-cyber-700 shadow-sm">
                 <div className="flex items-center justify-between mb-3">
                   <div>
@@ -396,7 +591,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
         </div>
 
         {/* Footer */}
-        {activeTab === 'ai' || activeTab === 'prompts' ? (
+        {activeTab === 'ai' || activeTab === 'prompts' || activeTab === 'mcp' ? (
           <div className="p-4 border-t border-paper-200 dark:border-cyber-700 flex justify-end gap-3 bg-paper-50 dark:bg-cyber-800/50 flex-shrink-0">
              <button onClick={onClose} className="px-4 py-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-paper-200 dark:hover:bg-cyber-700">{t.cancel}</button>
              <button onClick={handleSubmit} className="flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-cyan-500 to-violet-500 text-white rounded-lg shadow-lg hover:shadow-cyan-500/25">

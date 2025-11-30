@@ -71,6 +71,7 @@ export interface AIConfig {
   apiKey?: string; 
   temperature: number;
   language: 'en' | 'zh'; // Added language support
+  mcpTools?: string; // JSON string of custom tool definitions
   customPrompts?: {
     polish?: string;
     expand?: string;
@@ -79,9 +80,10 @@ export interface AIConfig {
 
 export interface ChatMessage {
   id: string;
-  role: 'user' | 'assistant' | 'system';
+  role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
   timestamp: number;
+  tool_call_id?: string;
 }
 
 export interface GraphNode {

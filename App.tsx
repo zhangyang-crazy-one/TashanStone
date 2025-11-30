@@ -33,6 +33,7 @@ const DEFAULT_AI_CONFIG: AIConfig = {
   baseUrl: 'http://localhost:11434',
   temperature: 0.7,
   language: 'en',
+  mcpTools: '[]',
   customPrompts: {
     polish: "You are an expert technical editor. Improve the provided Markdown content for clarity, grammar, and flow. Return only the polished Markdown.",
     expand: "You are a creative technical writer. Expand on the provided Markdown content, adding relevant details, examples, or explanations. Return only the expanded Markdown."
@@ -480,6 +481,7 @@ const App: React.FC = () => {
   // --- AI Tool Integration ---
   
   const executeAiTool = async (toolName: string, args: any) => {
+    // 1. Core File System Tools
     if (toolName === 'create_file') {
       const newFile: MarkdownFile = {
         id: generateId(),
@@ -514,7 +516,14 @@ const App: React.FC = () => {
        }
        return { success: false, message: "File not found" };
     }
-    return { success: false, error: "Unknown tool" };
+
+    // 2. MCP Injection Handling
+    // If we reach here, it's an external MCP tool call
+    console.log(`[MCP Injection] External Tool Called: ${toolName}`, args);
+    return { 
+      success: true, 
+      message: `[System] Tool '${toolName}' call captured (MCP Injection Mode). Args: ${JSON.stringify(args)}` 
+    };
   };
 
   const handleChatMessage = async (text: string) => {

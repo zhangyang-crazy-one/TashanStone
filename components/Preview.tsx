@@ -1,62 +1,222 @@
 
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
-import { Check, Copy, FileCode } from 'lucide-react';
+import { Check, Copy, FileCode, Terminal, AlertTriangle, ZoomIn, ZoomOut, Maximize, WrapText, FileJson } from 'lucide-react';
+import mermaid from 'mermaid';
 
+// --- Types ---
 interface PreviewProps {
   content: string;
 }
 
-const PreBlock = ({ children, node, ...props }: any) => {
-  const preRef = useRef<HTMLPreElement>(null);
-  const [copied, setCopied] = useState(false);
+// --- Utils ---
+// Extract text from React children (handles cases where highlighting splits text into spans)
+const extractText = (children: React.ReactNode): string => {
+  if (typeof children === 'string') return children;
+  if (Array.isArray(children)) return children.map(extractText).join('');
+  if (typeof children === 'object' && children !== null && 'props' in children) {
+    return extractText((children as any).props.children);
+  }
+  return '';
+};
 
-  const handleCopy = async () => {
-    if (preRef.current) {
-      const text = preRef.current.textContent;
-      if (text) {
-        try {
-          await navigator.clipboard.writeText(text);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 2000);
-        } catch (err) {
-          console.error("Failed to copy:", err);
-        }
+// --- Sub-Components ---
+
+/**
+ * MermaidRenderer: Handles rendering of embedded Mermaid diagrams
+ * Includes Pan/Zoom and Error Handling
+ */
+const MermaidRenderer = ({ code, isDark }: { code: string, isDark: boolean }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [svg, setSvg] = useState<string>('');
+  const [error, setError] = useState<string | null>(null);
+  const [scale, setScale] = useState(1.0);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const isDragging = useRef(false);
+  const lastPos = useRef({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const render = async () => {
+      if (!code) return;
+      try {
+        setError(null);
+        // Configure Mermaid based on theme
+        mermaid.initialize({
+          startOnLoad: false,
+          theme: isDark ? 'dark' : 'default',
+          securityLevel: 'loose',
+          fontFamily: 'JetBrains Mono, monospace',
+          themeVariables: {
+             darkMode: isDark,
+             background: 'transparent',
+             primaryColor: isDark ? '#06b6d4' : '#0891b2',
+             lineColor: isDark ? '#94a3b8' : '#475569',
+          }
+        });
+
+        const id = `mermaid-embed-${Math.random().toString(36).substr(2, 9)}`;
+        const { svg: generatedSvg } = await mermaid.render(id, code);
+        setSvg(generatedSvg);
+      } catch (err: any) {
+        console.error("Mermaid Render Error:", err);
+        setError(err.message || "Syntax Error");
       }
-    }
+    };
+    render();
+  }, [code, isDark]);
+
+  // Pan/Zoom Logic
+  const handleMouseDown = (e: React.MouseEvent) => {
+    isDragging.current = true;
+    lastPos.current = { x: e.clientX, y: e.clientY };
   };
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging.current) return;
+    const dx = e.clientX - lastPos.current.x;
+    const dy = e.clientY - lastPos.current.y;
+    setPosition(p => ({ x: p.x + dx, y: p.y + dy }));
+    lastPos.current = { x: e.clientX, y: e.clientY };
+  };
+  const handleMouseUp = () => { isDragging.current = false; };
+  const handleReset = () => { setScale(1.0); setPosition({ x: 0, y: 0 }); };
+
+  if (error) {
+    return (
+      <div className="my-4 p-4 rounded-lg bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-300 text-sm font-mono flex gap-3 items-start">
+        <AlertTriangle className="shrink-0 mt-0.5" size={16} />
+        <div>
+          <div className="font-bold mb-1">Mermaid Error</div>
+          <div className="whitespace-pre-wrap opacity-80">{error}</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="relative group my-6">
-      <pre 
-        ref={preRef} 
-        {...props} 
-        className="!my-0"
+    <div className="my-6 relative group border border-paper-200 dark:border-cyber-700 rounded-xl overflow-hidden bg-paper-100 dark:bg-cyber-900/50 h-[400px]">
+      <div 
+        className="w-full h-full cursor-grab active:cursor-grabbing flex items-center justify-center overflow-hidden"
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        ref={containerRef}
       >
-        {children}
-      </pre>
-      <button
-        onClick={handleCopy}
-        className="absolute top-3 right-3 p-1.5 rounded-md bg-paper-100 dark:bg-cyber-800 text-slate-500 hover:text-cyan-600 dark:hover:text-cyan-400 border border-paper-200 dark:border-cyber-600 opacity-0 group-hover:opacity-100 transition-all duration-200 shadow-sm z-10"
-        title="Copy code"
-      >
-        {copied ? <Check size={16} className="text-green-500" /> : <Copy size={16} />}
-      </button>
+        <div 
+          style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`, transition: isDragging.current ? 'none' : 'transform 0.1s' }}
+          dangerouslySetInnerHTML={{ __html: svg }}
+          className="pointer-events-none"
+        />
+      </div>
+      
+      {/* Controls */}
+      <div className="absolute bottom-4 right-4 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+        <button onClick={() => setScale(s => Math.min(5, s + 0.2))} className="p-1.5 bg-white dark:bg-cyber-800 rounded shadow hover:bg-paper-100 dark:hover:bg-cyber-700"><ZoomIn size={16} /></button>
+        <button onClick={handleReset} className="p-1.5 bg-white dark:bg-cyber-800 rounded shadow hover:bg-paper-100 dark:hover:bg-cyber-700"><Maximize size={16} /></button>
+        <button onClick={() => setScale(s => Math.max(0.2, s - 0.2))} className="p-1.5 bg-white dark:bg-cyber-800 rounded shadow hover:bg-paper-100 dark:hover:bg-cyber-700"><ZoomOut size={16} /></button>
+      </div>
+      <div className="absolute top-3 right-3 px-2 py-1 bg-white/80 dark:bg-black/50 backdrop-blur rounded text-[10px] font-bold text-slate-500 tracking-wider border border-black/5 dark:border-white/10">
+        MERMAID
+      </div>
     </div>
   );
 };
+
+/**
+ * EnhancedCodeBlock: Renders code with Header, Copy button, and Wrap toggle
+ */
+const EnhancedCodeBlock = ({ children, className, inline, ...props }: any) => {
+  const [copied, setCopied] = useState(false);
+  const [wrap, setWrap] = useState(false);
+  
+  // Detect Language
+  const match = /language-(\w+)/.exec(className || '');
+  const language = match ? match[1] : 'text';
+  
+  // Detect if Mermaid
+  const isMermaid = language === 'mermaid';
+  const isDark = document.documentElement.classList.contains('dark');
+
+  // Handle Inline Code
+  if (inline) {
+    return (
+      <code className={`${className} bg-paper-200 dark:bg-cyber-800 px-1.5 py-0.5 rounded text-sm text-cyan-700 dark:text-cyan-400 font-mono`} {...props}>
+        {children}
+      </code>
+    );
+  }
+
+  // Handle Mermaid Block
+  if (isMermaid) {
+    const codeText = extractText(children);
+    return <MermaidRenderer code={codeText} isDark={isDark} />;
+  }
+
+  // Handle Standard Code Block
+  const handleCopy = async () => {
+    const text = extractText(children);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) { console.error(err); }
+  };
+
+  return (
+    <div className="my-6 rounded-xl border border-paper-200 dark:border-cyber-700 bg-paper-50 dark:bg-[#0d1117] overflow-hidden shadow-sm group">
+      {/* Code Header */}
+      <div className="flex items-center justify-between px-4 py-2.5 bg-paper-100/50 dark:bg-cyber-800/50 border-b border-paper-200 dark:border-cyber-700 backdrop-blur-sm">
+        <div className="flex items-center gap-3">
+          <div className="flex gap-1.5">
+            <div className="w-3 h-3 rounded-full bg-red-400/80"></div>
+            <div className="w-3 h-3 rounded-full bg-amber-400/80"></div>
+            <div className="w-3 h-3 rounded-full bg-green-400/80"></div>
+          </div>
+          <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider font-mono ml-2">
+            {language}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setWrap(!wrap)}
+            className={`p-1.5 rounded-md transition-all ${wrap ? 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-600 dark:text-cyan-400' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
+            title="Toggle Word Wrap"
+          >
+            <WrapText size={14} />
+          </button>
+          <button
+            onClick={handleCopy}
+            className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium text-slate-500 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-white dark:hover:bg-cyber-700 transition-all border border-transparent hover:border-paper-200 dark:hover:border-cyber-600"
+          >
+            {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
+            <span className={copied ? 'text-green-500' : ''}>{copied ? 'Copied' : 'Copy'}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Code Content */}
+      <div className={`relative p-0 ${wrap ? 'whitespace-pre-wrap break-words' : 'overflow-x-auto'}`}>
+        <pre className={`!m-0 !p-4 !bg-transparent text-sm font-mono leading-relaxed ${wrap ? '!whitespace-pre-wrap' : ''}`} {...props}>
+          <code className={className || 'language-text'}>
+            {children}
+          </code>
+        </pre>
+      </div>
+    </div>
+  );
+};
+
 
 export const Preview: React.FC<PreviewProps> = ({ content }) => {
   const [renderHtml, setRenderHtml] = useState(false);
 
   // Simple heuristic to detect if the content contains HTML tags
   const hasHtml = useMemo(() => {
-    // Matches standard opening tags <tag ...> or self-closing <tag ... /> or closing tags </tag>
     return /<[a-z]+(\s+[^>]*)?\/?>/i.test(content) || /<\/[a-z]+>/i.test(content);
   }, [content]);
 
@@ -65,10 +225,10 @@ export const Preview: React.FC<PreviewProps> = ({ content }) => {
       
       {/* HTML Toggle Header - Only shown if HTML is detected */}
       {hasHtml && (
-         <div className="absolute top-4 right-6 z-20 flex items-center gap-2 bg-white/80 dark:bg-cyber-800/80 backdrop-blur px-3 py-1.5 rounded-full shadow-sm border border-paper-200 dark:border-cyber-700">
+         <div className="absolute top-4 right-6 z-20 flex items-center gap-2 bg-white/90 dark:bg-cyber-800/90 backdrop-blur px-3 py-1.5 rounded-full shadow-sm border border-paper-200 dark:border-cyber-700 animate-fadeIn">
              <FileCode size={14} className="text-cyan-600 dark:text-cyan-400" />
              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 cursor-pointer flex items-center gap-2 select-none">
-                Render HTML in App
+                Render HTML
                 <div className={`w-8 h-4 rounded-full p-0.5 transition-colors duration-200 ${renderHtml ? 'bg-cyan-500' : 'bg-slate-300 dark:bg-slate-600'}`}>
                     <div className={`w-3 h-3 bg-white rounded-full shadow-sm transform transition-transform duration-200 ${renderHtml ? 'translate-x-4' : 'translate-x-0'}`}></div>
                 </div>
@@ -84,22 +244,20 @@ export const Preview: React.FC<PreviewProps> = ({ content }) => {
 
       {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-        {/* 
-          The 'prose' class triggers the Tailwind Typography plugin.
-          Colors are handled via CSS variables configured in index.html.
-        */}
-        <div className="prose prose-lg max-w-none">
+        <div className="prose prose-lg max-w-none dark:prose-invert">
           <ReactMarkdown 
             remarkPlugins={[remarkGfm, remarkMath]} 
             rehypePlugins={[
-              // Render raw HTML if enabled - put before highlight so embedded code blocks work if possible,
-              // though typically highlight runs on code blocks parsed by remark.
-              ...(renderHtml ? [rehypeRaw] : []),
+              // Use rehype-highlight for syntax coloring, but our component handles the wrapper UI
               rehypeHighlight, 
-              rehypeKatex
+              rehypeKatex,
+              ...(renderHtml ? [rehypeRaw] : [])
             ]}
             components={{
-              pre: PreBlock
+              // Override pre to simply pass through children, as our 'code' component handles the block wrapper
+              pre: ({children}) => <>{children}</>,
+              // Custom Code Block Handler
+              code: EnhancedCodeBlock
             }}
           >
             {content}
