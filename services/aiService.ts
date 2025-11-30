@@ -686,7 +686,28 @@ export const generateMindMap = async (content: string, config: AIConfig): Promis
   // Use huge context for Gemini
   const limit = config.provider === 'gemini' ? 2000000 : 15000;
   
-  const prompt = `Create a hierarchical Mermaid.js MindMap syntax. Start with 'mindmap'.\nContent:\n${content.substring(0, limit)}`;
+  const prompt = `Analyze the provided Markdown content. Extract the structure based on Headings (#, ##, ###) and create a deep, hierarchical Mermaid.js mindmap.
+  
+  Rules:
+  1. The root node should be the document title or main topic.
+  2. # Heading 1 becomes a main branch.
+  3. ## Heading 2 becomes a sub-branch of the parent Heading 1.
+  4. ### Heading 3 becomes a sub-branch of Heading 2.
+  5. Use indentation correctly to represent the hierarchy.
+  6. Output strictly valid Mermaid 'mindmap' syntax. Start with 'mindmap' and newline.
+  
+  Example Syntax:
+  mindmap
+    Root
+      Topic A
+        Subtopic A1
+        Subtopic A2
+      Topic B
+        Subtopic B1
+  
+  Content to Analyze:
+  ${content.substring(0, limit)}`;
+
   const result = await generateAIResponse(prompt, config, "You are a Visualization Expert. Output strictly valid Mermaid mindmap syntax.");
   let clean = cleanCodeBlock(result);
   if (clean.toLowerCase().startsWith('mermaid')) clean = clean.split('\n').slice(1).join('\n').trim();

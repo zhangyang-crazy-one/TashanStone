@@ -1,8 +1,9 @@
 
+
 import React, { useEffect, useRef, useState } from 'react';
 import mermaid from 'mermaid';
 import { Theme } from '../types';
-import { ZoomIn, ZoomOut, Maximize, AlertTriangle } from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize, AlertTriangle, Download } from 'lucide-react';
 import { translations, Language } from '../utils/translations';
 
 interface MindMapProps {
@@ -117,6 +118,37 @@ export const MindMap: React.FC<MindMapProps> = ({ content, theme, language = 'en
     }
   };
 
+  const handleDownload = () => {
+    if (!containerRef.current) return;
+    const svgEl = containerRef.current.querySelector('svg');
+    if (!svgEl) return;
+
+    // Serialize SVG
+    const serializer = new XMLSerializer();
+    let source = serializer.serializeToString(svgEl);
+
+    // Add namespaces if missing (required for standalone SVG)
+    if(!source.match(/^<svg[^>]+xmlns="http\:\/\/www\.w3\.org\/2000\/svg"/)){
+        source = source.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
+    }
+    if(!source.match(/^<svg[^>]+xmlns:xlink="http\:\/\/www\.w3\.org\/1999\/xlink"/)){
+        source = source.replace(/^<svg/, '<svg xmlns:xlink="http://www.w3.org/1999/xlink"');
+    }
+
+    // Add XML declaration
+    source = '<?xml version="1.0" standalone="no"?>\r\n' + source;
+
+    // Convert to Blob and download
+    const url = "data:image/svg+xml;charset=utf-8,"+encodeURIComponent(source);
+    
+    const downloadLink = document.createElement("a");
+    downloadLink.href = url;
+    downloadLink.download = "mindmap.svg";
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    document.body.removeChild(downloadLink);
+  };
+
   return (
     <div className="w-full h-full bg-paper-50 dark:bg-cyber-900 overflow-hidden relative group font-mono selection:bg-cyan-500/30">
       {/* Background Grid Pattern */}
@@ -132,6 +164,10 @@ export const MindMap: React.FC<MindMapProps> = ({ content, theme, language = 'en
 
       {/* Controls */}
       <div className="absolute bottom-6 right-6 z-20 flex flex-col gap-2 opacity-50 group-hover:opacity-100 transition-opacity">
+        <button onClick={handleDownload} className="p-2 bg-white dark:bg-cyber-800 rounded-lg shadow-lg border border-paper-200 dark:border-cyber-700 hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200 transition-colors" title="Download SVG">
+            <Download size={20} />
+        </button>
+        <div className="h-px bg-paper-300 dark:bg-cyber-600 my-1"></div>
         <button onClick={() => setScale(s => Math.min(8, s + 0.2))} className="p-2 bg-white dark:bg-cyber-800 rounded-lg shadow-lg border border-paper-200 dark:border-cyber-700 hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200"><ZoomIn size={20} /></button>
         <button onClick={() => { setScale(1.0); setPosition({x:0, y:0}); }} className="p-2 bg-white dark:bg-cyber-800 rounded-lg shadow-lg border border-paper-200 dark:border-cyber-700 hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200"><Maximize size={20} /></button>
         <button onClick={() => setScale(s => Math.max(0.1, s - 0.2))} className="p-2 bg-white dark:bg-cyber-800 rounded-lg shadow-lg border border-paper-200 dark:border-cyber-700 hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200"><ZoomOut size={20} /></button>
