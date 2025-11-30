@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, FunctionDeclaration, Type } from "@google/genai";
-import { AIConfig, MarkdownFile, GraphData, Quiz } from "../types";
+import { AIConfig, MarkdownFile, GraphData, Quiz, QuizQuestion } from "../types";
 
 // Default configuration
 const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
@@ -101,18 +101,56 @@ const cleanCodeBlock = (text: string): string => {
   return cleaned;
 };
 
-// Robust JSON extractor that finds the first '{' and last '}'
+// Robust JSON extractor that finds the first '{' and last '}' OR first '[' and last ']'
 const extractJson = (text: string): string => {
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start !== -1 && end !== -1 && end > start) {
-    return text.substring(start, end + 1);
+  // Try finding object
+  const startObj = text.indexOf('{');
+  const endObj = text.lastIndexOf('}');
+  
+  // Try finding array
+  const startArr = text.indexOf('[');
+  const endArr = text.lastIndexOf(']');
+
+  // Determine which one is the outer container
+  if (startArr !== -1 && (startObj === -1 || startArr < startObj)) {
+     if (endArr !== -1 && endArr > startArr) {
+        return text.substring(startArr, endArr + 1);
+     }
+  }
+
+  if (startObj !== -1 && endObj !== -1 && endObj > startObj) {
+    return text.substring(startObj, endObj + 1);
   }
   return cleanCodeBlock(text);
 };
 
 // Helper for delay
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Helper: Segment Text (Rule 1 & 3)
+const chunkText = (text: string, chunkSize: number = 800, overlap: number = 100): string[] => {
+    const chunks = [];
+    // Clean text slightly
+    const cleanText = text.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n');
+    
+    if (cleanText.length <= chunkSize) return [cleanText];
+    
+    for (let i = 0; i < cleanText.length; i += (chunkSize - overlap)) {
+        let end = Math.min(i + chunkSize, cleanText.length);
+        
+        // Try to break at a sentence or newline if close to end
+        if (end < cleanText.length) {
+            const nextPeriod = cleanText.indexOf('.', end - 50);
+            const nextNewline = cleanText.indexOf('\n', end - 50);
+            if (nextPeriod !== -1 && nextPeriod < end + 50) end = nextPeriod + 1;
+            else if (nextNewline !== -1 && nextNewline < end + 50) end = nextNewline + 1;
+        }
+
+        chunks.push(cleanText.substring(i, end));
+        if (end >= cleanText.length) break;
+    }
+    return chunks;
+};
 
 export const generateAIResponse = async (
   prompt: string, 
@@ -554,109 +592,188 @@ export const generateMindMap = async (content: string, config: AIConfig): Promis
   return clean;
 };
 
+// Helper: Generate questions from chunks (Rule 1: Segment Text)
+const generateQuestionsFromChunks = async (content: string, config: AIConfig, isExamMode: boolean = false): Promise<QuizQuestion[]> => {
+    // Rule 1: Split into chunks (default 800 chars, overlaps 100)
+    // Scale chunk size with content length to prevent too many requests, but keep it dense.
+    const idealChunkSize = Math.max(800, Math.min(2000, Math.ceil(content.length / 15))); 
+    const chunks = chunkText(content, idealChunkSize, 100);
+    
+    // Limit to 15 chunks to avoid API spam/costs, prioritize earlier chunks + some distributed
+    const processingChunks = chunks.slice(0, 15);
+    
+    const langPrompt = config.language === 'zh' 
+       ? "Provide questions and options in Chinese." 
+       : "Provide questions in English.";
+
+    // Rule 4: Role Prompting
+    const systemPrompt = "You are a specific Quiz Designer. For the provided text segment, create 1-3 high-quality multiple choice questions. Focus on facts, definitions, and relationships. Return JSON Array.";
+
+    const questionsPromises = processingChunks.map(async (chunk, index) => {
+        const prompt = `Task: Create questions from this text segment.
+        
+        Text Segment:
+        "${chunk}"
+
+        Rules:
+        1. Create 1-3 questions based ONLY on this text.
+        2. If the text is just metadata or irrelevant, return empty array [].
+        3. ${langPrompt}
+        4. Output format: JSON Array of objects:
+        [
+           {
+             "type": "single",
+             "question": "...",
+             "options": ["A", "B", "C", "D"],
+             "correctAnswer": "Correct Option Text",
+             "explanation": "..."
+           }
+        ]`;
+
+        try {
+            // Add slight jitter to prevent exact simultaneous burst
+            await delay(index * 100); 
+            const jsonStr = await generateAIResponse(prompt, config, systemPrompt, true);
+            const cleaned = extractJson(jsonStr);
+            const parsed = JSON.parse(cleaned);
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (e) {
+            console.warn(`Chunk ${index} generation failed`, e);
+            return [];
+        }
+    });
+
+    const results = await Promise.all(questionsPromises);
+    
+    // Flatten and assign IDs
+    const flatQuestions: QuizQuestion[] = [];
+    results.forEach((batch, batchIdx) => {
+        batch.forEach((q: any, qIdx: number) => {
+            if (q && q.question && q.options) {
+                flatQuestions.push({
+                    id: `gen-q-${batchIdx}-${qIdx}`,
+                    type: q.type || 'single',
+                    question: q.question,
+                    options: q.options,
+                    correctAnswer: q.correctAnswer,
+                    explanation: q.explanation
+                });
+            }
+        });
+    });
+
+    return flatQuestions;
+};
+
 export const extractQuizFromRawContent = async (content: string, config: AIConfig): Promise<Quiz> => {
-   const langPrompt = config.language === 'zh' 
-    ? "IMPORTANT: If generating new content, use Chinese. If extracting, preserve original language." 
-    : "Use English.";
+   // 1. Detect if it's an Exam Paper vs Prose
+   // Look for numbered patterns like "1.", "2.", "Q1", "(1)" occurring frequently
+   const examQuestionPattern = /(?:^|\n)\s*(?:\d+|Q\d+)[.)]/g;
+   const matchCount = (content.match(examQuestionPattern) || []).length;
+   
+   // Heuristic: If we see > 5 numbered items, treat as Exam Extraction Mode (Legacy/Whole Doc)
+   const isLikelyExam = matchCount >= 5;
 
-   const prompt = `Analyze the document content below to create a Quiz JSON.
-   
-   CRITICAL MODE SELECTION:
-   1. **STRICT EXTRACTION MODE** (Priority): If the content looks like a test paper (contains numbered questions "1.", "2.", "Q1", or "Question 1"), you MUST extract EVERY SINGLE QUESTION exactly as written.
-      - **DO NOT SKIP ANY QUESTION**. If the document has 50 questions, your JSON array must have 50 items.
-      - **DO NOT SUMMARIZE**. Use the exact text.
-      - Extract all options (A, B, C, D).
-      - If an answer key is present at the end, map it to 'correctAnswer'.
-   
-   2. **GENERATION MODE**: Only if the content is pure text (notes, articles) with no existing questions, then generate high-quality questions.
-   
-   OUTPUT FORMAT:
-   Return strictly valid JSON matching this schema:
-   {
-    "id": "quiz-extracted-${Date.now()}",
-    "title": "Extracted Exam",
-    "description": "Quiz extracted from uploaded document.",
-    "questions": [
-      {
-        "id": "q1",
-        "type": "single", // 'single', 'multiple', or 'text'
-        "question": "Exact question text?",
-        "options": ["A. ...", "B. ..."], 
-        "correctAnswer": "A", 
-        "explanation": "Extracted or generated explanation."
+   if (isLikelyExam) {
+       console.log("Detected Exam Mode: Extracting existing questions...");
+       const langPrompt = config.language === 'zh' 
+        ? "IMPORTANT: If generating new content, use Chinese. If extracting, preserve original language." 
+        : "Use English.";
+
+       // Greatly increased context limit (approx 100k tokens safe for standard usage)
+       const safeContent = content.substring(0, 500000);
+
+       const prompt = `Analyze the exam document below to extract the Quiz JSON.
+       
+       CRITICAL PRIORITY: **FULL EXTRACTION**
+       
+       1. **FULL EXTRACTION**:
+          - You must extract **EVERY SINGLE QUESTION** found in the text.
+          - **DO NOT SUMMARIZE**.
+          - **Cognitive Correction**: Fix OCR artifacts (e.g. '1' vs 'l'), merge split words.
+          
+       2. **FORMAT HANDLING**:
+          - Detect standard patterns like "1.", "Q1:", "(1)".
+          - Map Answer Key if found.
+
+       OUTPUT FORMAT:
+       Return strictly valid JSON matching this schema:
+       {
+        "id": "quiz-extracted-${Date.now()}",
+        "title": "Extracted Exam",
+        "description": "Quiz extracted from uploaded document.",
+        "questions": [
+          {
+            "id": "q1",
+            "type": "single",
+            "question": "Exact question text",
+            "options": ["A. ...", "B. ..."], 
+            "correctAnswer": "A", 
+            "explanation": "..."
+          }
+        ],
+        "isGraded": false
+       }
+
+       ${langPrompt}
+
+       DOCUMENT CONTENT:
+       ${safeContent}
+       `;
+
+       const systemPrompt = "You are a Strict Exam Parser AI. Extract every question verbatim. Do not summarize.";
+
+       try {
+        const jsonStr = await generateAIResponse(prompt, config, systemPrompt, true);
+        const cleanedJson = extractJson(jsonStr);
+        return JSON.parse(cleanedJson) as Quiz;
+      } catch (e) {
+        console.error("Quiz Extraction Error", e);
+        throw new Error("Failed to process document into a quiz.");
       }
-    ],
-    "isGraded": false
+   } else {
+       console.log("Detected Prose Mode: Generating questions via Chunking...");
+       // 2. Prose Mode: Use Chunking Strategy for high density (Rule 1-5)
+       const questions = await generateQuestionsFromChunks(content, config);
+       
+       if (questions.length === 0) {
+           throw new Error("AI could not generate any questions from this content.");
+       }
+
+       // Generate a Title/Description for the whole set (Quick Call)
+       const metaPrompt = `Generate a short Title and Description for a quiz based on these questions: "${questions.slice(0, 3).map(q=>q.question).join('; ')}..."`;
+       let meta = { title: "Generated Quiz", description: "Quiz generated from document." };
+       try {
+           const metaJson = await generateAIResponse(metaPrompt, config, "Return JSON { title, description }", true);
+           const parsedMeta = JSON.parse(extractJson(metaJson));
+           if(parsedMeta.title) meta = parsedMeta;
+       } catch(e) {}
+
+       return {
+           id: `quiz-gen-${Date.now()}`,
+           title: meta.title,
+           description: meta.description,
+           questions: questions,
+           isGraded: false
+       };
    }
-
-   ${langPrompt}
-
-   DOCUMENT CONTENT:
-   ${content.substring(0, 45000)}
-   `;
-
-   const systemPrompt = "You are an Strict Exam Parser AI. Your highest priority is to count the input questions and ensure the output JSON contains exactly that many questions. Do not drop questions.";
-
-   try {
-    const jsonStr = await generateAIResponse(prompt, config, systemPrompt, true);
-    const cleanedJson = extractJson(jsonStr);
-    return JSON.parse(cleanedJson) as Quiz;
-  } catch (e) {
-    console.error("Quiz Extraction Error", e);
-    throw new Error("Failed to process document into a quiz. The AI response was not valid JSON.");
-  }
 };
 
 export const generateQuiz = async (content: string, config: AIConfig): Promise<Quiz> => {
-  // Strategy: 1 question per 300 words, minimum 3, max 15.
-  const wordCount = content.split(/\s+/).length;
-  // Ensure we get at least 3 questions, and cap at 15
-  const numQuestions = Math.min(15, Math.max(3, Math.ceil(wordCount / 300)));
-  
-  const langPrompt = config.language === 'zh' 
-    ? "Generate the quiz title, description, questions, options, and explanations in Chinese." 
-    : "Generate everything in English.";
+  // Use the robust chunking strategy for generation from editor content as well
+  const questions = await generateQuestionsFromChunks(content, config);
 
-  const prompt = `Based on the provided content, create a comprehensive educational quiz.
-  
-  REQUIREMENTS:
-  - Generate EXACTLY ${numQuestions} questions.
-  - Mix question types: 'single' (multiple choice), 'multiple' (select all), and 'text' (short answer).
-  - Ensure questions cover different parts of the text evenly.
-  - ${langPrompt}
-  - Return strictly valid JSON matching this interface:
-  {
-    "id": "quiz-generated-1",
-    "title": "Topic Title",
-    "description": "Short description of what this quiz covers",
-    "questions": [
-      {
-        "id": "q1",
-        "type": "single",
-        "question": "Question text?",
-        "options": ["Option A", "Option B", "Option C", "Option D"], 
-        "correctAnswer": "Option A", 
-        "explanation": "Detailed explanation of why A is correct."
-      }
-    ],
-    "isGraded": false
+  if (questions.length === 0) {
+      throw new Error("AI could not generate any questions. Content might be too short or unclear.");
   }
 
-  Content:
-  ${content.substring(0, 40000)}
-  `;
-  
-  const systemPrompt = "You are an expert Teacher. Create a challenging and accurate educational quiz in JSON format.";
-  
-  try {
-    const jsonStr = await generateAIResponse(prompt, config, systemPrompt, true);
-    // Use robust extractor
-    const cleanedJson = extractJson(jsonStr);
-    return JSON.parse(cleanedJson) as Quiz;
-  } catch (e) {
-    console.error("Quiz Parsing Error", e);
-    throw new Error("Failed to generate quiz. The AI response was not valid JSON.");
-  }
+  return {
+    id: `quiz-generated-${Date.now()}`,
+    title: "Knowledge Check",
+    description: "Quiz generated from your notes.",
+    questions: questions,
+    isGraded: false
+  };
 };
 
 export const gradeQuizQuestion = async (
@@ -696,4 +813,34 @@ export const gradeQuizQuestion = async (
      console.error("Grading failed", e);
      return { isCorrect: false, explanation: "AI Grading failed to parse response. Please check your network or try again." };
   }
+};
+
+export const generateQuizExplanation = async (
+  question: string,
+  correctAnswer: string,
+  userAnswer: string,
+  context: string,
+  config: AIConfig
+): Promise<string> => {
+  const langPrompt = config.language === 'zh' 
+    ? "IMPORTANT: Provide the explanation in Chinese." 
+    : "Provide the explanation in English.";
+
+  const prompt = `Task: Explain the answer to a multiple choice question.
+  
+  Question: ${question}
+  Correct Answer: ${correctAnswer}
+  User Selected: ${userAnswer}
+  Context: ${context.substring(0, 10000)} ...
+
+  Instructions:
+  1. Explain why the Correct Answer is right.
+  2. If the User Selected a different answer, explain why it is wrong.
+  3. Be concise and educational.
+  4. ${langPrompt}
+  `;
+  
+  const systemPrompt = "You are a helpful Tutor. Provide clear, concise explanations.";
+  
+  return generateAIResponse(prompt, config, systemPrompt);
 };

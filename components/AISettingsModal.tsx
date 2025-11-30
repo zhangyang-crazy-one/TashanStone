@@ -1,7 +1,6 @@
 
-
 import React, { useState, useRef } from 'react';
-import { X, Save, Server, Cpu, Key, Globe, Palette, Upload, Trash2, Check, Download, Plus, Languages, MessageSquare } from 'lucide-react';
+import { X, Save, Server, Cpu, Key, Globe, Palette, Upload, Trash2, Check, Download, Plus, Languages, MessageSquare, ChevronDown } from 'lucide-react';
 import { AIConfig, AppTheme } from '../types';
 import { translations, Language } from '../utils/translations';
 
@@ -19,6 +18,27 @@ interface AISettingsModalProps {
 }
 
 type Tab = 'ai' | 'appearance' | 'prompts';
+
+const RECOMMENDED_MODELS: Record<string, {id: string, name: string}[]> = {
+  gemini: [
+    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (Latest & Fast)' },
+    { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro (Complex Reasoning)' },
+    { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash (Balanced)' },
+  ],
+  openai: [
+    { id: 'gpt-4o', name: 'GPT-4o (Omni)' },
+    { id: 'gpt-4-turbo', name: 'GPT-4 Turbo' },
+    { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo' },
+  ],
+  ollama: [
+    { id: 'llama3', name: 'Llama 3 (Meta)' },
+    { id: 'mistral', name: 'Mistral' },
+    { id: 'gemma', name: 'Gemma (Google)' },
+    { id: 'qwen2', name: 'Qwen 2' },
+    { id: 'deepseek-coder', name: 'DeepSeek Coder' },
+    { id: 'codellama', name: 'Code Llama' },
+  ]
+};
 
 export const AISettingsModal: React.FC<AISettingsModalProps> = ({
   isOpen,
@@ -90,6 +110,8 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
     reader.readAsText(file);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
+
+  const currentModels = RECOMMENDED_MODELS[tempConfig.provider] || [];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
@@ -191,12 +213,35 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
                   {t.modelName}
                 </label>
+                
+                {/* Model Selection Dropdown */}
+                {currentModels.length > 0 && (
+                  <div className="relative">
+                    <select
+                      onChange={(e) => {
+                        if (e.target.value) {
+                           setTempConfig({ ...tempConfig, model: e.target.value });
+                        }
+                      }}
+                      value={currentModels.some(m => m.id === tempConfig.model) ? tempConfig.model : ''}
+                      className="w-full mb-2 px-3 py-2 pl-3 pr-8 rounded-lg bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600 text-slate-800 dark:text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 appearance-none cursor-pointer"
+                    >
+                      <option value="" disabled>Select a recommended model...</option>
+                      {currentModels.map(m => (
+                        <option key={m.id} value={m.id}>{m.name}</option>
+                      ))}
+                      <option value="">Custom (Type below)</option>
+                    </select>
+                    <ChevronDown size={14} className="absolute right-3 top-3 text-slate-400 pointer-events-none" />
+                  </div>
+                )}
+
                 <input
                   type="text"
                   value={tempConfig.model}
                   onChange={(e) => setTempConfig({ ...tempConfig, model: e.target.value })}
                   className="w-full px-3 py-2 rounded-lg bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                  placeholder="gemini-2.5-flash"
+                  placeholder={currentModels.length > 0 ? "Or type custom model ID..." : "e.g. gemini-2.5-flash"}
                 />
               </div>
 

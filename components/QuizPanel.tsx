@@ -1,9 +1,8 @@
 
-
 import React, { useState, useEffect } from 'react';
 import { Quiz, AIConfig, Theme, MistakeRecord } from '../types';
-import { CheckCircle2, XCircle, HelpCircle, Download, BookOpen, AlertTriangle, ArrowRight, ArrowLeft, RotateCcw, BookmarkX, Trash2 } from 'lucide-react';
-import { gradeQuizQuestion } from '../services/aiService';
+import { CheckCircle2, XCircle, HelpCircle, Download, BookOpen, AlertTriangle, ArrowRight, ArrowLeft, RotateCcw, BookmarkX, Trash2, Sparkles, Loader2 } from 'lucide-react';
+import { gradeQuizQuestion, generateQuizExplanation } from '../services/aiService';
 import { translations, Language } from '../utils/translations';
 
 interface QuizPanelProps {
@@ -19,6 +18,7 @@ export const QuizPanel: React.FC<QuizPanelProps> = ({ quiz, aiConfig, theme, onC
   const [currentQuiz, setCurrentQuiz] = useState<Quiz>(quiz);
   const [activeQuestionIdx, setActiveQuestionIdx] = useState(0);
   const [gradingIds, setGradingIds] = useState<string[]>([]);
+  const [explainingIds, setExplainingIds] = useState<string[]>([]);
   
   // Mistake Collection State
   const [showMistakes, setShowMistakes] = useState(false);
@@ -69,40 +69,77 @@ export const QuizPanel: React.FC<QuizPanelProps> = ({ quiz, aiConfig, theme, onC
     setCurrentQuiz({ ...currentQuiz, questions: updatedQuestions });
   };
 
+  // Helper: Smart comparison for multiple choice
+  const isAnswerCorrect = (userAns: string | string[], correctAns: string | string[], options?: string[]): boolean => {
+      // 1. Array comparison (Select All)
+      if (Array.isArray(correctAns)) {
+          if (!Array.isArray(userAns)) return false;
+          const correctSet = new Set(correctAns.map(s => s.trim()));
+          const userSet = new Set(userAns.map(s => s.trim()));
+          return correctSet.size === userSet.size && [...correctSet].every(x => userSet.has(x));
+      }
+
+      // 2. Single value comparison
+      const uStr = (Array.isArray(userAns) ? userAns[0] : userAns || '').trim();
+      const cStr = (correctAns || '').trim();
+      
+      if (uStr === cStr) return true;
+
+      // 3. Letter Matching (e.g. Correct="B", User selected "4" which is the 2nd option)
+      if (options && options.length > 0) {
+          const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+          
+          // Case A: Correct is Letter (B), User is Value (4)
+          // Find index of user selection in options
+          const userIdx = options.indexOf(uStr); // e.g. "4" is at index 1
+          if (userIdx !== -1) {
+              // Check if the letter for this index matches the correct answer
+              if (letters[userIdx] === cStr.toUpperCase()) return true;
+              
+              // Also check if option starts with Letter (e.g. "B. 4")
+              const optWithLetter = options[userIdx];
+              if (optWithLetter.startsWith(cStr + ".") || optWithLetter.startsWith(cStr + " ")) return true;
+          }
+
+          // Case B: Correct is Value (4), User is Letter (B) - unlikely in this UI but safe to add
+          const correctIdx = options.indexOf(cStr);
+          if (correctIdx !== -1 && letters[correctIdx] === uStr.toUpperCase()) return true;
+      }
+
+      // 4. Loose Substring Match (e.g. "A. Paris" vs "Paris")
+      if (uStr && cStr && (uStr.includes(cStr) || cStr.includes(uStr)) && uStr.length > 2) return true;
+
+      return false;
+  };
+
   const checkAnswer = async () => {
     const q = activeQuestion;
     if (!q.userAnswer) return;
 
+    // Logic for Multiple Choice (Deterministic)
     if (q.type !== 'text') {
-      let isCorrect = false;
-      if (Array.isArray(q.correctAnswer)) {
-          const correctSet = new Set(q.correctAnswer);
-          const userVal = Array.isArray(q.userAnswer) ? q.userAnswer : [q.userAnswer];
-          const userSet = new Set(userVal);
-          isCorrect = correctSet.size === userSet.size && [...correctSet].every(x => userSet.has(x));
-      } else {
-          isCorrect = q.correctAnswer === q.userAnswer;
-      }
+      const isCorrect = isAnswerCorrect(q.userAnswer, q.correctAnswer || '', q.options);
       
       const updatedQuestions = [...currentQuiz.questions];
       updatedQuestions[activeQuestionIdx] = { ...q, isCorrect };
-      setCurrentQuiz({ ...currentQuiz, questions: updatedQuestions });
+      setCurrentQuiz(prev => ({ ...prev, questions: updatedQuestions }));
       
-      // Save mistake if incorrect
+      // Auto-save mistake if incorrect (without explanation initially)
       if (!isCorrect) {
           const mistake: MistakeRecord = {
               id: `${currentQuiz.id}-${q.id}-${Date.now()}`,
               question: q.question,
               userAnswer: Array.isArray(q.userAnswer) ? q.userAnswer.join(', ') : q.userAnswer as string,
-              correctAnswer: Array.isArray(q.correctAnswer) ? q.correctAnswer.join(', ') : q.correctAnswer as string,
-              explanation: q.explanation,
+              correctAnswer: Array.isArray(q.correctAnswer) ? q.correctAnswer.join(', ') : (q.correctAnswer || "Unknown"),
+              explanation: q.explanation, // might be undefined
               timestamp: Date.now(),
               quizTitle: currentQuiz.title
           };
           saveMistake(mistake);
       }
-
-    } else {
+    } 
+    // Logic for Text Answers (AI Grading required immediately to determine correctness)
+    else {
       setGradingIds(prev => [...prev, q.id]);
       try {
         const result = await gradeQuizQuestion(q.question, q.userAnswer as string, contextContent, aiConfig);
@@ -113,7 +150,7 @@ export const QuizPanel: React.FC<QuizPanelProps> = ({ quiz, aiConfig, theme, onC
           isCorrect: result.isCorrect, 
           explanation: result.explanation 
         };
-        setCurrentQuiz({ ...currentQuiz, questions: updatedQuestions });
+        setCurrentQuiz(prev => ({ ...prev, questions: updatedQuestions }));
         
         if (!result.isCorrect) {
            const mistake: MistakeRecord = {
@@ -133,6 +170,38 @@ export const QuizPanel: React.FC<QuizPanelProps> = ({ quiz, aiConfig, theme, onC
         setGradingIds(prev => prev.filter(id => id !== q.id));
       }
     }
+  };
+
+  const handleExplain = async () => {
+      const q = activeQuestion;
+      if (!q || explainingIds.includes(q.id)) return;
+
+      setExplainingIds(prev => [...prev, q.id]);
+      try {
+         const explanation = await generateQuizExplanation(
+             q.question, 
+             Array.isArray(q.correctAnswer) ? q.correctAnswer.join(', ') : (q.correctAnswer || "the correct option"), 
+             Array.isArray(q.userAnswer) ? q.userAnswer.join(', ') : (q.userAnswer as string),
+             contextContent,
+             aiConfig
+         );
+
+         const updatedQuestions = [...currentQuiz.questions];
+         updatedQuestions[activeQuestionIdx] = { ...q, explanation };
+         setCurrentQuiz(prev => ({ ...prev, questions: updatedQuestions }));
+
+         // Update mistake record if it exists
+         const existingMistake = savedMistakes.find(m => m.question === q.question);
+         if (existingMistake) {
+             const updatedMistake = { ...existingMistake, explanation };
+             saveMistake(updatedMistake); // overwrite
+         }
+
+      } catch (e) {
+         console.error(e);
+      } finally {
+         setExplainingIds(prev => prev.filter(id => id !== q.id));
+      }
   };
 
   const handleDownload = () => {
@@ -237,6 +306,7 @@ export const QuizPanel: React.FC<QuizPanelProps> = ({ quiz, aiConfig, theme, onC
   }
 
   const isGrading = gradingIds.includes(activeQuestion.id);
+  const isExplaining = explainingIds.includes(activeQuestion.id);
   const isAnswered = activeQuestion.isCorrect !== undefined;
 
   return (
@@ -291,7 +361,8 @@ export const QuizPanel: React.FC<QuizPanelProps> = ({ quiz, aiConfig, theme, onC
                     <div className="space-y-3 pt-4">
                         {(activeQuestion.type === 'single' || activeQuestion.type === 'multiple') && activeQuestion.options?.map((opt, idx) => {
                              const isSelected = activeQuestion.userAnswer === opt;
-                             const isCorrectAnswer = activeQuestion.correctAnswer === opt;
+                             const isCorrectAnswer = isAnswerCorrect(opt, activeQuestion.correctAnswer || '', activeQuestion.options);
+                             
                              let optionClass = "border-paper-200 dark:border-cyber-700 hover:border-cyan-400 dark:hover:border-cyan-500 bg-white dark:bg-cyber-800";
                              
                              if (isSelected) {
@@ -333,13 +404,28 @@ export const QuizPanel: React.FC<QuizPanelProps> = ({ quiz, aiConfig, theme, onC
                     <div className={`p-4 rounded-xl border ${activeQuestion.isCorrect ? 'bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-900' : 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-900'} animate-fadeIn`}>
                         <div className="flex items-start gap-3">
                             {activeQuestion.isCorrect ? <CheckCircle2 className="text-green-500 mt-1" /> : <XCircle className="text-red-500 mt-1" />}
-                            <div>
+                            <div className="flex-1">
                                 <h4 className={`font-bold ${activeQuestion.isCorrect ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}>
                                     {activeQuestion.isCorrect ? t.correct : t.incorrect}
                                 </h4>
-                                <p className="text-slate-600 dark:text-slate-300 mt-1">
-                                    {activeQuestion.explanation || "No explanation provided."}
-                                </p>
+                                
+                                {activeQuestion.explanation ? (
+                                    <p className="text-slate-600 dark:text-slate-300 mt-2 text-sm leading-relaxed">
+                                        <span className="font-bold opacity-70">Explanation: </span>
+                                        {activeQuestion.explanation}
+                                    </p>
+                                ) : (
+                                    <div className="mt-3">
+                                        <button 
+                                            onClick={handleExplain}
+                                            disabled={isExplaining}
+                                            className="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-cyber-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-violet-600 dark:text-violet-400 hover:border-violet-400 hover:shadow-sm transition-all"
+                                        >
+                                            {isExplaining ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                                            {isExplaining ? "AI is thinking..." : "Ask AI for Explanation"}
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>

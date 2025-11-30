@@ -4,9 +4,29 @@ import React, { forwardRef } from 'react';
 interface EditorProps {
   content: string;
   onChange: (value: string) => void;
+  onUndo?: () => void;
+  onRedo?: () => void;
 }
 
-export const Editor = forwardRef<HTMLTextAreaElement, EditorProps>(({ content, onChange }, ref) => {
+export const Editor = forwardRef<HTMLTextAreaElement, EditorProps>(({ content, onChange, onUndo, onRedo }, ref) => {
+  
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Check for Ctrl/Cmd
+    if (e.ctrlKey || e.metaKey) {
+      if (e.key === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          onRedo?.();
+        } else {
+          onUndo?.();
+        }
+      } else if (e.key === 'y') {
+        e.preventDefault();
+        onRedo?.();
+      }
+    }
+  };
+
   return (
     <div className="h-full w-full bg-paper-100 dark:bg-cyber-800 relative group transition-colors duration-300">
       <textarea
@@ -14,6 +34,7 @@ export const Editor = forwardRef<HTMLTextAreaElement, EditorProps>(({ content, o
         className="w-full h-full p-8 bg-transparent text-slate-800 dark:text-slate-300 font-mono text-sm leading-relaxed resize-none focus:outline-none focus:ring-0 custom-scrollbar selection:bg-cyan-200 dark:selection:bg-cyber-500/30 placeholder-slate-400 dark:placeholder-slate-600"
         value={content}
         onChange={(e) => onChange(e.target.value)}
+        onKeyDown={handleKeyDown}
         placeholder="Type some cool markdown here..."
         spellCheck={false}
       />

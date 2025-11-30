@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Toolbar } from './components/Toolbar';
 import { Editor } from './components/Editor';
@@ -39,6 +38,11 @@ const DEFAULT_AI_CONFIG: AIConfig = {
     expand: "You are a creative technical writer. Expand on the provided Markdown content, adding relevant details, examples, or explanations. Return only the expanded Markdown."
   }
 };
+
+interface FileHistory {
+  past: string[];
+  future: string[];
+}
 
 const App: React.FC = () => {
   // --- Theme State ---
@@ -89,9 +93,15 @@ const App: React.FC = () => {
       const saved = localStorage.getItem('neon-files');
       if (saved) {
         const parsed = JSON.parse(saved);
-        return Array.isArray(parsed) && parsed.length > 0 ? parsed : [DEFAULT_FILE];
+        // Robust sanitization to prevent crashes
+        if (Array.isArray(parsed)) {
+          const validFiles = parsed.filter(f => f && typeof f === 'object' && f.id && f.name);
+          if (validFiles.length > 0) return validFiles;
+        }
       }
-    } catch (e) { return [DEFAULT_FILE]; }
+    } catch (e) { 
+      console.error("Failed to load files from storage, using default", e);
+    }
     return [DEFAULT_FILE];
   });
   
@@ -102,13 +112,18 @@ const App: React.FC = () => {
 
   const activeFile = files.find(f => f.id === activeFileId) || files[0] || DEFAULT_FILE;
 
+  // --- Undo/Redo State ---
+  const [history, setHistory] = useState<Record<string, FileHistory>>({});
+  const lastEditTimeRef = useRef<number>(0);
+  const HISTORY_DEBOUNCE = 1000; // ms
+  const MAX_HISTORY = 50;
+
   // --- Feature State ---
   const [aiConfig, setAiConfig] = useState<AIConfig>(() => {
     try {
       const saved = localStorage.getItem('neon-ai-config');
       if (saved) {
         const parsed = JSON.parse(saved);
-        // Merge with default to ensure new fields like customPrompts exist if loading old config
         return { 
           ...DEFAULT_AI_CONFIG, 
           ...parsed,
@@ -121,6 +136,7 @@ const App: React.FC = () => {
 
   const [graphData, setGraphData] = useState<GraphData>({ nodes: [], links: [] });
   const [currentQuiz, setCurrentQuiz] = useState<Quiz | null>(null);
+  const [quizContext, setQuizContext] = useState<string>(''); // Stores raw text for quiz generation context
   const [mindMapContent, setMindMapContent] = useState<string>('');
 
   // Chat History (Persistent)
@@ -165,7 +181,6 @@ const App: React.FC = () => {
   useEffect(() => {
     const autoSave = async () => {
       // 1. Save to LocalStorage (Backup)
-      // We strip the handle because it is not serializable
       const filesToSave = filesRef.current.map(f => ({
         ...f,
         handle: undefined
@@ -174,7 +189,6 @@ const App: React.FC = () => {
       localStorage.setItem('neon-active-id', activeFileIdRef.current);
 
       // 2. Save Active File to Disk (if local and has handle)
-      // We only save the active file to avoid performance issues with iterating thousands of files
       const activeId = activeFileIdRef.current;
       const currentActive = filesRef.current.find(f => f.id === activeId);
 
@@ -213,42 +227,109 @@ const App: React.FC = () => {
     if (activeFileId === id) setActiveFileId(newFiles[0].id);
   };
 
-  const updateActiveFile = (content: string) => {
+  const updateActiveFile = (content: string, skipHistory = false) => {
+    // History Logic
+    if (!skipHistory) {
+      const now = Date.now();
+      // If significant time passed or explicit action, snapshot BEFORE update
+      if (now - lastEditTimeRef.current > HISTORY_DEBOUNCE) {
+         setHistory(prev => {
+           const fileHist = prev[activeFileId] || { past: [], future: [] };
+           const newPast = [...fileHist.past, activeFile.content];
+           if (newPast.length > MAX_HISTORY) newPast.shift();
+           
+           return {
+             ...prev,
+             [activeFileId]: {
+               past: newPast,
+               future: [] // New typing clears future
+             }
+           };
+         });
+      }
+      lastEditTimeRef.current = now;
+    }
+
     const updated = files.map(f => 
       f.id === activeFileId ? { ...f, content, lastModified: Date.now() } : f
     );
     setFiles(updated);
-    // Note: We removed the immediate saveFileToDisk call here to improve performance.
-    // The auto-save interval above handles disk writes every 30s.
+  };
+
+  const handleUndo = () => {
+    const fileHist = history[activeFileId];
+    if (!fileHist || fileHist.past.length === 0) return;
+
+    const previous = fileHist.past[fileHist.past.length - 1];
+    const newPast = fileHist.past.slice(0, -1);
+    const newFuture = [activeFile.content, ...fileHist.future];
+
+    setHistory(prev => ({
+      ...prev,
+      [activeFileId]: {
+        past: newPast,
+        future: newFuture
+      }
+    }));
+
+    updateActiveFile(previous, true); // Skip adding this revert to history stack normally
+  };
+
+  const handleRedo = () => {
+    const fileHist = history[activeFileId];
+    if (!fileHist || fileHist.future.length === 0) return;
+
+    const next = fileHist.future[0];
+    const newFuture = fileHist.future.slice(1);
+    const newPast = [...fileHist.past, activeFile.content];
+
+    setHistory(prev => ({
+      ...prev,
+      [activeFileId]: {
+        past: newPast,
+        future: newFuture
+      }
+    }));
+
+    updateActiveFile(next, true);
+  };
+
+  // Helper to force save history explicitly (e.g. before AI modification)
+  const saveSnapshot = () => {
+    setHistory(prev => {
+      const fileHist = prev[activeFileId] || { past: [], future: [] };
+      return {
+        ...prev,
+        [activeFileId]: {
+          past: [...fileHist.past, activeFile.content],
+          future: []
+        }
+      };
+    });
+    // Reset timer so we don't double save if user types immediately
+    lastEditTimeRef.current = Date.now();
   };
 
   const renameActiveFile = (newName: string) => {
     setFiles(prevFiles => prevFiles.map(f => {
       if (f.id === activeFileId) {
-         // Logic to preserve extension and update path correctly
          const oldPath = f.path || f.name;
-         // Split path by slash
          const pathParts = oldPath.replace(/\\/g, '/').split('/');
          const oldNameWithExt = pathParts[pathParts.length - 1];
          
-         // Extract extension from old name
          const lastDotIndex = oldNameWithExt.lastIndexOf('.');
          const ext = lastDotIndex !== -1 ? oldNameWithExt.substring(lastDotIndex) : '';
          
-         // If newName doesn't have an extension, append the original one
          let finalName = newName;
          if (ext && !finalName.toLowerCase().endsWith(ext.toLowerCase())) {
-             // Basic check: if user didn't type any dot, append ext.
              if (finalName.indexOf('.') === -1) {
                  finalName += ext;
              }
          }
          
-         // Update the filename in the path array
          pathParts[pathParts.length - 1] = finalName;
          const newPath = pathParts.join('/');
          
-         // Update display name (remove extension for UI if consistent with file service)
          const nameForDisplay = finalName.includes('.') ? finalName.substring(0, finalName.lastIndexOf('.')) : finalName;
          
          return { ...f, name: nameForDisplay, path: newPath };
@@ -283,7 +364,6 @@ const App: React.FC = () => {
         const file = fileList[i];
         if (isExtensionSupported(file.name)) {
            const content = await extractTextFromFile(file);
-           // Ensure webkitRelativePath is used for nesting
            const path = file.webkitRelativePath || file.name;
            
            newFiles.push({
@@ -335,28 +415,29 @@ const App: React.FC = () => {
   const handleImportQuiz = async (file: File) => {
     setAiState({ isThinking: true, message: t.processingFile, error: null });
     try {
-      // 0. Try CSV Parser first if CSV
+      // 1. Try structured CSV import
       if (file.name.toLowerCase().endsWith('.csv')) {
          const csvQuiz = await parseCsvToQuiz(file);
          if (csvQuiz) {
+             const textContent = await extractTextFromFile(file, aiConfig.apiKey);
+             setQuizContext(textContent); // Store raw CSV text as context for AI explanation
              setCurrentQuiz(csvQuiz);
              setViewMode(ViewMode.Quiz);
              showToast(t.importSuccess);
              setAiState(prev => ({ ...prev, isThinking: false, message: null }));
              return;
          }
-         // If CSV parsing returned null (non-standard), fall through to AI
+         console.log("CSV structured parse failed, falling back to AI extraction");
       }
 
-      // 1. Extract Text
+      // 2. Fallback: Extract raw text for AI processing
       const textContent = await extractTextFromFile(file, aiConfig.apiKey);
+      setQuizContext(textContent); // Store extracted text as context
       
       setAiState({ isThinking: true, message: t.analyzingQuiz, error: null });
       
-      // 2. Process with AI to get Quiz JSON
       const quiz = await extractQuizFromRawContent(textContent, aiConfig);
       
-      // 3. Set Quiz State
       setCurrentQuiz(quiz);
       setViewMode(ViewMode.Quiz);
       showToast(t.importSuccess);
@@ -386,6 +467,7 @@ const App: React.FC = () => {
     setAiState({ isThinking: true, message: "Creating Quiz...", error: null });
     try {
       const quiz = await generateQuiz(activeFile.content, aiConfig);
+      setQuizContext(activeFile.content); // Store current file as context
       setCurrentQuiz(quiz);
       setViewMode(ViewMode.Quiz);
     } catch (e: any) {
@@ -468,7 +550,7 @@ const App: React.FC = () => {
   const currentThemeObj = themes.find(t => t.id === activeThemeId) || themes[0];
 
   return (
-    <div className="flex h-screen bg-paper-50 dark:bg-cyber-900 text-slate-800 dark:text-slate-200 overflow-hidden transition-colors duration-300">
+    <div className="flex w-full h-screen bg-paper-50 dark:bg-cyber-900 text-slate-800 dark:text-slate-200 overflow-hidden transition-colors duration-300">
       
       <Sidebar 
         files={files}
@@ -493,6 +575,7 @@ const App: React.FC = () => {
           onExport={() => {/* Existing export logic */}}
           onAIPolish={async () => {
              try {
+                saveSnapshot(); // Save current state before AI polish
                 setAiState({ isThinking: true, message: "Polishing...", error: null });
                 const res = await polishContent(activeFile.content, aiConfig);
                 updateActiveFile(res);
@@ -502,6 +585,7 @@ const App: React.FC = () => {
           }}
           onAIExpand={async () => {
               try {
+                saveSnapshot(); // Save current state before AI expand
                 setAiState({ isThinking: true, message: "Expanding...", error: null });
                 const res = await expandContent(activeFile.content, aiConfig);
                 updateActiveFile(res);
@@ -533,6 +617,8 @@ const App: React.FC = () => {
           onGenerateQuiz={handleGenerateQuiz}
           onFormatBold={() => { /* ... */ }}
           onFormatItalic={() => { /* ... */ }}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
           isAIThinking={aiState.isThinking}
           theme={currentThemeObj?.type || 'dark'}
           toggleTheme={toggleTheme}
@@ -561,7 +647,7 @@ const App: React.FC = () => {
               aiConfig={aiConfig} 
               theme={currentThemeObj?.type || 'dark'} 
               onClose={() => setViewMode(ViewMode.Editor)}
-              contextContent={activeFile.content}
+              contextContent={quizContext || activeFile.content}
               language={lang}
             />
           )}
@@ -572,7 +658,13 @@ const App: React.FC = () => {
 
           {(viewMode === ViewMode.Editor || viewMode === ViewMode.Split) && (
              <div className={`${viewMode === ViewMode.Split ? 'w-1/2' : 'w-full'} h-full border-r border-paper-200 dark:border-cyber-700`}>
-                <Editor ref={editorRef} content={activeFile?.content || ''} onChange={updateActiveFile} />
+                <Editor 
+                  ref={editorRef} 
+                  content={activeFile?.content || ''} 
+                  onChange={updateActiveFile}
+                  onUndo={handleUndo}
+                  onRedo={handleRedo}
+                />
              </div>
           )}
           

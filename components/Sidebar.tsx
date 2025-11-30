@@ -3,7 +3,8 @@ import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react'
 import { 
   FileText, Plus, Trash2, FolderOpen, Search, X, FolderInput, 
   FileType, List, AlignLeft, ChevronRight, GraduationCap, 
-  Folder, FileCode, FileImage, FileJson, FileSpreadsheet, File as FileIcon 
+  Folder, FileCode, FileImage, FileJson, FileSpreadsheet, File as FileIcon,
+  Lock
 } from 'lucide-react';
 import { MarkdownFile } from '../types';
 import { translations, Language } from '../utils/translations';
@@ -47,8 +48,20 @@ interface FlatNode extends FileTreeNode {
     hasChildren?: boolean;
 }
 
+// Config: Extensions to Display in Sidebar
+const DISPLAY_EXTENSIONS = ['.md', '.markdown', '.csv', '.pdf', '.docx', '.doc', '.txt'];
+
+// Config: Extensions that can be Operated On (Selected/Edited)
+const OPERABLE_EXTENSIONS = ['.md', '.markdown', '.csv', '.txt'];
+
+const isExtensionInList = (filename: string, list: string[]) => {
+    if (!filename) return false;
+    const lower = filename.toLowerCase();
+    return list.some(ext => lower.endsWith(ext));
+};
+
 const getIconForFile = (name: string) => {
-    const lower = name.toLowerCase();
+    const lower = name?.toLowerCase() || '';
     
     // Markdown
     if (lower.endsWith('.md')) return <FileText size={14} className="text-cyan-500" />;
@@ -64,6 +77,7 @@ const getIconForFile = (name: string) => {
     // Data & Docs
     if (lower.endsWith('.csv')) return <FileSpreadsheet size={14} className="text-emerald-500" />;
     if (lower.endsWith('.pdf')) return <FileType size={14} className="text-red-500" />;
+    if (lower.endsWith('.docx') || lower.endsWith('.doc')) return <FileType size={14} className="text-blue-600" />;
     
     // Images
     if (['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp'].some(ext => lower.endsWith(ext))) {
@@ -106,16 +120,20 @@ const FileTreeRow = React.memo<{
     }
 
     const isActive = activeFileId === node.fileId;
+    const isOperable = isExtensionInList(node.name, OPERABLE_EXTENSIONS);
+
     return (
         <div 
            className={`
-             group flex items-center gap-2 py-1.5 pr-2 cursor-pointer transition-colors relative select-none
+             group flex items-center gap-2 py-1.5 pr-2 transition-colors relative select-none
              ${isActive 
                ? 'bg-cyan-50 dark:bg-cyan-900/20 text-cyan-800 dark:text-cyan-200' 
                : 'text-slate-600 dark:text-slate-400 hover:bg-paper-200 dark:hover:bg-cyber-800'}
+             ${!isOperable ? 'opacity-60 cursor-default' : 'cursor-pointer'}
            `}
            style={indentStyle}
-           onClick={() => onSelect(node.fileId!)}
+           onClick={() => isOperable && onSelect(node.fileId!)}
+           title={!isOperable ? "Read Only / Extraction Source" : node.name}
         >
            {/* Indent Guide */}
            {node.level > 0 && <div className="absolute left-0 top-0 bottom-0 border-l border-paper-200 dark:border-cyber-800" style={{ left: `${node.level * 12 + 4}px` }} />}
@@ -126,13 +144,17 @@ const FileTreeRow = React.memo<{
            <span className="opacity-80 shrink-0">{getIconForFile(node.name)}</span>
            <span className="text-sm truncate flex-1 leading-none pt-0.5">{node.name}</span>
            
-           <button
-            onClick={(e) => { e.stopPropagation(); onDelete(node.fileId!); }}
-            className="p-1 opacity-0 group-hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-500 rounded transition-all shrink-0"
-            title="Delete File"
-           >
-             <Trash2 size={12} />
-           </button>
+           {!isOperable && <Lock size={10} className="text-slate-400" />}
+
+           {isOperable && (
+               <button
+                onClick={(e) => { e.stopPropagation(); onDelete(node.fileId!); }}
+                className="p-1 opacity-0 group-hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-500 rounded transition-all shrink-0"
+                title="Delete File"
+               >
+                 <Trash2 size={12} />
+               </button>
+           )}
         </div>
     );
 });
@@ -154,7 +176,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [activeTab, setActiveTab] = useState<'files' | 'outline'>('files');
   const [outline, setOutline] = useState<OutlineItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
+  
+  // Persist expanded state to localStorage
+  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('neon-sidebar-expanded');
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      console.warn("Failed to load sidebar state", e);
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('neon-sidebar-expanded', JSON.stringify(expandedFolders));
+    } catch (e) {
+      console.error("Failed to save sidebar state", e);
+    }
+  }, [expandedFolders]);
 
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const dirInputRef = useRef<HTMLInputElement>(null);
@@ -167,17 +207,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   // 1. Structure Hash: Create a stable dependency key for tree building
   const filesStructureHash = useMemo(() => {
-     return files.map(f => `${f.id}|${f.path || f.name}`).join(';');
+     if (!files || !Array.isArray(files)) return "";
+     return files
+        .filter(f => isExtensionInList(f.path || f.name, DISPLAY_EXTENSIONS))
+        .map(f => `${f.id}|${f.path || f.name}`)
+        .join(';');
   }, [files]);
   
   // 2. Build Tree Structure (Hierarchical)
   const fileTree = useMemo(() => {
-    // Access files from ref to avoid re-running useMemo on content change (files prop changes ref on every edit)
-    const currentFiles = filesRef.current;
+    const currentFiles = filesRef.current || [];
     const rootNodes: FileTreeNode[] = [];
     const pathMap = new Map<string, FileTreeNode>();
 
-    currentFiles.forEach(file => {
+    // 1. Filter Files
+    const visibleFiles = currentFiles.filter(f => 
+        f && (f.path || f.name) && isExtensionInList(f.path || f.name, DISPLAY_EXTENSIONS)
+    );
+
+    // 2. Build Nodes
+    visibleFiles.forEach(file => {
         const rawPath = file.path || file.name;
         const normalizedPath = rawPath.replace(/\\/g, '/');
         const parts = normalizedPath.split('/').filter(p => p);
@@ -189,37 +238,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
             const parentPath = currentPath; 
             currentPath = currentPath ? `${currentPath}/${part}` : part;
 
-            if (pathMap.has(currentPath)) {
-                return;
-            }
+            // Find or Create Node
+            let node = pathMap.get(currentPath);
 
-            const newNode: FileTreeNode = {
-                id: isFile ? file.id : `folder-${currentPath}`,
-                name: part,
-                path: currentPath,
-                type: isFile ? 'file' : 'folder',
-                fileId: isFile ? file.id : undefined,
-                children: isFile ? undefined : []
-            };
+            if (!node) {
+                node = {
+                    id: isFile ? file.id : `folder-${currentPath}`,
+                    name: part,
+                    path: currentPath,
+                    type: isFile ? 'file' : 'folder',
+                    fileId: isFile ? file.id : undefined,
+                    children: isFile ? undefined : []
+                };
+                pathMap.set(currentPath, node);
 
-            pathMap.set(currentPath, newNode);
-
-            if (parentPath) {
-                const parent = pathMap.get(parentPath);
-                // Robustness check: Ensure parent exists AND is a folder (has children array)
-                if (parent && parent.children) {
-                    parent.children.push(newNode);
+                // Attach to Parent or Root
+                if (parentPath) {
+                    const parent = pathMap.get(parentPath);
+                    if (parent && parent.children) {
+                        parent.children.push(node);
+                    } else {
+                        rootNodes.push(node);
+                    }
                 } else {
-                    // Fallback: If parent is missing or is a file (path collision), push to root to prevent data loss/crash
-                    rootNodes.push(newNode);
+                    rootNodes.push(node);
                 }
-            } else {
-                rootNodes.push(newNode);
             }
         });
     });
 
-    // Sort function: Folders first, then Alphabetical
+    // 3. Sort Nodes Recursively
     const sortNodes = (nodes: FileTreeNode[]): FileTreeNode[] => {
         return nodes.sort((a, b) => {
             if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
@@ -238,8 +286,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // Auto-expand to active file
   useEffect(() => {
     const activeFile = files.find(f => f.id === activeFileId);
-    if (activeFile && activeFile.path) {
-         const parts = activeFile.path.replace(/\\/g, '/').split('/');
+    if (activeFile && (activeFile.path || activeFile.name)) {
+         const rawPath = activeFile.path || activeFile.name;
+         const parts = rawPath.replace(/\\/g, '/').split('/');
          if (parts.length > 1) {
              setExpandedFolders(prev => {
                  const next = { ...prev };
@@ -260,7 +309,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     
     // Also update outline
     if (activeFile) {
-      const lines = activeFile.content.split('\n');
+      const lines = (activeFile.content || '').split('\n');
       const headers: OutlineItem[] = [];
       lines.forEach((line, index) => {
         const match = line.match(/^(#{1,6})\s+(.+)$/);
@@ -284,6 +333,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   // 3. Flatten Tree for Rendering
   const visibleFlatNodes = useMemo(() => {
+      if (!fileTree) return [];
       const flatList: FlatNode[] = [];
       
       const traverse = (nodes: FileTreeNode[], level: number) => {
@@ -308,7 +358,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           }
       };
       
-      // Filter Logic
+      // Filter Logic for Search
       const getFilteredNodes = (nodes: FileTreeNode[]): FileTreeNode[] => {
           if (!searchQuery) return nodes;
           const result: FileTreeNode[] = [];
@@ -386,6 +436,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </button>
         </div>
 
+        {/* Search Bar Fixed Position - Only show when Files tab is active */}
+        {activeTab === 'files' && (
+            <div className="p-3 border-b border-paper-200 dark:border-cyber-700 bg-white dark:bg-cyber-900 shrink-0">
+               <div className="relative">
+                   <input 
+                     type="text" 
+                     placeholder="Search files..." 
+                     value={searchQuery}
+                     onChange={(e) => setSearchQuery(e.target.value)}
+                     className="w-full pl-8 pr-8 py-1.5 bg-paper-100 dark:bg-cyber-800 border border-paper-200 dark:border-cyber-700 rounded text-xs focus:outline-none focus:border-cyan-500 transition-colors"
+                   />
+                   <Search size={12} className="absolute left-2.5 top-2.5 text-slate-400" />
+                   {searchQuery && (
+                       <button onClick={() => setSearchQuery('')} className="absolute right-2 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                           <X size={12} />
+                       </button>
+                   )}
+               </div>
+            </div>
+        )}
+
         {/* Content */}
         <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2">
           
@@ -414,23 +485,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                <input type="file" accept=".pdf" ref={pdfInputRef} className="hidden" onChange={handlePdfUpload} />
                <input type="file" accept=".csv,.pdf,.md,.txt,.docx,.doc" ref={quizInputRef} className="hidden" onChange={handleQuizUpload} />
                <input type="file" ref={dirInputRef} className="hidden" onChange={handleDirUpload} multiple {...({ webkitdirectory: "", directory: "" } as any)} />
-
-               {/* Search */}
-               <div className="relative mb-2">
-                   <input 
-                     type="text" 
-                     placeholder="Search files..." 
-                     value={searchQuery}
-                     onChange={(e) => setSearchQuery(e.target.value)}
-                     className="w-full pl-8 pr-2 py-1.5 bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-700 rounded text-xs focus:outline-none focus:border-cyan-500 transition-colors"
-                   />
-                   <Search size={12} className="absolute left-2.5 top-2 text-slate-400" />
-                   {searchQuery && (
-                       <button onClick={() => setSearchQuery('')} className="absolute right-2 top-2 text-slate-400 hover:text-slate-600">
-                           <X size={12} />
-                       </button>
-                   )}
-               </div>
 
                {/* Tree */}
                <div className="pb-10">
@@ -470,7 +524,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         const elements = document.querySelectorAll(`h${item.level}`);
                         if(elements.length > 0) elements[Math.min(idx, elements.length-1)]?.scrollIntoView({behavior: 'smooth'});
                     }}
-                    className="w-full text-left py-1 px-2 rounded hover:bg-paper-200 dark:hover:bg-cyber-800 text-slate-600 dark:text-slate-300 transition-colors flex items-center gap-2 group"
+                    className="w-full text-left py-1 px-2 rounded hover:bg-paper-200 dark:bg-cyber-800 text-slate-600 dark:text-slate-300 transition-colors flex items-center gap-2 group"
                     style={{ paddingLeft: `${(item.level - 1) * 12 + 4}px` }}
                   >
                     <span className="text-[10px] opacity-30 font-mono group-hover:opacity-100 transition-opacity">H{item.level}</span>

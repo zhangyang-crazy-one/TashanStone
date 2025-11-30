@@ -21,7 +21,9 @@ import {
   Bold,
   Italic,
   BrainCircuit,
-  GraduationCap
+  GraduationCap,
+  Undo,
+  Redo
 } from 'lucide-react';
 import { ViewMode, Theme, AIProvider } from '../types';
 import { translations, Language } from '../utils/translations';
@@ -39,6 +41,8 @@ interface ToolbarProps {
   onGenerateQuiz: () => void;
   onFormatBold: () => void;
   onFormatItalic: () => void;
+  onUndo?: () => void;
+  onRedo?: () => void;
   isAIThinking: boolean;
   theme: Theme;
   toggleTheme: () => void;
@@ -64,6 +68,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onGenerateQuiz,
   onFormatBold,
   onFormatItalic,
+  onUndo,
+  onRedo,
   isAIThinking,
   theme,
   toggleTheme,
@@ -102,6 +108,24 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       </div>
 
       <div className="flex items-center gap-2 sm:gap-4">
+        {/* Undo/Redo Controls */}
+        <div className="flex bg-paper-100 dark:bg-cyber-800 rounded-lg p-1 border border-paper-200 dark:border-cyber-700 transition-colors hidden sm:flex">
+          <button
+            onClick={onUndo}
+            className="p-2 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all hover:bg-white dark:hover:bg-cyber-700"
+            title="Undo (Ctrl+Z)"
+          >
+            <Undo size={18} />
+          </button>
+          <button
+            onClick={onRedo}
+            className="p-2 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all hover:bg-white dark:hover:bg-cyber-700"
+            title="Redo (Ctrl+Y)"
+          >
+            <Redo size={18} />
+          </button>
+        </div>
+
         {/* Formatting Controls */}
         <div className="flex bg-paper-100 dark:bg-cyber-800 rounded-lg p-1 border border-paper-200 dark:border-cyber-700 transition-colors hidden sm:flex">
           <button
