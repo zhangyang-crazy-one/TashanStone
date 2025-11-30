@@ -1,6 +1,5 @@
 
 
-
 import React, { useState, useRef, useMemo } from 'react';
 import { X, Save, Server, Cpu, Key, Globe, Palette, Upload, Trash2, Check, Download, Plus, Languages, MessageSquare, ChevronDown, Wrench, AlertTriangle, Play, Terminal, Code2, Box } from 'lucide-react';
 import { AIConfig, AppTheme } from '../types';
@@ -24,9 +23,8 @@ type Tab = 'ai' | 'appearance' | 'prompts' | 'mcp';
 
 const RECOMMENDED_MODELS: Record<string, {id: string, name: string}[]> = {
   gemini: [
-    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (Latest & Fast)' },
-    { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro (Complex Reasoning)' },
-    { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash (Balanced)' },
+    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (General Purpose)' },
+    { id: 'gemini-3-pro-preview', name: 'Gemini 3.0 Pro Preview (Complex Reasoning)' },
   ],
   openai: [
     { id: 'gpt-4o', name: 'GPT-4o (Omni)' },
@@ -40,6 +38,23 @@ const RECOMMENDED_MODELS: Record<string, {id: string, name: string}[]> = {
     { id: 'qwen2', name: 'Qwen 2' },
     { id: 'deepseek-coder', name: 'DeepSeek Coder' },
     { id: 'codellama', name: 'Code Llama' },
+  ]
+};
+
+const RECOMMENDED_EMBEDDING_MODELS: Record<string, {id: string, name: string}[]> = {
+  gemini: [
+    { id: 'text-embedding-004', name: 'Text Embedding 004' },
+  ],
+  openai: [
+    { id: 'text-embedding-3-small', name: 'Text Embedding 3 Small' },
+    { id: 'text-embedding-3-large', name: 'Text Embedding 3 Large' },
+    { id: 'text-embedding-ada-002', name: 'Ada 002 (Legacy)' },
+  ],
+  ollama: [
+    { id: 'nomic-embed-text', name: 'Nomic Embed Text' },
+    { id: 'mxbai-embed-large', name: 'MxBai Embed Large' },
+    { id: 'all-minilm', name: 'All MiniLM' },
+    { id: 'llama3', name: 'Llama 3 (Use Chat Model)' },
   ]
 };
 
@@ -176,6 +191,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
   };
 
   const currentModels = RECOMMENDED_MODELS[tempConfig.provider] || [];
+  const currentEmbeddingModels = RECOMMENDED_EMBEDDING_MODELS[tempConfig.provider] || [];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
@@ -224,7 +240,6 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
           {/* AI Settings Tab */}
           {activeTab === 'ai' && (
             <form onSubmit={handleSubmit} className="space-y-5 max-w-2xl mx-auto">
-              {/* (Existing AI settings code omitted for brevity but preserved in output) */}
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
                    <Languages size={16} />
@@ -300,9 +315,10 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                 </div>
               )}
 
+              {/* Chat Model Selection */}
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  {t.modelName}
+                  {t.modelName} (Chat)
                 </label>
                 {currentModels.length > 0 && (
                   <div className="relative">
@@ -328,6 +344,37 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                   placeholder={currentModels.length > 0 ? "Or type custom model ID..." : "e.g. gemini-2.5-flash"}
                 />
               </div>
+
+               {/* Embedding Model Selection */}
+               <div className="space-y-2 animate-fadeIn">
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                  Embedding Model (RAG)
+                </label>
+                {currentEmbeddingModels.length > 0 && (
+                  <div className="relative">
+                    <select
+                      onChange={(e) => { if (e.target.value) setTempConfig({ ...tempConfig, embeddingModel: e.target.value }); }}
+                      value={currentEmbeddingModels.some(m => m.id === tempConfig.embeddingModel) ? tempConfig.embeddingModel : ''}
+                      className="w-full mb-2 px-3 py-2 pl-3 pr-8 rounded-lg bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600 text-slate-800 dark:text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 appearance-none cursor-pointer"
+                    >
+                      <option value="" disabled>Select a recommended embedding model...</option>
+                      {currentEmbeddingModels.map(m => (
+                        <option key={m.id} value={m.id}>{m.name}</option>
+                      ))}
+                      <option value="">Custom (Type below)</option>
+                    </select>
+                    <ChevronDown size={14} className="absolute right-3 top-3 text-slate-400 pointer-events-none" />
+                  </div>
+                )}
+                <input
+                  type="text"
+                  value={tempConfig.embeddingModel || ''}
+                  onChange={(e) => setTempConfig({ ...tempConfig, embeddingModel: e.target.value })}
+                  className="w-full px-3 py-2 rounded-lg bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  placeholder="e.g. text-embedding-004"
+                />
+              </div>
+
               {(tempConfig.provider !== 'gemini') && (
                 <div className="space-y-2 animate-fadeIn">
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">

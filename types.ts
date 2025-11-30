@@ -46,6 +46,10 @@ export interface ThemeColors {
   '--neutral-700': string;
   '--neutral-800': string; // Used for text in light mode
   '--neutral-900': string;
+
+  // Font Configuration (Optional)
+  '--font-primary'?: string; 
+  '--font-header'?: string;
 }
 
 export interface AppTheme {
@@ -67,6 +71,7 @@ export type AIProvider = 'gemini' | 'ollama' | 'openai';
 export interface AIConfig {
   provider: AIProvider;
   model: string;
+  embeddingModel?: string; // Added embedding model selection
   baseUrl?: string; 
   apiKey?: string; 
   temperature: number;
@@ -134,4 +139,11 @@ export interface MistakeRecord {
   explanation?: string;
   timestamp: number;
   quizTitle?: string;
+}
+
+export interface RAGStats {
+  totalFiles: number;
+  indexedFiles: number;
+  totalChunks: number;
+  isIndexing: boolean;
 }

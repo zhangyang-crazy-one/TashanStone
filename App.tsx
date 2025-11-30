@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Toolbar } from './components/Toolbar';
 import { Editor } from './components/Editor';
@@ -10,10 +9,11 @@ import { AISettingsModal } from './components/AISettingsModal';
 import { KnowledgeGraph } from './components/KnowledgeGraph';
 import { QuizPanel } from './components/QuizPanel';
 import { MindMap } from './components/MindMap';
-import { ViewMode, AIState, MarkdownFile, AIConfig, ChatMessage, GraphData, AppTheme, Quiz } from './types';
+import { ViewMode, AIState, MarkdownFile, AIConfig, ChatMessage, GraphData, AppTheme, Quiz, RAGStats } from './types';
 import { polishContent, expandContent, generateAIResponse, generateKnowledgeGraph, synthesizeKnowledgeBase, generateQuiz, generateMindMap, extractQuizFromRawContent } from './services/aiService';
 import { applyTheme, getAllThemes, getSavedThemeId, saveCustomTheme, deleteCustomTheme, DEFAULT_THEMES, getLastUsedThemeIdForMode } from './services/themeService';
 import { readDirectory, saveFileToDisk, processPdfFile, extractTextFromFile, parseCsvToQuiz, isExtensionSupported } from './services/fileService';
+import { VectorStore } from './services/ragService';
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
 import { translations, Language } from './utils/translations';
 
@@ -32,6 +32,7 @@ const DEFAULT_FILE: MarkdownFile = {
 const DEFAULT_AI_CONFIG: AIConfig = {
   provider: 'gemini', 
   model: 'gemini-2.5-flash',
+  embeddingModel: 'text-embedding-004',
   baseUrl: 'http://localhost:11434',
   temperature: 0.7,
   language: 'en',
@@ -157,11 +158,15 @@ const App: React.FC = () => {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [aiState, setAiState] = useState<AIState>({ isThinking: false, error: null, message: null });
+  const [ragStats, setRagStats] = useState<RAGStats>({ totalFiles: 0, indexedFiles: 0, totalChunks: 0, isIndexing: false });
 
   // Refs
   const filesRef = useRef(files);
   const activeFileIdRef = useRef(activeFileId);
   const editorRef = useRef<HTMLTextAreaElement>(null);
+  
+  // RAG Service
+  const [vectorStore] = useState(() => new VectorStore());
 
   // Localization
   const lang: Language = aiConfig.language === 'zh' ? 'zh' : 'en';
@@ -171,6 +176,21 @@ const App: React.FC = () => {
     filesRef.current = files;
     activeFileIdRef.current = activeFileId;
   }, [files, activeFileId]);
+  
+  // Update RAG stats whenever files change (only total count)
+  useEffect(() => {
+     // Filter out .keep files and empty files from stats
+     const validFiles = files.filter(f => !f.name.endsWith('.keep') && f.content.trim().length > 0);
+     const indexedCount = vectorStore.getStats().indexedFiles;
+     const totalChunks = vectorStore.getStats().totalChunks;
+     
+     setRagStats(prev => ({
+         ...prev,
+         totalFiles: validFiles.length,
+         indexedFiles: indexedCount,
+         totalChunks: totalChunks
+     }));
+  }, [files, vectorStore]);
 
   // Persist Data
   useEffect(() => {
@@ -212,16 +232,99 @@ const App: React.FC = () => {
 
   // --- Handlers ---
 
-  const handleCreateFile = () => {
-    const newFile: MarkdownFile = {
-      id: generateId(),
-      name: `Untitled-${files.length + 1}`,
-      content: '',
-      lastModified: Date.now(),
-      path: `Untitled-${files.length + 1}.md`
-    };
-    setFiles([...files, newFile]);
-    setActiveFileId(newFile.id);
+  const handleCreateItem = (type: 'file' | 'folder', name: string, parentPath: string = '') => {
+    const sanitizedName = name.replace(/[\\/:*?"<>|]/g, '-');
+    let finalPath = parentPath ? `${parentPath}/${sanitizedName}` : sanitizedName;
+    
+    // Check for duplicates
+    if (files.some(f => (f.path || f.name) === finalPath || (f.path || f.name) === `${finalPath}.md`)) {
+        showToast("An item with this name already exists", true);
+        return;
+    }
+
+    const newFileId = generateId();
+
+    if (type === 'folder') {
+        // Create a hidden .keep file to persist the folder in our path-based system
+        const folderKeeper: MarkdownFile = {
+            id: newFileId,
+            name: '.keep',
+            content: '',
+            lastModified: Date.now(),
+            path: `${finalPath}/.keep`
+        };
+        setFiles(prev => [...prev, folderKeeper]);
+        showToast(`Folder '${sanitizedName}' created`);
+    } else {
+        // Handle File creation
+        if (!finalPath.toLowerCase().endsWith('.md')) {
+            finalPath += '.md';
+        }
+        
+        const newFile: MarkdownFile = {
+            id: newFileId,
+            name: sanitizedName,
+            content: '',
+            lastModified: Date.now(),
+            path: finalPath
+        };
+        setFiles(prev => [...prev, newFile]);
+        setActiveFileId(newFile.id);
+        showToast(`File '${sanitizedName}' created`);
+    }
+  };
+
+  const handleMoveItem = (sourceId: string, targetFolderPath: string | null) => {
+    // 1. Find Source
+    const sourceFile = files.find(f => f.id === sourceId);
+    if (!sourceFile) return;
+
+    const sourcePath = sourceFile.path || sourceFile.name;
+    const isFolder = sourceFile.name === '.keep'; 
+    
+    // If it's a folder, the actual "path" of the folder is the parent directory of the .keep file
+    const actualSourcePath = isFolder ? sourcePath.substring(0, sourcePath.lastIndexOf('/')) : sourcePath;
+    const sourceName = isFolder ? actualSourcePath.split('/').pop() : sourceFile.name;
+    
+    // 2. Validate Target
+    // Prevent moving folder into itself or its own children
+    if (isFolder && targetFolderPath) {
+        if (targetFolderPath === actualSourcePath || targetFolderPath.startsWith(actualSourcePath + '/')) {
+            showToast("Cannot move folder into itself", true);
+            return;
+        }
+    }
+    
+    // 3. Calculate New Paths
+    const newFiles = files.map(f => {
+        const currentPath = f.path || f.name;
+
+        // Logic for moving a specific File
+        if (!isFolder && f.id === sourceId) {
+             const fileName = currentPath.split('/').pop();
+             const newPath = targetFolderPath ? `${targetFolderPath}/${fileName}` : fileName;
+             // Check if file already exists at dest
+             if (files.some(ex => (ex.path || ex.name) === newPath && ex.id !== sourceId)) {
+                 showToast("File with same name exists in destination", true);
+                 return f; // Cancel for this file
+             }
+             return { ...f, path: newPath! };
+        }
+
+        // Logic for moving a Folder (Recursive rename of all children)
+        if (isFolder && currentPath.startsWith(actualSourcePath!)) {
+            // Replace the old prefix with the new prefix
+            // Old: Parent/OldFolder/...
+            // New: NewParent/OldFolder/...
+            const relativePath = currentPath.substring(actualSourcePath!.length);
+            const newRootPath = targetFolderPath ? `${targetFolderPath}/${sourceName}` : sourceName;
+            return { ...f, path: newRootPath + relativePath };
+        }
+
+        return f;
+    });
+    
+    setFiles(newFiles);
   };
 
   const handleDeleteFile = (id: string) => {
@@ -344,6 +447,42 @@ const App: React.FC = () => {
 
   // --- New Features ---
 
+  const handleIndexKnowledgeBase = async (forceList?: MarkdownFile[]) => {
+    if (ragStats.isIndexing) return;
+    
+    // Use provided list or fallback to current state ref (to avoid stale closures)
+    const targetFiles = forceList || filesRef.current;
+    
+    // Filter out .keep files and empty files before indexing
+    const validFiles = targetFiles.filter(f => !f.name.endsWith('.keep') && f.content.trim().length > 0);
+    
+    setRagStats(prev => ({ ...prev, isIndexing: true, totalFiles: validFiles.length }));
+    
+    // Cap at 20 files for now for demo robustness
+    const filesToIndex = validFiles.slice(0, 20); 
+    
+    try {
+        for (const file of filesToIndex) {
+            // Only valid text files
+            if (file.content && file.content.length > 0) {
+                // We pass config to indexFile because it needs API key/URL
+                await vectorStore.indexFile(file, aiConfig);
+                // Live update stats
+                setRagStats(prev => ({ 
+                    ...prev,
+                    totalFiles: validFiles.length,
+                    indexedFiles: vectorStore.getStats().indexedFiles, 
+                    totalChunks: vectorStore.getStats().totalChunks
+                }));
+            }
+        }
+    } catch (e) {
+        console.error("Indexing error", e);
+    } finally {
+        setRagStats(prev => ({ ...prev, isIndexing: false }));
+    }
+  };
+
   const handleOpenFolder = async () => {
     if (!('showDirectoryPicker' in window)) {
       throw new Error("Directory Picker not supported");
@@ -367,8 +506,14 @@ const App: React.FC = () => {
       for (let i = 0; i < fileList.length; i++) {
         const file = fileList[i];
         if (isExtensionSupported(file.name)) {
-           const content = await extractTextFromFile(file);
-           const path = file.webkitRelativePath || file.name;
+           // Pass API Key to allow PDF OCR if needed
+           const content = await extractTextFromFile(file, aiConfig.apiKey);
+           
+           let path = file.webkitRelativePath || file.name;
+           // Intelligent extension renaming for converted files
+           if (path.match(/\.(pdf|docx|doc)$/i)) {
+               path = path.replace(/\.(pdf|docx|doc)$/i, '.md');
+           }
            
            newFiles.push({
              id: generateId() + '-' + i,
@@ -382,9 +527,15 @@ const App: React.FC = () => {
       }
       
       if (newFiles.length > 0) {
-        setFiles(newFiles);
+        setFiles(prev => [...prev, ...newFiles]); // Append new files instead of replacing
         setActiveFileId(newFiles[0].id);
         showToast(`${t.filesLoaded}: ${newFiles.length}`);
+        
+        // Automatically trigger indexing for new files
+        // We pass the merged list (current + new) to the indexer
+        setTimeout(() => {
+           handleIndexKnowledgeBase([...filesRef.current, ...newFiles]);
+        }, 500);
       } else {
         showToast(t.noFilesFound);
       }
@@ -409,6 +560,11 @@ const App: React.FC = () => {
       setFiles(prev => [...prev, newFile]);
       setActiveFileId(newFile.id);
       showToast(t.importSuccess);
+      
+      // Auto-index
+      setTimeout(() => {
+         handleIndexKnowledgeBase([...filesRef.current, newFile]);
+      }, 500);
     } catch (e: any) {
       showToast(`${t.importFail}: ${e.message}`, true);
     } finally {
@@ -499,6 +655,30 @@ const App: React.FC = () => {
     }
   };
 
+  const handleTextFormat = (startTag: string, endTag: string) => {
+      const textarea = editorRef.current;
+      if (!textarea) return;
+      
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const content = activeFile.content;
+      
+      const selectedText = content.substring(start, end);
+      const newText = `${startTag}${selectedText}${endTag}`;
+      
+      const newContent = content.substring(0, start) + newText + content.substring(end);
+      
+      updateActiveFile(newContent);
+      
+      // We need to wait for React to re-render with the new content before setting selection
+      setTimeout(() => {
+          if (editorRef.current) {
+              editorRef.current.focus();
+              editorRef.current.setSelectionRange(start + startTag.length, end + startTag.length);
+          }
+      }, 0);
+  };
+
   // --- AI Tool Integration ---
   
   const executeAiTool = async (toolName: string, args: any) => {
@@ -550,16 +730,29 @@ const App: React.FC = () => {
   const handleChatMessage = async (text: string) => {
     const userMsg: ChatMessage = { id: generateId(), role: 'user', content: text, timestamp: Date.now() };
     setChatMessages(prev => [...prev, userMsg]);
-    setAiState({ isThinking: true, message: null, error: null });
+    
+    // RAG Logic: Check if files need indexing
+    setAiState({ isThinking: true, message: "Indexing Knowledge Base...", error: null });
+    
+    // Ensure index is up to date (Just In Time)
+    await handleIndexKnowledgeBase();
+    
+    // Perform Search
+    setAiState({ isThinking: true, message: "Searching Knowledge Base...", error: null });
+    
+    const relevantContext = await vectorStore.search(text, aiConfig);
+    
+    setAiState({ isThinking: true, message: "Thinking...", error: null });
 
     try {
       const response = await generateAIResponse(
         text, 
         aiConfig, 
-        "You are NeonMark AI. You can edit files using tools. If asked about user's notes, use the provided Context.",
+        "You are NeonMark AI. You can edit files using tools. If asked about user's notes, use the provided Knowledge Base context.",
         false,
-        files,
-        executeAiTool
+        [], // No raw files passed, strictly RAG
+        executeAiTool,
+        relevantContext // Pass retrieved chunks
       );
       
       const botMsg: ChatMessage = { id: generateId(), role: 'assistant', content: response, timestamp: Date.now() };
@@ -586,8 +779,9 @@ const App: React.FC = () => {
         files={files}
         activeFileId={activeFileId}
         onSelectFile={setActiveFileId}
-        onCreateFile={handleCreateFile}
+        onCreateItem={handleCreateItem}
         onDeleteFile={handleDeleteFile}
+        onMoveItem={handleMoveItem}
         isOpen={isSidebarOpen}
         onCloseMobile={() => setIsSidebarOpen(false)}
         onOpenFolder={handleOpenFolder}
@@ -595,6 +789,8 @@ const App: React.FC = () => {
         onImportPdf={handleImportPdf}
         onImportQuiz={handleImportQuiz}
         language={lang}
+        ragStats={ragStats}
+        onRefreshIndex={() => handleIndexKnowledgeBase()}
       />
 
       <div className="flex-1 flex flex-col h-full overflow-hidden relative">
@@ -645,8 +841,8 @@ const App: React.FC = () => {
           }}
           onGenerateMindMap={handleGenerateMindMap}
           onGenerateQuiz={handleGenerateQuiz}
-          onFormatBold={() => { /* ... */ }}
-          onFormatItalic={() => { /* ... */ }}
+          onFormatBold={() => handleTextFormat('**', '**')}
+          onFormatItalic={() => handleTextFormat('*', '*')}
           onUndo={handleUndo}
           onRedo={handleRedo}
           isAIThinking={aiState.isThinking}
@@ -665,6 +861,7 @@ const App: React.FC = () => {
           
           {viewMode === ViewMode.Graph && (
             <KnowledgeGraph 
+              key={activeThemeId}
               data={graphData} 
               theme={currentThemeObj?.type || 'dark'} 
               onNodeClick={(id) => showToast(`Selected: ${id}`)} 
@@ -683,7 +880,12 @@ const App: React.FC = () => {
           )}
 
           {viewMode === ViewMode.MindMap && (
-            <MindMap content={mindMapContent} theme={currentThemeObj?.type || 'dark'} language={lang} />
+            <MindMap 
+              key={activeThemeId}
+              content={mindMapContent} 
+              theme={currentThemeObj?.type || 'dark'} 
+              language={lang} 
+            />
           )}
 
           {(viewMode === ViewMode.Editor || viewMode === ViewMode.Split) && (

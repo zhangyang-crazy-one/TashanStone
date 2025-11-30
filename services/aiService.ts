@@ -313,29 +313,109 @@ const chunkText = (text: string, chunkSize: number = 800, overlap: number = 100)
     return chunks;
 };
 
+// --- EMBEDDING SUPPORT ---
+
+export const getEmbedding = async (text: string, config: AIConfig): Promise<number[]> => {
+    const cleanText = text.replace(/\n/g, ' ').trim().substring(0, 8000); // Truncate safe limit
+
+    if (config.provider === 'gemini') {
+        try {
+            const client = getClient(config.apiKey);
+            const modelName = config.embeddingModel || 'text-embedding-004';
+            const result = await client.models.embedContent({
+                model: modelName,
+                contents: [{ parts: [{ text: cleanText }] }]
+            });
+            return result.embeddings?.[0]?.values || [];
+        } catch (e: any) {
+            console.error("Gemini Embedding Error", e);
+            throw new Error(`Embedding Failed: ${e.message}`);
+        }
+    } else if (config.provider === 'openai') {
+        try {
+            const modelName = config.embeddingModel || 'text-embedding-3-small';
+            const response = await fetch(`${(config.baseUrl || 'https://api.openai.com/v1').replace(/\/$/, '')}/embeddings`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${config.apiKey}`
+                },
+                body: JSON.stringify({
+                    input: cleanText,
+                    model: modelName
+                })
+            });
+            if (!response.ok) throw new Error(response.statusText);
+            const data = await response.json();
+            return data.data[0].embedding;
+        } catch (e: any) {
+            console.error("OpenAI Embedding Error", e);
+            throw e;
+        }
+    } else if (config.provider === 'ollama') {
+        try {
+            const modelName = config.embeddingModel || 'nomic-embed-text';
+            const response = await fetch(`${(config.baseUrl || 'http://localhost:11434').replace(/\/$/, '')}/api/embeddings`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: modelName,
+                    prompt: cleanText
+                })
+            });
+            
+            if (!response.ok) {
+                 // Fallback to generative model if dedicated embedder missing (or configured one fails)
+                 // Only try fallback if the user hasn't explicitly set a different model that failed
+                 if (modelName !== config.model) {
+                     const responseFallback = await fetch(`${(config.baseUrl || 'http://localhost:11434').replace(/\/$/, '')}/api/embeddings`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            model: config.model,
+                            prompt: cleanText
+                        })
+                    });
+                    if (!responseFallback.ok) throw new Error("Ollama Embedding Failed");
+                    const data = await responseFallback.json();
+                    return data.embedding;
+                 } else {
+                     throw new Error(`Ollama Embedding Failed: ${response.statusText}`);
+                 }
+            }
+            const data = await response.json();
+            return data.embedding;
+        } catch (e: any) {
+             console.error("Ollama Embedding Error", e);
+             throw e;
+        }
+    }
+    
+    return [];
+};
+
 export const generateAIResponse = async (
   prompt: string, 
   config: AIConfig, 
   systemInstruction?: string,
   jsonMode: boolean = false,
   contextFiles: MarkdownFile[] = [],
-  toolsCallback?: (toolName: string, args: any) => Promise<any>
+  toolsCallback?: (toolName: string, args: any) => Promise<any>,
+  retrievedContext?: string // New: Accept pre-retrieved RAG context string
 ): Promise<string> => {
   
-  // RAG: Inject context from files
+  // RAG: Inject context
   let fullPrompt = prompt;
-  if (contextFiles.length > 0) {
-    // Dynamic context limit: Gemini supports massive context (1M+ tokens), enabling "all files" cognition.
-    // Default to ~2M chars (approx 500k tokens) for Gemini, safer 30k for others.
+  
+  // Strategy: Use retrievedContext if provided (High Quality RAG), 
+  // otherwise fallback to raw concatenation of contextFiles (Legacy/Small context)
+  if (retrievedContext) {
+      fullPrompt = `You are answering based on the provided Knowledge Base.\n\nrelevant_context:\n${retrievedContext}\n\nuser_query: ${prompt}`;
+  } else if (contextFiles.length > 0) {
+    // Dynamic context limit for legacy mode
     const charLimit = config.provider === 'gemini' ? 2000000 : 30000;
-    
     const contextStr = contextFiles.map(f => `--- File: ${f.name} ---\n${f.content}`).join('\n\n');
     const truncatedContext = contextStr.substring(0, charLimit); 
-    
-    if (truncatedContext.length < contextStr.length) {
-       console.log(`Context truncated to ${charLimit} characters.`);
-    }
-
     fullPrompt = `Context from user knowledge base:\n${truncatedContext}\n\nUser Query: ${prompt}`;
   }
   
@@ -361,8 +441,6 @@ export const generateAIResponse = async (
   
   // IMPORTANT: Conflicting Config Handling
   // If JSON Mode is enabled, we CANNOT use Function Calling tools in Gemini (API Error 400).
-  // So we disable tools if jsonMode is true.
-  // We only pass the callback if we actually want tools to be registered and usable.
   const shouldEnableTools = !jsonMode && (!!toolsCallback || (mcpClient.getTools().length > 0));
   const callbackToPass = shouldEnableTools ? unifiedToolCallback : undefined;
 
@@ -395,7 +473,6 @@ const callGemini = async (
 
     if (jsonMode) {
       generateConfig.responseMimeType = 'application/json';
-      // When responseMimeType is application/json, tools must NOT be set to avoid INVALID_ARGUMENT error
     }
 
     // Handle Web Search (Gemini only)
@@ -686,29 +763,36 @@ export const generateMindMap = async (content: string, config: AIConfig): Promis
   // Use huge context for Gemini
   const limit = config.provider === 'gemini' ? 2000000 : 15000;
   
-  const prompt = `Analyze the provided Markdown content. Extract the structure based on Headings (#, ##, ###) and create a deep, hierarchical Mermaid.js mindmap.
+  const prompt = `Analyze the provided Markdown content and generate a deep, hierarchical Mind Map using Mermaid.js syntax.
+
+  STRICT VISUAL & STRUCTURAL RULES:
+  1. Root Node: Use double parentheses ((ROOT_TOPIC)) to render it as a Circle.
+  2. ALL Child Nodes: MUST use double parentheses ((Topic Name)) to render them as Circles/Bubbles. This creates the requested "Bubble Map" style.
+  3. Hierarchy:
+     - Use indentation (2 spaces) to represent depth.
+     - Group related concepts under common parents.
+     - LIMIT IMMEDIATE CHILDREN to 5-7 per node to prevent overcrowding.
   
-  Rules:
-  1. The root node should be the document title or main topic.
-  2. # Heading 1 becomes a main branch.
-  3. ## Heading 2 becomes a sub-branch of the parent Heading 1.
-  4. ### Heading 3 becomes a sub-branch of Heading 2.
-  5. Use indentation correctly to represent the hierarchy.
-  6. Output strictly valid Mermaid 'mindmap' syntax. Start with 'mindmap' and newline.
-  
-  Example Syntax:
+  CRITICAL SYNTAX SAFETY:
+  - Keep labels EXTREMELY concise (max 2-4 words). This is crucial to prevent overlaps.
+  - Remove all parentheses '()' inside the node text. They break the syntax.
+  - Remove all hash symbols '#' inside the node text.
+  - Remove all colons ':' inside the node text.
+  - Do NOT use internal Markdown formatting like **bold** or *italic* inside the labels.
+
+  Example Syntax (Bubble Style):
   mindmap
-    Root
-      Topic A
-        Subtopic A1
-        Subtopic A2
-      Topic B
-        Subtopic B1
+    ((Central Topic))
+      ((Main Branch A))
+        ((Sub item A1))
+        ((Sub item A2))
+      ((Main Branch B))
+        ((Sub item B1))
   
   Content to Analyze:
   ${content.substring(0, limit)}`;
 
-  const result = await generateAIResponse(prompt, config, "You are a Visualization Expert. Output strictly valid Mermaid mindmap syntax.");
+  const result = await generateAIResponse(prompt, config, "You are a Visualization Expert. Output strictly valid Mermaid mindmap syntax. Ensure no nested parentheses in labels.");
   let clean = cleanCodeBlock(result);
   if (clean.toLowerCase().startsWith('mermaid')) clean = clean.split('\n').slice(1).join('\n').trim();
   if (!clean.toLowerCase().startsWith('mindmap')) clean = 'mindmap\n' + clean;

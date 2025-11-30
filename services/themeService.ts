@@ -1,4 +1,5 @@
 
+
 import { AppTheme } from '../types';
 
 export const DEFAULT_THEMES: AppTheme[] = [
@@ -20,13 +21,16 @@ export const DEFAULT_THEMES: AppTheme[] = [
       '--neutral-50': '248 250 252',
       '--neutral-100': '241 245 249',
       '--neutral-200': '226 232 240',
-      '--neutral-300': '203 213 225', // slate-300 (Dark Mode Text)
+      '--neutral-300': '203 213 225', 
       '--neutral-400': '148 163 184',
       '--neutral-500': '100 116 139',
       '--neutral-600': '71 85 105',
       '--neutral-700': '51 65 85',
-      '--neutral-800': '30 41 59',    // slate-800 (Light Mode Text)
+      '--neutral-800': '30 41 59',    
       '--neutral-900': '15 23 42',
+
+      '--font-primary': '"Inter", sans-serif',
+      '--font-header': '"Inter", sans-serif',
     }
   },
   {
@@ -54,6 +58,39 @@ export const DEFAULT_THEMES: AppTheme[] = [
       '--neutral-700': '51 65 85',
       '--neutral-800': '30 41 59',
       '--neutral-900': '15 23 42',
+      
+      '--font-primary': '"Inter", sans-serif',
+      '--font-header': '"Inter", sans-serif',
+    }
+  },
+  {
+    id: 'sketch-notebook',
+    name: 'Sketchbook',
+    type: 'light',
+    colors: {
+      '--bg-main': '253 251 247',    // Cream paper
+      '--bg-panel': '255 255 255',   // White overlay
+      '--bg-element': '245 242 235', // Slightly darker cream
+      '--border-main': '229 221 208', // sketch line color
+      '--text-primary': '43 43 43',   // Ink Black/Grey
+      '--text-secondary': '85 85 85', // Pencil Grey
+      '--primary-500': '59 130 246',  // Blue Pen
+      '--primary-600': '37 99 235',   // Darker Blue Pen
+      '--secondary-500': '245 158 11', // Highlighter Orange/Yellow
+
+      '--neutral-50': '253 251 247',
+      '--neutral-100': '255 255 255',
+      '--neutral-200': '245 242 235',
+      '--neutral-300': '156 163 175',
+      '--neutral-400': '107 114 128',
+      '--neutral-500': '75 85 99',
+      '--neutral-600': '55 65 81',
+      '--neutral-700': '43 43 43',
+      '--neutral-800': '43 43 43',    
+      '--neutral-900': '17 24 39',
+
+      '--font-primary': '"Patrick Hand", "Long Cang", "KaiTi", cursive',
+      '--font-header': '"Permanent Marker", "Ma Shan Zheng", "KaiTi", cursive',
     }
   },
   {
@@ -81,6 +118,9 @@ export const DEFAULT_THEMES: AppTheme[] = [
       '--neutral-700': '40 42 54',
       '--neutral-800': '40 42 54',
       '--neutral-900': '25 25 35',
+
+      '--font-primary': '"Inter", sans-serif',
+      '--font-header': '"Inter", sans-serif',
     }
   },
   {
@@ -108,6 +148,9 @@ export const DEFAULT_THEMES: AppTheme[] = [
       '--neutral-700': '7 54 66',
       '--neutral-800': '7 54 66',    // Text color main
       '--neutral-900': '0 43 54',
+      
+      '--font-primary': '"Inter", sans-serif',
+      '--font-header': '"Inter", sans-serif',
     }
   }
 ];

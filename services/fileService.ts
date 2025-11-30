@@ -1,3 +1,4 @@
+
 import { MarkdownFile, Quiz, QuizQuestion } from '../types';
 import { GoogleGenAI } from "@google/genai";
 import * as pdfjsLib from 'pdfjs-dist';
@@ -6,12 +7,16 @@ import Papa from 'papaparse';
 
 // Configure PDF.js Worker
 const pdfjs: any = pdfjsLib;
-if (typeof window !== 'undefined' && pdfjs) {
-  if (pdfjs.GlobalWorkerOptions) {
-    pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
-  } else if (pdfjs.default && pdfjs.default.GlobalWorkerOptions) {
-    pdfjs.default.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+try {
+  if (typeof window !== 'undefined' && pdfjs) {
+    if (pdfjs.GlobalWorkerOptions) {
+      pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+    } else if (pdfjs.default && pdfjs.default.GlobalWorkerOptions) {
+      pdfjs.default.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+    }
   }
+} catch (e) {
+  console.warn("Failed to configure PDF.js worker. PDF import may fail.", e);
 }
 
 declare global {

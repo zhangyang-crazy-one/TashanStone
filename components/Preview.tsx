@@ -45,17 +45,35 @@ const MermaidRenderer = ({ code, isDark }: { code: string, isDark: boolean }) =>
       if (!code) return;
       try {
         setError(null);
+        
+        // Dynamic Theme Color Extraction
+        const style = getComputedStyle(document.documentElement);
+        // Helper to extract rgb values and format as needed
+        const getVar = (name: string) => {
+           const val = style.getPropertyValue(name).trim();
+           // Tailwind vars in this project are like '11 17 33'. RGB() needs commas or spaces.
+           return val ? `rgb(${val.split(' ').join(', ')})` : '';
+        };
+        
+        // Fallback colors if vars missing (safety)
+        const primary = getVar('--primary-500') || (isDark ? '#06b6d4' : '#0891b2');
+        const line = getVar('--neutral-500') || (isDark ? '#94a3b8' : '#475569');
+        const bg = 'transparent'; 
+
         // Configure Mermaid based on theme
         mermaid.initialize({
           startOnLoad: false,
-          theme: isDark ? 'dark' : 'default',
+          theme: 'base',
           securityLevel: 'loose',
           fontFamily: 'JetBrains Mono, monospace',
           themeVariables: {
              darkMode: isDark,
-             background: 'transparent',
-             primaryColor: isDark ? '#06b6d4' : '#0891b2',
-             lineColor: isDark ? '#94a3b8' : '#475569',
+             background: bg,
+             primaryColor: primary,
+             lineColor: line,
+             textColor: getVar('--text-primary'),
+             mainBkg: bg,
+             nodeBorder: primary
           }
         });
 
@@ -98,7 +116,7 @@ const MermaidRenderer = ({ code, isDark }: { code: string, isDark: boolean }) =>
   }
 
   return (
-    <div className="my-6 relative group border border-paper-200 dark:border-cyber-700 rounded-xl overflow-hidden bg-paper-100 dark:bg-cyber-900/50 h-[400px]">
+    <div className="my-6 relative group border border-paper-200 dark:border-cyber-700 rounded-xl overflow-hidden bg-paper-100 dark:bg-cyber-800 h-[400px]">
       <div 
         className="w-full h-full cursor-grab active:cursor-grabbing flex items-center justify-center overflow-hidden"
         onMouseDown={handleMouseDown}
@@ -116,9 +134,9 @@ const MermaidRenderer = ({ code, isDark }: { code: string, isDark: boolean }) =>
       
       {/* Controls */}
       <div className="absolute bottom-4 right-4 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-        <button onClick={() => setScale(s => Math.min(5, s + 0.2))} className="p-1.5 bg-white dark:bg-cyber-800 rounded shadow hover:bg-paper-100 dark:hover:bg-cyber-700"><ZoomIn size={16} /></button>
-        <button onClick={handleReset} className="p-1.5 bg-white dark:bg-cyber-800 rounded shadow hover:bg-paper-100 dark:hover:bg-cyber-700"><Maximize size={16} /></button>
-        <button onClick={() => setScale(s => Math.max(0.2, s - 0.2))} className="p-1.5 bg-white dark:bg-cyber-800 rounded shadow hover:bg-paper-100 dark:hover:bg-cyber-700"><ZoomOut size={16} /></button>
+        <button onClick={() => setScale(s => Math.min(5, s + 0.2))} className="p-1.5 bg-white dark:bg-cyber-700 rounded shadow hover:bg-paper-100 dark:hover:bg-cyber-600"><ZoomIn size={16} /></button>
+        <button onClick={handleReset} className="p-1.5 bg-white dark:bg-cyber-700 rounded shadow hover:bg-paper-100 dark:hover:bg-cyber-600"><Maximize size={16} /></button>
+        <button onClick={() => setScale(s => Math.max(0.2, s - 0.2))} className="p-1.5 bg-white dark:bg-cyber-700 rounded shadow hover:bg-paper-100 dark:hover:bg-cyber-600"><ZoomOut size={16} /></button>
       </div>
       <div className="absolute top-3 right-3 px-2 py-1 bg-white/80 dark:bg-black/50 backdrop-blur rounded text-[10px] font-bold text-slate-500 tracking-wider border border-black/5 dark:border-white/10">
         MERMAID
@@ -168,9 +186,9 @@ const EnhancedCodeBlock = ({ children, className, inline, ...props }: any) => {
   };
 
   return (
-    <div className="my-6 rounded-xl border border-paper-200 dark:border-cyber-700 bg-paper-50 dark:bg-[#0d1117] overflow-hidden shadow-sm group">
+    <div className="my-6 rounded-xl border border-paper-200 dark:border-cyber-700 bg-paper-100 dark:bg-cyber-800 overflow-hidden shadow-sm group">
       {/* Code Header */}
-      <div className="flex items-center justify-between px-4 py-2.5 bg-paper-100/50 dark:bg-cyber-800/50 border-b border-paper-200 dark:border-cyber-700 backdrop-blur-sm">
+      <div className="flex items-center justify-between px-4 py-2.5 bg-paper-200/50 dark:bg-cyber-700/50 border-b border-paper-200 dark:border-cyber-700 backdrop-blur-sm">
         <div className="flex items-center gap-3">
           <div className="flex gap-1.5">
             <div className="w-3 h-3 rounded-full bg-red-400/80"></div>

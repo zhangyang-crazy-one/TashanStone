@@ -52,14 +52,16 @@
               }
             },
             fontFamily: {
-              sans: ['Inter', 'sans-serif'],
+              sans: ['var(--font-primary)', 'Inter', 'sans-serif'],
               mono: ['JetBrains Mono', 'monospace'],
+              header: ['var(--font-header)', 'Inter', 'sans-serif'],
             },
             typography: (theme) => ({
               DEFAULT: {
                 css: {
                   maxWidth: 'none',
                   color: 'rgb(var(--text-secondary))',
+                  fontFamily: 'var(--font-primary)',
                   a: {
                     color: 'rgb(var(--primary-500))',
                     textDecoration: 'none',
@@ -69,10 +71,10 @@
                       textDecoration: 'underline',
                     },
                   },
-                  h1: { color: 'rgb(var(--text-primary))', fontWeight: '800' },
-                  h2: { color: 'rgb(var(--text-primary))', fontWeight: '700', borderBottomColor: 'rgb(var(--border-main))' },
-                  h3: { color: 'rgb(var(--text-primary))', fontWeight: '600' },
-                  h4: { color: 'rgb(var(--text-primary))' },
+                  h1: { color: 'rgb(var(--text-primary))', fontWeight: '800', fontFamily: 'var(--font-header)' },
+                  h2: { color: 'rgb(var(--text-primary))', fontWeight: '700', borderBottomColor: 'rgb(var(--border-main))', fontFamily: 'var(--font-header)' },
+                  h3: { color: 'rgb(var(--text-primary))', fontWeight: '600', fontFamily: 'var(--font-header)' },
+                  h4: { color: 'rgb(var(--text-primary))', fontFamily: 'var(--font-header)' },
                   code: { 
                     color: 'rgb(var(--primary-500))',
                     backgroundColor: 'rgba(var(--primary-500) / 0.1)',
@@ -123,11 +125,15 @@
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;700&family=Patrick+Hand&family=Permanent+Marker&family=Long+Cang&family=Ma+Shan+Zheng&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" integrity="sha384-n8MVd4RsNIU0tAv4ct0nTaAbDJwPJzDEaqSD1odI+WdtXRGWt2kTvGFasHpSy3SV" crossorigin="anonymous">
     
     <style>
+      :root {
+        --font-primary: 'Inter', sans-serif;
+        --font-header: 'Inter', sans-serif;
+      }
       ::-webkit-scrollbar {
         width: 8px;
         height: 8px;

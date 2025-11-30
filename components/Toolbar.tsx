@@ -84,7 +84,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   const t = translations[language];
 
   return (
-    <div className="h-16 border-b border-paper-200 dark:border-cyber-700 bg-white/80 dark:bg-cyber-900/80 backdrop-blur-md flex items-center justify-between px-4 sticky top-0 z-30 transition-colors duration-300">
+    <div className="h-16 border-b border-paper-200 dark:border-cyber-700 bg-white/80 dark:bg-cyber-800/80 backdrop-blur-md flex items-center justify-between px-4 sticky top-0 z-30 transition-colors duration-300">
       <div className="flex items-center gap-3 flex-1 overflow-hidden mr-4">
         <button 
           onClick={toggleSidebar}

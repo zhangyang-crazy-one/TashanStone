@@ -1,5 +1,4 @@
 
-
 import React, { useEffect, useRef, useState } from 'react';
 import mermaid from 'mermaid';
 import { Theme } from '../types';
@@ -26,23 +25,30 @@ export const MindMap: React.FC<MindMapProps> = ({ content, theme, language = 'en
     // Cyber/Neon Theme Configuration
     const isDark = theme === 'dark';
     
-    // Vibrant Neon Palette for Cyber look
-    const primaryColor = isDark ? '#06b6d4' : '#0891b2'; // Cyan
-    const secondaryColor = isDark ? '#8b5cf6' : '#7c3aed'; // Violet
-    const tertiaryColor = isDark ? '#10b981' : '#059669'; // Emerald
+    // Dynamic Color Extraction via CSS variables
+    const style = getComputedStyle(document.documentElement);
+    const getVar = (name: string) => {
+       const val = style.getPropertyValue(name).trim();
+       return val ? `rgb(${val.split(' ').join(', ')})` : '';
+    };
+
+    const primaryColor = getVar('--primary-500') || (isDark ? '#06b6d4' : '#0891b2'); 
+    const secondaryColor = getVar('--secondary-500') || (isDark ? '#8b5cf6' : '#7c3aed'); 
+    const tertiaryColor = isDark ? '#10b981' : '#059669'; 
     const bgColor = 'transparent';
-    const textColor = isDark ? '#f1f5f9' : '#1e293b'; // Slate-100 : Slate-800
-    const lineColor = isDark ? '#64748b' : '#94a3b8'; // Slate-500
+    const textColor = getVar('--text-primary') || (isDark ? '#f1f5f9' : '#1e293b'); 
+    const lineColor = getVar('--neutral-500') || (isDark ? '#e2e8f0' : '#475569'); 
 
     mermaid.initialize({
       startOnLoad: false,
       theme: 'base',
       securityLevel: 'loose',
-      fontFamily: 'JetBrains Mono, monospace',
+      // FORCE Handwritten Font as requested
+      fontFamily: '"Patrick Hand", cursive', 
       flowchart: { htmlLabels: true },
       mindmap: {
         useMaxWidth: false,
-        padding: 50, // Much more space between nodes
+        padding: 100, // Even more padding for bubbles
       },
       themeVariables: {
         primaryColor: primaryColor,
@@ -51,15 +57,14 @@ export const MindMap: React.FC<MindMapProps> = ({ content, theme, language = 'en
         lineColor: lineColor,
         secondaryColor: secondaryColor,
         tertiaryColor: tertiaryColor,
-        fontFamily: 'JetBrains Mono, monospace',
-        fontSize: '24px', // Significantly larger font
+        fontFamily: '"Patrick Hand", cursive', // Handwritten Font
+        fontSize: '18px', // Slightly larger for handwritten readability
         
         // Specific MindMap Variables
         mindmapShapeBorderColor: primaryColor,
-        mindmapBkgColor: isDark ? 'rgba(15, 23, 42, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+        mindmapBkgColor: isDark ? 'rgba(var(--bg-panel), 1)' : 'rgba(255, 255, 255, 1)',
         mainBkg: bgColor,
         nodeBorder: primaryColor,
-        clusterBkg: 'rgba(255,255,255,0.05)',
       }
     });
   }, [theme]);
@@ -123,11 +128,46 @@ export const MindMap: React.FC<MindMapProps> = ({ content, theme, language = 'en
     const svgEl = containerRef.current.querySelector('svg');
     if (!svgEl) return;
 
-    // Serialize SVG
-    const serializer = new XMLSerializer();
-    let source = serializer.serializeToString(svgEl);
+    // 1. Clone the SVG so we can manipulate it for export without affecting the display
+    const clonedSvg = svgEl.cloneNode(true) as SVGElement;
 
-    // Add namespaces if missing (required for standalone SVG)
+    // 2. Inject Critical Styles directly into the cloned SVG
+    // This ensures the Bubble look and colors are preserved in the downloaded file
+    const styleEl = document.createElementNS("http://www.w3.org/2000/svg", "style");
+    styleEl.textContent = `
+      text { font-family: 'Patrick Hand', cursive, sans-serif; font-size: 16px; font-weight: bold; }
+      
+      /* Bubble Styling (Circles) */
+      .mindmap-node circle {
+        stroke-width: 3px !important;
+        fill: ${theme === 'dark' ? '#1e293b' : '#ffffff'} !important;
+        stroke: ${theme === 'dark' ? '#06b6d4' : '#0891b2'} !important;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      
+      /* Root Circle */
+      .node-0 circle, .mindmap-node:first-child circle {
+        stroke: ${theme === 'dark' ? '#8b5cf6' : '#7c3aed'} !important; /* Violet */
+        stroke-width: 5px !important;
+      }
+
+      /* Edge Styling */
+      .edge-path path {
+        stroke: ${theme === 'dark' ? '#e2e8f0' : '#475569'} !important;
+        stroke-width: 3px !important;
+        opacity: 0.8;
+        fill: none;
+        stroke-linecap: round;
+      }
+    `;
+    clonedSvg.prepend(styleEl);
+
+    // 3. Serialize
+    const serializer = new XMLSerializer();
+    let source = serializer.serializeToString(clonedSvg);
+
+    // 4. Add namespaces if missing (required for standalone SVG)
     if(!source.match(/^<svg[^>]+xmlns="http\:\/\/www\.w3\.org\/2000\/svg"/)){
         source = source.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
     }
@@ -135,32 +175,77 @@ export const MindMap: React.FC<MindMapProps> = ({ content, theme, language = 'en
         source = source.replace(/^<svg/, '<svg xmlns:xlink="http://www.w3.org/1999/xlink"');
     }
 
-    // Add XML declaration
+    // 5. Add XML declaration
     source = '<?xml version="1.0" standalone="no"?>\r\n' + source;
 
-    // Convert to Blob and download
+    // 6. Convert to Blob and download
     const url = "data:image/svg+xml;charset=utf-8,"+encodeURIComponent(source);
     
     const downloadLink = document.createElement("a");
     downloadLink.href = url;
-    downloadLink.download = "mindmap.svg";
+    downloadLink.download = "mindmap_handwritten.svg";
     document.body.appendChild(downloadLink);
     downloadLink.click();
     document.body.removeChild(downloadLink);
   };
 
   return (
-    <div className="w-full h-full bg-paper-50 dark:bg-cyber-900 overflow-hidden relative group font-mono selection:bg-cyan-500/30">
+    <div className="w-full h-full bg-paper-50 dark:bg-cyber-900 overflow-hidden relative group font-sans selection:bg-cyan-500/30">
       {/* Background Grid Pattern */}
       <div className="absolute inset-0 opacity-20 pointer-events-none" 
            style={{ 
-             backgroundImage: `linear-gradient(${theme === 'dark' ? '#334155' : '#cbd5e1'} 1px, transparent 1px), linear-gradient(90deg, ${theme === 'dark' ? '#334155' : '#cbd5e1'} 1px, transparent 1px)`, 
+             backgroundImage: `linear-gradient(rgba(var(--neutral-600), 0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(var(--neutral-600), 0.5) 1px, transparent 1px)`, 
              backgroundSize: '40px 40px' 
            }}>
       </div>
       
       {/* Radial fade for background */}
       <div className="absolute inset-0 pointer-events-none bg-radial-fade"></div>
+
+      {/* INJECTED CUSTOM CSS FOR VISUAL STYLE UPGRADE (Handwritten) */}
+      <style>{`
+        /* --- HANDWRITTEN BUBBLE STYLE UPGRADE --- */
+        
+        /* General Node Text */
+        svg[id^="mermaid-"] .node-label {
+           font-family: 'Patrick Hand', cursive !important;
+           font-weight: 500 !important;
+           fill: rgb(var(--text-primary)) !important;
+           font-size: 18px !important;
+        }
+
+        /* 1. Target Circles (Bubbles) - Imperfect Look */
+        svg[id^="mermaid-"] .mindmap-node circle {
+          stroke-width: 3px !important;
+          fill: rgb(var(--bg-panel)) !important;
+          stroke: rgb(var(--primary-500)) !important; /* Cyan Default */
+          filter: drop-shadow(2px 3px 0px rgba(0,0,0,0.15)); /* Hard shadow for sketch look */
+          transition: all 0.3s ease;
+          stroke-linecap: round;
+        }
+
+        /* 2. Distinct Root Node */
+        svg[id^="mermaid-"] .node-0 circle {
+          stroke: rgb(var(--secondary-500)) !important; /* Violet */
+          stroke-width: 5px !important;
+          fill: rgb(var(--bg-element)) !important;
+          filter: drop-shadow(3px 4px 0px rgba(var(--secondary-500), 0.2));
+        }
+
+        /* 3. Hover Effects */
+        svg[id^="mermaid-"] .mindmap-node:hover circle {
+           stroke: rgb(var(--primary-600)) !important;
+           transform: scale(1.05) rotate(-1deg); /* Slight wobble on hover */
+        }
+
+        /* 4. Branch Lines (Sketchy) */
+        svg[id^="mermaid-"] .edge-path path {
+          stroke: rgb(var(--neutral-500)) !important;
+          stroke-width: 4px !important;
+          opacity: 0.8;
+          stroke-linecap: round;
+        }
+      `}</style>
 
       {/* Controls */}
       <div className="absolute bottom-6 right-6 z-20 flex flex-col gap-2 opacity-50 group-hover:opacity-100 transition-opacity">
@@ -203,11 +288,6 @@ export const MindMap: React.FC<MindMapProps> = ({ content, theme, language = 'en
                 className={`
                     mermaid-container 
                     [&>svg]:overflow-visible 
-                    [&_g.node]:transition-all 
-                    [&_path]:stroke-[3px] 
-                    ${theme === 'dark' 
-                        ? '[&_path]:stroke-cyan-500/50 [&_rect]:stroke-cyan-400 [&_rect]:stroke-[2px] [&_rect]:shadow-[0_0_10px_cyan] [&_text]:fill-slate-100' 
-                        : '[&_path]:stroke-cyan-600/50 [&_rect]:stroke-cyan-600 [&_rect]:stroke-[2px]'}
                 `}
             />
         </div>
