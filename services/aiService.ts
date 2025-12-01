@@ -1,7 +1,7 @@
 
 
 import { GoogleGenAI, FunctionDeclaration, Type } from "@google/genai";
-import { AIConfig, MarkdownFile, GraphData, Quiz, QuizQuestion } from "../types";
+import { AIConfig, MarkdownFile, GraphData, Quiz, QuizQuestion, ChatMessage } from "../types";
 
 // --- Types for MCP ---
 interface MCPServerConfig {
@@ -394,6 +394,42 @@ export const getEmbedding = async (text: string, config: AIConfig): Promise<numb
     return [];
 };
 
+export const compactConversation = async (messages: ChatMessage[], config: AIConfig): Promise<ChatMessage[]> => {
+    // We want to keep the last 2 interactions (user + assistant) to maintain flow
+    // Everything before that gets summarized into a system-like context message
+    
+    if (messages.length <= 3) return messages; // Nothing to compact really
+    
+    const messagesToSummarize = messages.slice(0, messages.length - 2);
+    const recentMessages = messages.slice(messages.length - 2);
+    
+    const conversationText = messagesToSummarize.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n');
+    
+    const prompt = `Summarize the following conversation history into a concise but comprehensive context block. 
+    Preserve key information, user preferences, and important technical details. 
+    The goal is to reduce token usage while maintaining memory.
+    
+    Conversation History:
+    ${conversationText}`;
+    
+    // Create a temporary config that uses the compactModel if available, otherwise default model
+    const compactionConfig = { 
+        ...config, 
+        model: config.compactModel || config.model 
+    };
+
+    const summary = await generateAIResponse(prompt, compactionConfig, "You are a helpful assistant summarizer.");
+    
+    const summaryMessage: ChatMessage = {
+        id: `summary-${Date.now()}`,
+        role: 'system', // or assistant with special marker
+        content: `**[Conversation Summarized]**\n${summary}`,
+        timestamp: Date.now()
+    };
+    
+    return [summaryMessage, ...recentMessages];
+};
+
 export const generateAIResponse = async (
   prompt: string, 
   config: AIConfig, 
@@ -767,27 +803,28 @@ export const generateMindMap = async (content: string, config: AIConfig): Promis
 
   STRICT VISUAL & STRUCTURAL RULES:
   1. Root Node: Use double parentheses ((ROOT_TOPIC)) to render it as a Circle.
-  2. ALL Child Nodes: MUST use double parentheses ((Topic Name)) to render them as Circles/Bubbles. This creates the requested "Bubble Map" style.
+  2. ALL Child Nodes: MUST use single parentheses (Node Name) to render them as Rounded Rectangles.
+     - Do NOT use circles (( )) for children. Rounded rectangles pack text much better and prevent overlapping.
   3. Hierarchy:
      - Use indentation (2 spaces) to represent depth.
      - Group related concepts under common parents.
      - LIMIT IMMEDIATE CHILDREN to 5-7 per node to prevent overcrowding.
   
   CRITICAL SYNTAX SAFETY:
-  - Keep labels EXTREMELY concise (max 2-4 words). This is crucial to prevent overlaps.
+  - Keep labels EXTREMELY concise (max 2-5 words). This is crucial to prevent overlaps.
   - Remove all parentheses '()' inside the node text. They break the syntax.
   - Remove all hash symbols '#' inside the node text.
   - Remove all colons ':' inside the node text.
   - Do NOT use internal Markdown formatting like **bold** or *italic* inside the labels.
 
-  Example Syntax (Bubble Style):
+  Example Syntax:
   mindmap
     ((Central Topic))
-      ((Main Branch A))
-        ((Sub item A1))
-        ((Sub item A2))
-      ((Main Branch B))
-        ((Sub item B1))
+      (Main Branch A)
+        (Sub item A1)
+        (Sub item A2)
+      (Main Branch B)
+        (Sub item B1)
   
   Content to Analyze:
   ${content.substring(0, limit)}`;

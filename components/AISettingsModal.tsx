@@ -1,8 +1,8 @@
 
 
 import React, { useState, useRef, useMemo } from 'react';
-import { X, Save, Server, Cpu, Key, Globe, Palette, Upload, Trash2, Check, Download, Plus, Languages, MessageSquare, ChevronDown, Wrench, AlertTriangle, Play, Terminal, Code2, Box } from 'lucide-react';
-import { AIConfig, AppTheme } from '../types';
+import { X, Save, Server, Cpu, Key, Globe, Palette, Upload, Trash2, Check, Download, Plus, Languages, MessageSquare, ChevronDown, Wrench, AlertTriangle, Play, Terminal, Code2, Box, Keyboard, Command } from 'lucide-react';
+import { AIConfig, AppTheme, AppShortcut } from '../types';
 import { translations, Language } from '../utils/translations';
 import { generateAIResponse, VirtualMCPClient } from '../services/aiService';
 
@@ -17,9 +17,12 @@ interface AISettingsModalProps {
   onImportTheme: (theme: AppTheme) => void;
   onDeleteTheme: (themeId: string) => void;
   language?: Language;
+  shortcuts?: AppShortcut[];
+  onUpdateShortcut?: (id: string, keys: string) => void;
+  onResetShortcuts?: () => void;
 }
 
-type Tab = 'ai' | 'appearance' | 'prompts' | 'mcp';
+type Tab = 'ai' | 'appearance' | 'prompts' | 'mcp' | 'keyboard';
 
 const RECOMMENDED_MODELS: Record<string, {id: string, name: string}[]> = {
   gemini: [
@@ -68,7 +71,10 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
   onSelectTheme,
   onImportTheme,
   onDeleteTheme,
-  language = 'en'
+  language = 'en',
+  shortcuts = [],
+  onUpdateShortcut,
+  onResetShortcuts
 }) => {
   const [activeTab, setActiveTab] = useState<Tab>('ai');
   const [tempConfig, setTempConfig] = useState<AIConfig>(config);
@@ -78,6 +84,9 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
   const [testPrompt, setTestPrompt] = useState<string>('');
   const [testLog, setTestLog] = useState<string[]>([]);
   const [isTesting, setIsTesting] = useState(false);
+
+  // Keyboard Recording State
+  const [recordingId, setRecordingId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -190,6 +199,31 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
     }
   };
 
+  const handleKeyDownRecord = (e: React.KeyboardEvent, shortcutId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Ignore standalone modifier keys
+    if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return;
+
+    const parts = [];
+    if (e.ctrlKey) parts.push('Ctrl');
+    if (e.metaKey) parts.push('Cmd'); // macOS
+    if (e.altKey) parts.push('Alt');
+    if (e.shiftKey) parts.push('Shift');
+    
+    // Clean key name (e.g. " " -> "Space", capitalized single letters)
+    let key = e.key;
+    if (key === ' ') key = 'Space';
+    if (key.length === 1) key = key.toUpperCase();
+    
+    parts.push(key);
+    
+    const combo = parts.join('+');
+    if (onUpdateShortcut) onUpdateShortcut(shortcutId, combo);
+    setRecordingId(null);
+  };
+
   const currentModels = RECOMMENDED_MODELS[tempConfig.provider] || [];
   const currentEmbeddingModels = RECOMMENDED_EMBEDDING_MODELS[tempConfig.provider] || [];
 
@@ -213,6 +247,13 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
              >
                 <MessageSquare size={18} />
                 {t.prompts || "Prompts"}
+             </button>
+             <button
+              onClick={() => setActiveTab('keyboard')}
+              className={`text-sm font-bold flex items-center gap-2 pb-1 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'keyboard' ? 'text-cyan-600 dark:text-cyan-400 border-cyan-500' : 'text-slate-500 border-transparent hover:text-slate-700 dark:hover:text-slate-300'}`}
+             >
+                <Keyboard size={18} />
+                {t.keyboardShortcuts || "Shortcuts"}
              </button>
              <button
               onClick={() => setActiveTab('mcp')}
@@ -345,6 +386,23 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                 />
               </div>
 
+               {/* Compaction Model Selection */}
+               <div className="space-y-2 animate-fadeIn">
+                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Compaction Model (Optional)
+                 </label>
+                 <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Used when compressing chat history. Defaults to main model if empty.
+                 </p>
+                 <input
+                  type="text"
+                  value={tempConfig.compactModel || ''}
+                  onChange={(e) => setTempConfig({ ...tempConfig, compactModel: e.target.value })}
+                  className="w-full px-3 py-2 rounded-lg bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  placeholder="e.g. gemini-2.5-flash"
+                />
+               </div>
+
                {/* Embedding Model Selection */}
                <div className="space-y-2 animate-fadeIn">
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -444,6 +502,55 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                       placeholder="Enter system prompt for 'Expand' action..."
                    />
                 </div>
+             </div>
+          )}
+          
+          {/* Keyboard Shortcuts Tab */}
+          {activeTab === 'keyboard' && (
+             <div className="space-y-6 max-w-2xl mx-auto">
+                 <div className="bg-white dark:bg-cyber-800 p-4 rounded-xl border border-paper-200 dark:border-cyber-700 shadow-sm flex justify-between items-center">
+                   <div>
+                       <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">{t.keyboardShortcuts}</h3>
+                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                          Click a key combination to record a new one.
+                       </p>
+                   </div>
+                   <button 
+                      onClick={onResetShortcuts}
+                      className="text-xs px-3 py-1.5 rounded-lg border border-paper-300 dark:border-cyber-600 hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-600 dark:text-slate-300 transition-colors"
+                   >
+                       {t.resetDefaults || "Reset Defaults"}
+                   </button>
+                 </div>
+
+                 <div className="space-y-2">
+                     {shortcuts.map((shortcut) => (
+                         <div 
+                             key={shortcut.id} 
+                             className="flex items-center justify-between p-3 bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-700 rounded-lg group hover:border-cyan-500/50 transition-colors"
+                         >
+                             <div className="flex items-center gap-3">
+                                 <Command size={16} className="text-slate-400" />
+                                 <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                                     {shortcut.label}
+                                 </span>
+                             </div>
+                             
+                             <button
+                                 onClick={() => setRecordingId(shortcut.id)}
+                                 onKeyDown={(e) => handleKeyDownRecord(e, shortcut.id)}
+                                 className={`
+                                    min-w-[100px] px-3 py-1.5 rounded-md text-xs font-mono font-bold text-center transition-all
+                                    ${recordingId === shortcut.id 
+                                        ? 'bg-red-500 text-white animate-pulse ring-2 ring-red-300' 
+                                        : 'bg-paper-100 dark:bg-cyber-900 text-slate-600 dark:text-slate-400 group-hover:bg-paper-200 dark:group-hover:bg-cyber-700'}
+                                 `}
+                             >
+                                 {recordingId === shortcut.id ? (t.pressKeys || "Press keys...") : shortcut.keys}
+                             </button>
+                         </div>
+                     ))}
+                 </div>
              </div>
           )}
 
@@ -663,7 +770,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
         </div>
 
         {/* Footer */}
-        {activeTab === 'ai' || activeTab === 'prompts' || activeTab === 'mcp' ? (
+        {activeTab === 'ai' || activeTab === 'prompts' || activeTab === 'mcp' || activeTab === 'keyboard' ? (
           <div className="p-4 border-t border-paper-200 dark:border-cyber-700 flex justify-end gap-3 bg-paper-50 dark:bg-cyber-800/50 flex-shrink-0">
              <button onClick={onClose} className="px-4 py-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-paper-200 dark:hover:bg-cyber-700">{t.cancel}</button>
              <button onClick={handleSubmit} className="flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-cyan-500 to-violet-500 text-white rounded-lg shadow-lg hover:shadow-cyan-500/25">

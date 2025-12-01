@@ -64,7 +64,10 @@ export const translations = {
     prompts: "Custom Prompts",
     polishPrompt: "Polish Prompt",
     expandPrompt: "Expand Prompt",
-    enableWebSearch: "Enable Google Search Grounding"
+    enableWebSearch: "Enable Google Search Grounding",
+    keyboardShortcuts: "Keyboard Shortcuts",
+    pressKeys: "Press keys...",
+    resetDefaults: "Reset Defaults"
   },
   zh: {
     explorer: "资源管理器",
@@ -129,7 +132,10 @@ export const translations = {
     prompts: "自定义提示词",
     polishPrompt: "润色提示词",
     expandPrompt: "扩写提示词",
-    enableWebSearch: "启用 Google 搜索 (Grounding)"
+    enableWebSearch: "启用 Google 搜索 (Grounding)",
+    keyboardShortcuts: "键盘快捷键",
+    pressKeys: "按下按键...",
+    resetDefaults: "重置默认"
   }
 };
 

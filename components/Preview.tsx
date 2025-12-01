@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -186,41 +185,41 @@ const EnhancedCodeBlock = ({ children, className, inline, ...props }: any) => {
   };
 
   return (
-    <div className="my-6 rounded-xl border border-paper-200 dark:border-cyber-700 bg-paper-100 dark:bg-cyber-800 overflow-hidden shadow-sm group">
+    <div className="my-6 rounded-xl border border-paper-200 dark:border-cyber-700 bg-[#282c34] overflow-hidden shadow-lg group">
       {/* Code Header */}
-      <div className="flex items-center justify-between px-4 py-2.5 bg-paper-200/50 dark:bg-cyber-700/50 border-b border-paper-200 dark:border-cyber-700 backdrop-blur-sm">
+      <div className="flex items-center justify-between px-4 py-2.5 bg-[#21252b] border-b border-white/5">
         <div className="flex items-center gap-3">
-          <div className="flex gap-1.5">
-            <div className="w-3 h-3 rounded-full bg-red-400/80"></div>
-            <div className="w-3 h-3 rounded-full bg-amber-400/80"></div>
-            <div className="w-3 h-3 rounded-full bg-green-400/80"></div>
+          <div className="flex gap-1.5 opacity-70 group-hover:opacity-100 transition-opacity">
+            <div className="w-2.5 h-2.5 rounded-full bg-[#ff5f56]"></div>
+            <div className="w-2.5 h-2.5 rounded-full bg-[#ffbd2e]"></div>
+            <div className="w-2.5 h-2.5 rounded-full bg-[#27c93f]"></div>
           </div>
-          <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider font-mono ml-2">
+          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider font-mono ml-2 select-none">
             {language}
           </span>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setWrap(!wrap)}
-            className={`p-1.5 rounded-md transition-all ${wrap ? 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-600 dark:text-cyan-400' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
+            className={`p-1.5 rounded-md transition-all ${wrap ? 'bg-white/10 text-cyan-400' : 'text-slate-500 hover:text-slate-300'}`}
             title="Toggle Word Wrap"
           >
             <WrapText size={14} />
           </button>
           <button
             onClick={handleCopy}
-            className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium text-slate-500 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-white dark:hover:bg-cyber-700 transition-all border border-transparent hover:border-paper-200 dark:hover:border-cyber-600"
+            className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium text-slate-500 hover:text-white hover:bg-white/10 transition-all"
           >
-            {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
-            <span className={copied ? 'text-green-500' : ''}>{copied ? 'Copied' : 'Copy'}</span>
+            {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+            <span className={copied ? 'text-emerald-400' : ''}>{copied ? 'Copied' : 'Copy'}</span>
           </button>
         </div>
       </div>
 
       {/* Code Content */}
       <div className={`relative p-0 ${wrap ? 'whitespace-pre-wrap break-words' : 'overflow-x-auto'}`}>
-        <pre className={`!m-0 !p-4 !bg-transparent text-sm font-mono leading-relaxed ${wrap ? '!whitespace-pre-wrap' : ''}`} {...props}>
-          <code className={className || 'language-text'}>
+        <pre className={`!m-0 !p-4 !bg-transparent text-sm font-mono leading-relaxed text-gray-300 ${wrap ? '!whitespace-pre-wrap' : ''}`} {...props}>
+          <code className={className || 'language-text'} style={{ textShadow: 'none' }}>
             {children}
           </code>
         </pre>

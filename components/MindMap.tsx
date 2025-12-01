@@ -22,49 +22,29 @@ export const MindMap: React.FC<MindMapProps> = ({ content, theme, language = 'en
   const t = translations[language];
 
   useEffect(() => {
-    // Cyber/Neon Theme Configuration
-    const isDark = theme === 'dark';
+    // Configuration for "Vibrant Dark Bubble" Look (matching user image)
+    // We force a dark base because the specific requested image style is dark.
     
-    // Dynamic Color Extraction via CSS variables
-    const style = getComputedStyle(document.documentElement);
-    const getVar = (name: string) => {
-       const val = style.getPropertyValue(name).trim();
-       return val ? `rgb(${val.split(' ').join(', ')})` : '';
-    };
-
-    const primaryColor = getVar('--primary-500') || (isDark ? '#06b6d4' : '#0891b2'); 
-    const secondaryColor = getVar('--secondary-500') || (isDark ? '#8b5cf6' : '#7c3aed'); 
-    const tertiaryColor = isDark ? '#10b981' : '#059669'; 
-    const bgColor = 'transparent';
-    const textColor = getVar('--text-primary') || (isDark ? '#f1f5f9' : '#1e293b'); 
-    const lineColor = getVar('--neutral-500') || (isDark ? '#e2e8f0' : '#475569'); 
-
     mermaid.initialize({
       startOnLoad: false,
       theme: 'base',
       securityLevel: 'loose',
-      // FORCE Handwritten Font as requested
-      fontFamily: '"Patrick Hand", cursive', 
+      fontFamily: '"Inter", "Segoe UI", sans-serif', 
       flowchart: { htmlLabels: true },
       mindmap: {
         useMaxWidth: false,
-        padding: 100, // Even more padding for bubbles
+        padding: 70, // Padding to prevent overlap
       },
       themeVariables: {
-        primaryColor: primaryColor,
-        primaryTextColor: textColor,
-        primaryBorderColor: primaryColor,
-        lineColor: lineColor,
-        secondaryColor: secondaryColor,
-        tertiaryColor: tertiaryColor,
-        fontFamily: '"Patrick Hand", cursive', // Handwritten Font
-        fontSize: '18px', // Slightly larger for handwritten readability
+        primaryColor: '#ea580c', // Orange Root
+        primaryTextColor: '#ffffff',
+        lineColor: '#475569', // Slate-600 lines
         
-        // Specific MindMap Variables
-        mindmapShapeBorderColor: primaryColor,
-        mindmapBkgColor: isDark ? 'rgba(var(--bg-panel), 1)' : 'rgba(255, 255, 255, 1)',
-        mainBkg: bgColor,
-        nodeBorder: primaryColor,
+        // These will be overridden by CSS, but setting defaults helps
+        mainBkg: '#1e293b', 
+        nodeBorder: '#475569',
+        fontFamily: '"Inter", "Segoe UI", sans-serif',
+        fontSize: '14px',
       }
     });
   }, [theme]);
@@ -75,11 +55,14 @@ export const MindMap: React.FC<MindMapProps> = ({ content, theme, language = 'en
       setError(null);
       
       try {
+        // Wait for fonts to be ready to ensure Mermaid calculates text width correctly
+        await document.fonts.ready;
+
         const id = `mermaid-${Date.now()}`;
         // Attempt to render
         const { svg: generatedSvg } = await mermaid.render(id, content);
         
-        // Style injection to fix sizing and add glow effects via CSS classes
+        // Cleanup SVG attributes that restrict sizing
         const cleanSvg = generatedSvg
           .replace(/max-width:[^;]+;/g, '')
           .replace(/height:[^;]+;/g, '')
@@ -128,137 +111,164 @@ export const MindMap: React.FC<MindMapProps> = ({ content, theme, language = 'en
     const svgEl = containerRef.current.querySelector('svg');
     if (!svgEl) return;
 
-    // 1. Clone the SVG so we can manipulate it for export without affecting the display
+    // 1. Clone
     const clonedSvg = svgEl.cloneNode(true) as SVGElement;
 
-    // 2. Inject Critical Styles directly into the cloned SVG
-    // This ensures the Bubble look and colors are preserved in the downloaded file
+    // 2. Inject Styles for Export (Self-contained) to match the UI
     const styleEl = document.createElementNS("http://www.w3.org/2000/svg", "style");
     styleEl.textContent = `
-      text { font-family: 'Patrick Hand', cursive, sans-serif; font-size: 16px; font-weight: bold; }
+      text { font-family: 'Inter', sans-serif; font-weight: 600; text-anchor: middle; }
       
-      /* Bubble Styling (Circles) */
-      .mindmap-node circle {
-        stroke-width: 3px !important;
-        fill: ${theme === 'dark' ? '#1e293b' : '#ffffff'} !important;
-        stroke: ${theme === 'dark' ? '#06b6d4' : '#0891b2'} !important;
-        stroke-linecap: round;
-        stroke-linejoin: round;
+      /* Root Node (Orange) */
+      .node-0 rect, .mindmap-node:first-child rect {
+        fill: #ea580c !important; 
+        stroke: #9a3412 !important;
+        stroke-width: 4px !important;
+        rx: 100px !important;
+        ry: 100px !important;
+      }
+      .node-0 text, .mindmap-node:first-child text {
+        fill: #ffffff !important;
+        font-size: 22px !important;
+        font-weight: 800 !important;
       }
       
-      /* Root Circle */
-      .node-0 circle, .mindmap-node:first-child circle {
-        stroke: ${theme === 'dark' ? '#8b5cf6' : '#7c3aed'} !important; /* Violet */
-        stroke-width: 5px !important;
+      /* Base Child Style (Pills) */
+      .mindmap-node rect {
+        stroke-width: 0px !important;
+        rx: 999px !important; /* Full capsule */
+        ry: 999px !important;
+        height: 40px !important;
+      }
+      .mindmap-node text {
+        fill: #ffffff !important;
+        font-size: 14px !important;
+        font-weight: 600 !important;
       }
 
-      /* Edge Styling */
+      /* Color Cycling for Branches (Matches Screen) */
+      .mindmap-node:nth-of-type(5n+1) rect { fill: #15803d !important; } /* Green */
+      .mindmap-node:nth-of-type(5n+2) rect { fill: #7e22ce !important; } /* Purple */
+      .mindmap-node:nth-of-type(5n+3) rect { fill: #1d4ed8 !important; } /* Blue */
+      .mindmap-node:nth-of-type(5n+4) rect { fill: #0f766e !important; } /* Teal */
+      .mindmap-node:nth-of-type(5n+5) rect { fill: #ca8a04 !important; } /* Yellow */
+
+      /* Lines */
       .edge-path path {
-        stroke: ${theme === 'dark' ? '#e2e8f0' : '#475569'} !important;
-        stroke-width: 3px !important;
-        opacity: 0.8;
+        stroke: #64748b !important;
+        stroke-width: 2px !important;
         fill: none;
-        stroke-linecap: round;
       }
     `;
     clonedSvg.prepend(styleEl);
 
-    // 3. Serialize
+    // 3. Add Background Rect for Export (Dark Blue)
+    const bgRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    bgRect.setAttribute("width", "10000");
+    bgRect.setAttribute("height", "10000");
+    bgRect.setAttribute("x", "-5000");
+    bgRect.setAttribute("y", "-5000");
+    bgRect.setAttribute("fill", "#0f172a"); // Dark Slate Background
+    if (clonedSvg.firstChild) clonedSvg.insertBefore(bgRect, clonedSvg.firstChild);
+
+    // 4. Serialize & Download
     const serializer = new XMLSerializer();
     let source = serializer.serializeToString(clonedSvg);
-
-    // 4. Add namespaces if missing (required for standalone SVG)
+    
     if(!source.match(/^<svg[^>]+xmlns="http\:\/\/www\.w3\.org\/2000\/svg"/)){
         source = source.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
     }
-    if(!source.match(/^<svg[^>]+xmlns:xlink="http\:\/\/www\.w3\.org\/1999\/xlink"/)){
-        source = source.replace(/^<svg/, '<svg xmlns:xlink="http://www.w3.org/1999/xlink"');
-    }
-
-    // 5. Add XML declaration
-    source = '<?xml version="1.0" standalone="no"?>\r\n' + source;
-
-    // 6. Convert to Blob and download
-    const url = "data:image/svg+xml;charset=utf-8,"+encodeURIComponent(source);
     
+    const url = "data:image/svg+xml;charset=utf-8,"+encodeURIComponent('<?xml version="1.0" standalone="no"?>\r\n' + source);
     const downloadLink = document.createElement("a");
     downloadLink.href = url;
-    downloadLink.download = "mindmap_handwritten.svg";
+    downloadLink.download = "mindmap_neon.svg";
     document.body.appendChild(downloadLink);
     downloadLink.click();
     document.body.removeChild(downloadLink);
   };
 
   return (
-    <div className="w-full h-full bg-paper-50 dark:bg-cyber-900 overflow-hidden relative group font-sans selection:bg-cyan-500/30">
-      {/* Background Grid Pattern */}
-      <div className="absolute inset-0 opacity-20 pointer-events-none" 
+    <div className="w-full h-full bg-[#0f172a] overflow-hidden relative group font-sans selection:bg-cyan-500/30">
+      {/* Background Texture (Dark Grid) */}
+      <div className="absolute inset-0 pointer-events-none opacity-20" 
            style={{ 
-             backgroundImage: `linear-gradient(rgba(var(--neutral-600), 0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(var(--neutral-600), 0.5) 1px, transparent 1px)`, 
+             backgroundImage: `linear-gradient(#334155 1px, transparent 1px), linear-gradient(90deg, #334155 1px, transparent 1px)`, 
              backgroundSize: '40px 40px' 
            }}>
       </div>
       
-      {/* Radial fade for background */}
-      <div className="absolute inset-0 pointer-events-none bg-radial-fade"></div>
+      {/* Vignette */}
+      <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_center,transparent_0%,#020617_100%)] opacity-80"></div>
 
-      {/* INJECTED CUSTOM CSS FOR VISUAL STYLE UPGRADE (Handwritten) */}
+      {/* INJECTED CUSTOM CSS FOR NEON BUBBLE STYLE */}
       <style>{`
-        /* --- HANDWRITTEN BUBBLE STYLE UPGRADE --- */
+        /* --- NEON BUBBLE STYLE --- */
         
-        /* General Node Text */
-        svg[id^="mermaid-"] .node-label {
-           font-family: 'Patrick Hand', cursive !important;
-           font-weight: 500 !important;
-           fill: rgb(var(--text-primary)) !important;
-           font-size: 18px !important;
-        }
-
-        /* 1. Target Circles (Bubbles) - Imperfect Look */
-        svg[id^="mermaid-"] .mindmap-node circle {
-          stroke-width: 3px !important;
-          fill: rgb(var(--bg-panel)) !important;
-          stroke: rgb(var(--primary-500)) !important; /* Cyan Default */
-          filter: drop-shadow(2px 3px 0px rgba(0,0,0,0.15)); /* Hard shadow for sketch look */
-          transition: all 0.3s ease;
-          stroke-linecap: round;
-        }
-
-        /* 2. Distinct Root Node */
-        svg[id^="mermaid-"] .node-0 circle {
-          stroke: rgb(var(--secondary-500)) !important; /* Violet */
-          stroke-width: 5px !important;
-          fill: rgb(var(--bg-element)) !important;
-          filter: drop-shadow(3px 4px 0px rgba(var(--secondary-500), 0.2));
-        }
-
-        /* 3. Hover Effects */
-        svg[id^="mermaid-"] .mindmap-node:hover circle {
-           stroke: rgb(var(--primary-600)) !important;
-           transform: scale(1.05) rotate(-1deg); /* Slight wobble on hover */
-        }
-
-        /* 4. Branch Lines (Sketchy) */
-        svg[id^="mermaid-"] .edge-path path {
-          stroke: rgb(var(--neutral-500)) !important;
+        /* 1. Root Node: Big Orange Circle */
+        svg[id^="mermaid-"] .node-0 rect, svg[id^="mermaid-"] .mindmap-node:first-child rect {
+          fill: #ea580c !important; /* Orange-600 */
+          stroke: #fdba74 !important; /* Orange-300 ring */
           stroke-width: 4px !important;
-          opacity: 0.8;
-          stroke-linecap: round;
+          rx: 100px !important; 
+          ry: 100px !important;
+          filter: drop-shadow(0px 0px 20px rgba(234, 88, 12, 0.4));
+        }
+        svg[id^="mermaid-"] .node-0 text, svg[id^="mermaid-"] .mindmap-node:first-child text {
+           fill: #ffffff !important;
+           font-weight: 800 !important;
+           font-size: 20px !important;
+        }
+
+        /* 2. Child Nodes: Color Cycle Pills */
+        svg[id^="mermaid-"] .mindmap-node rect {
+          rx: 999px !important; /* Capsule/Pill Shape */
+          ry: 999px !important;
+          stroke-width: 0px !important;
+          filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.3));
+          transition: all 0.3s ease;
+        }
+        
+        svg[id^="mermaid-"] .mindmap-node text {
+           fill: #ffffff !important;
+           font-weight: 600 !important;
+           font-size: 14px !important;
+        }
+
+        /* COLOR CYCLING: Green -> Purple -> Blue -> Teal -> Yellow */
+        svg[id^="mermaid-"] .mindmap-node:nth-of-type(5n+1) rect { fill: #15803d !important; }
+        svg[id^="mermaid-"] .mindmap-node:nth-of-type(5n+2) rect { fill: #7e22ce !important; }
+        svg[id^="mermaid-"] .mindmap-node:nth-of-type(5n+3) rect { fill: #1d4ed8 !important; }
+        svg[id^="mermaid-"] .mindmap-node:nth-of-type(5n+4) rect { fill: #0f766e !important; }
+        svg[id^="mermaid-"] .mindmap-node:nth-of-type(5n+5) rect { fill: #ca8a04 !important; }
+
+        /* Hover Effect: Brighten & Scale */
+        svg[id^="mermaid-"] .mindmap-node:hover rect {
+           filter: brightness(1.2) drop-shadow(0px 0px 10px rgba(255,255,255,0.3));
+           transform: scale(1.05);
+           cursor: pointer;
+        }
+
+        /* 3. Connectors: Subtle Slate */
+        svg[id^="mermaid-"] .edge-path path {
+          stroke: #64748b !important;
+          stroke-width: 2px !important;
+          stroke-opacity: 0.5;
         }
       `}</style>
 
       {/* Controls */}
       <div className="absolute bottom-6 right-6 z-20 flex flex-col gap-2 opacity-50 group-hover:opacity-100 transition-opacity">
-        <button onClick={handleDownload} className="p-2 bg-white dark:bg-cyber-800 rounded-lg shadow-lg border border-paper-200 dark:border-cyber-700 hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200 transition-colors" title="Download SVG">
+        <button onClick={handleDownload} className="p-2 bg-slate-800 rounded-lg shadow-lg border border-slate-700 hover:bg-slate-700 text-slate-200 transition-colors" title="Download SVG">
             <Download size={20} />
         </button>
-        <div className="h-px bg-paper-300 dark:bg-cyber-600 my-1"></div>
-        <button onClick={() => setScale(s => Math.min(8, s + 0.2))} className="p-2 bg-white dark:bg-cyber-800 rounded-lg shadow-lg border border-paper-200 dark:border-cyber-700 hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200"><ZoomIn size={20} /></button>
-        <button onClick={() => { setScale(1.0); setPosition({x:0, y:0}); }} className="p-2 bg-white dark:bg-cyber-800 rounded-lg shadow-lg border border-paper-200 dark:border-cyber-700 hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200"><Maximize size={20} /></button>
-        <button onClick={() => setScale(s => Math.max(0.1, s - 0.2))} className="p-2 bg-white dark:bg-cyber-800 rounded-lg shadow-lg border border-paper-200 dark:border-cyber-700 hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200"><ZoomOut size={20} /></button>
+        <div className="h-px bg-slate-700 my-1"></div>
+        <button onClick={() => setScale(s => Math.min(8, s + 0.2))} className="p-2 bg-slate-800 rounded-lg shadow-lg border border-slate-700 hover:bg-slate-700 text-slate-200"><ZoomIn size={20} /></button>
+        <button onClick={() => { setScale(1.0); setPosition({x:0, y:0}); }} className="p-2 bg-slate-800 rounded-lg shadow-lg border border-slate-700 hover:bg-slate-700 text-slate-200"><Maximize size={20} /></button>
+        <button onClick={() => setScale(s => Math.max(0.1, s - 0.2))} className="p-2 bg-slate-800 rounded-lg shadow-lg border border-slate-700 hover:bg-slate-700 text-slate-200"><ZoomOut size={20} /></button>
       </div>
 
-      <div className="absolute top-4 left-4 z-20 px-3 py-1 bg-white/50 dark:bg-black/50 backdrop-blur rounded text-xs font-mono text-slate-500 pointer-events-none border border-black/5 dark:border-white/5">
+      <div className="absolute top-4 left-4 z-20 px-3 py-1 bg-black/50 backdrop-blur rounded text-xs font-mono text-slate-400 pointer-events-none border border-white/5">
         {Math.round(scale * 100)}% • {t.dragToPan}
       </div>
       
@@ -267,7 +277,7 @@ export const MindMap: React.FC<MindMapProps> = ({ content, theme, language = 'en
         <div className="flex flex-col items-center justify-center h-full text-red-500 p-8 text-center animate-fadeIn z-10 relative">
             <AlertTriangle size={48} className="mb-4" />
             <h3 className="font-bold text-lg">{t.mindMapError}</h3>
-            <p className="opacity-80 mt-2 mb-4 text-sm max-w-md bg-red-50 dark:bg-red-900/20 p-2 rounded font-mono">{error}</p>
+            <p className="opacity-80 mt-2 mb-4 text-sm max-w-md bg-red-900/20 p-2 rounded font-mono">{error}</p>
         </div>
       ) : (
         <div 
@@ -285,10 +295,7 @@ export const MindMap: React.FC<MindMapProps> = ({ content, theme, language = 'en
                     transition: isDragging.current ? 'none' : 'transform 0.1s ease-out'
                 }}
                 dangerouslySetInnerHTML={{ __html: svg }}
-                className={`
-                    mermaid-container 
-                    [&>svg]:overflow-visible 
-                `}
+                className={`mermaid-container [&>svg]:overflow-visible`}
             />
         </div>
       )}

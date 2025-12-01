@@ -1,5 +1,6 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Toolbar } from './components/Toolbar';
 import { Editor } from './components/Editor';
 import { Preview } from './components/Preview';
@@ -9,8 +10,8 @@ import { AISettingsModal } from './components/AISettingsModal';
 import { KnowledgeGraph } from './components/KnowledgeGraph';
 import { QuizPanel } from './components/QuizPanel';
 import { MindMap } from './components/MindMap';
-import { ViewMode, AIState, MarkdownFile, AIConfig, ChatMessage, GraphData, AppTheme, Quiz, RAGStats } from './types';
-import { polishContent, expandContent, generateAIResponse, generateKnowledgeGraph, synthesizeKnowledgeBase, generateQuiz, generateMindMap, extractQuizFromRawContent } from './services/aiService';
+import { ViewMode, AIState, MarkdownFile, AIConfig, ChatMessage, GraphData, AppTheme, Quiz, RAGStats, AppShortcut } from './types';
+import { polishContent, expandContent, generateAIResponse, generateKnowledgeGraph, synthesizeKnowledgeBase, generateQuiz, generateMindMap, extractQuizFromRawContent, compactConversation } from './services/aiService';
 import { applyTheme, getAllThemes, getSavedThemeId, saveCustomTheme, deleteCustomTheme, DEFAULT_THEMES, getLastUsedThemeIdForMode } from './services/themeService';
 import { readDirectory, saveFileToDisk, processPdfFile, extractTextFromFile, parseCsvToQuiz, isExtensionSupported } from './services/fileService';
 import { VectorStore } from './services/ragService';
@@ -43,6 +44,16 @@ const DEFAULT_AI_CONFIG: AIConfig = {
     expand: "You are a creative technical writer. Expand on the provided Markdown content, adding relevant details, examples, or explanations. Return only the expanded Markdown."
   }
 };
+
+const DEFAULT_SHORTCUTS: AppShortcut[] = [
+  { id: 'save', label: 'Save File', keys: 'Ctrl+S', actionId: 'save' },
+  { id: 'sidebar', label: 'Toggle Sidebar', keys: 'Ctrl+B', actionId: 'toggle_sidebar' },
+  { id: 'settings', label: 'Open Settings', keys: 'Alt+S', actionId: 'open_settings' },
+  { id: 'chat', label: 'Toggle Chat', keys: 'Alt+C', actionId: 'toggle_chat' },
+  { id: 'new_file', label: 'New File', keys: 'Alt+N', actionId: 'new_file' },
+  { id: 'polish', label: 'AI Polish', keys: 'Alt+P', actionId: 'ai_polish' },
+  { id: 'graph', label: 'Build Graph', keys: 'Alt+G', actionId: 'build_graph' }
+];
 
 interface FileHistory {
   past: string[];
@@ -139,6 +150,17 @@ const App: React.FC = () => {
     } catch (e) { return DEFAULT_AI_CONFIG; }
   });
 
+  const [shortcuts, setShortcuts] = useState<AppShortcut[]>(() => {
+    try {
+       const saved = localStorage.getItem('neon-shortcuts');
+       return saved ? JSON.parse(saved) : DEFAULT_SHORTCUTS;
+    } catch { return DEFAULT_SHORTCUTS; }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('neon-shortcuts', JSON.stringify(shortcuts));
+  }, [shortcuts]);
+
   const [graphData, setGraphData] = useState<GraphData>({ nodes: [], links: [] });
   const [currentQuiz, setCurrentQuiz] = useState<Quiz | null>(null);
   const [quizContext, setQuizContext] = useState<string>(''); // Stores raw text for quiz generation context
@@ -232,6 +254,16 @@ const App: React.FC = () => {
 
   // --- Handlers ---
 
+  const showToast = useCallback((message: string, isError: boolean = false) => {
+    setAiState({ isThinking: false, error: isError ? message : null, message: isError ? null : message });
+    setTimeout(() => setAiState(prev => ({ ...prev, message: null, error: null })), 4000);
+  }, []);
+  
+  // Memoized Node Click Handler to prevent Graph re-renders
+  const handleNodeClick = useCallback((id: string) => {
+      showToast(`Selected: ${id}`);
+  }, [showToast]);
+
   const handleCreateItem = (type: 'file' | 'folder', name: string, parentPath: string = '') => {
     const sanitizedName = name.replace(/[\\/:*?"<>|]/g, '-');
     let finalPath = parentPath ? `${parentPath}/${sanitizedName}` : sanitizedName;
@@ -245,7 +277,6 @@ const App: React.FC = () => {
     const newFileId = generateId();
 
     if (type === 'folder') {
-        // Create a hidden .keep file to persist the folder in our path-based system
         const folderKeeper: MarkdownFile = {
             id: newFileId,
             name: '.keep',
@@ -256,7 +287,6 @@ const App: React.FC = () => {
         setFiles(prev => [...prev, folderKeeper]);
         showToast(`Folder '${sanitizedName}' created`);
     } else {
-        // Handle File creation
         if (!finalPath.toLowerCase().endsWith('.md')) {
             finalPath += '.md';
         }
@@ -287,7 +317,6 @@ const App: React.FC = () => {
     const sourceName = isFolder ? actualSourcePath.split('/').pop() : sourceFile.name;
     
     // 2. Validate Target
-    // Prevent moving folder into itself or its own children
     if (isFolder && targetFolderPath) {
         if (targetFolderPath === actualSourcePath || targetFolderPath.startsWith(actualSourcePath + '/')) {
             showToast("Cannot move folder into itself", true);
@@ -313,9 +342,6 @@ const App: React.FC = () => {
 
         // Logic for moving a Folder (Recursive rename of all children)
         if (isFolder && currentPath.startsWith(actualSourcePath!)) {
-            // Replace the old prefix with the new prefix
-            // Old: Parent/OldFolder/...
-            // New: NewParent/OldFolder/...
             const relativePath = currentPath.substring(actualSourcePath!.length);
             const newRootPath = targetFolderPath ? `${targetFolderPath}/${sourceName}` : sourceName;
             return { ...f, path: newRootPath + relativePath };
@@ -335,10 +361,8 @@ const App: React.FC = () => {
   };
 
   const updateActiveFile = (content: string, skipHistory = false) => {
-    // History Logic
     if (!skipHistory) {
       const now = Date.now();
-      // If significant time passed or explicit action, snapshot BEFORE update
       if (now - lastEditTimeRef.current > HISTORY_DEBOUNCE) {
          setHistory(prev => {
            const fileHist = prev[activeFileId] || { past: [], future: [] };
@@ -349,7 +373,7 @@ const App: React.FC = () => {
              ...prev,
              [activeFileId]: {
                past: newPast,
-               future: [] // New typing clears future
+               future: []
              }
            };
          });
@@ -379,7 +403,7 @@ const App: React.FC = () => {
       }
     }));
 
-    updateActiveFile(previous, true); // Skip adding this revert to history stack normally
+    updateActiveFile(previous, true);
   };
 
   const handleRedo = () => {
@@ -401,7 +425,6 @@ const App: React.FC = () => {
     updateActiveFile(next, true);
   };
 
-  // Helper to force save history explicitly (e.g. before AI modification)
   const saveSnapshot = () => {
     setHistory(prev => {
       const fileHist = prev[activeFileId] || { past: [], future: [] };
@@ -413,7 +436,6 @@ const App: React.FC = () => {
         }
       };
     });
-    // Reset timer so we don't double save if user types immediately
     lastEditTimeRef.current = Date.now();
   };
 
@@ -453,21 +475,23 @@ const App: React.FC = () => {
     // Use provided list or fallback to current state ref (to avoid stale closures)
     const targetFiles = forceList || filesRef.current;
     
-    // Filter out .keep files and empty files before indexing
-    const validFiles = targetFiles.filter(f => !f.name.endsWith('.keep') && f.content.trim().length > 0);
+    // Deduplicate based on ID just in case
+    const uniqueFilesMap = new Map();
+    targetFiles.forEach(f => {
+      if (!f.name.endsWith('.keep') && f.content.trim().length > 0) {
+        uniqueFilesMap.set(f.id, f);
+      }
+    });
+    const validFiles = Array.from(uniqueFilesMap.values());
     
     setRagStats(prev => ({ ...prev, isIndexing: true, totalFiles: validFiles.length }));
     
-    // Cap at 20 files for now for demo robustness
-    const filesToIndex = validFiles.slice(0, 20); 
+    const filesToIndex = validFiles.slice(0, 20); // Cap at 20 for demo
     
     try {
         for (const file of filesToIndex) {
-            // Only valid text files
             if (file.content && file.content.length > 0) {
-                // We pass config to indexFile because it needs API key/URL
                 await vectorStore.indexFile(file, aiConfig);
-                // Live update stats
                 setRagStats(prev => ({ 
                     ...prev,
                     totalFiles: validFiles.length,
@@ -506,11 +530,8 @@ const App: React.FC = () => {
       for (let i = 0; i < fileList.length; i++) {
         const file = fileList[i];
         if (isExtensionSupported(file.name)) {
-           // Pass API Key to allow PDF OCR if needed
            const content = await extractTextFromFile(file, aiConfig.apiKey);
-           
            let path = file.webkitRelativePath || file.name;
-           // Intelligent extension renaming for converted files
            if (path.match(/\.(pdf|docx|doc)$/i)) {
                path = path.replace(/\.(pdf|docx|doc)$/i, '.md');
            }
@@ -527,15 +548,25 @@ const App: React.FC = () => {
       }
       
       if (newFiles.length > 0) {
-        setFiles(prev => [...prev, ...newFiles]); // Append new files instead of replacing
-        setActiveFileId(newFiles[0].id);
-        showToast(`${t.filesLoaded}: ${newFiles.length}`);
+        // Safe Deduplication and Update
+        let combinedFiles: MarkdownFile[] = [];
         
-        // Automatically trigger indexing for new files
-        // We pass the merged list (current + new) to the indexer
-        setTimeout(() => {
-           handleIndexKnowledgeBase([...filesRef.current, ...newFiles]);
-        }, 500);
+        setFiles(prev => {
+           const existingPaths = new Set(prev.map(f => f.path || f.name));
+           const uniqueNew = newFiles.filter(f => !existingPaths.has(f.path || f.name));
+           combinedFiles = [...prev, ...uniqueNew];
+           return combinedFiles;
+        });
+        
+        setActiveFileId(newFiles[0].id);
+        
+        // Trigger indexing outside the state setter to avoid side-effects and double counting
+        // We pass the new files specifically to be indexed
+        if (combinedFiles.length > 0) {
+           handleIndexKnowledgeBase(combinedFiles);
+        }
+
+        showToast(`${t.filesLoaded}: ${newFiles.length}`);
       } else {
         showToast(t.noFilesFound);
       }
@@ -557,14 +588,24 @@ const App: React.FC = () => {
         lastModified: Date.now(),
         path: file.name.replace('.pdf', '.md')
       };
-      setFiles(prev => [...prev, newFile]);
+      
+      let updatedList: MarkdownFile[] = [];
+      setFiles(prev => {
+        if (prev.some(f => (f.path || f.name) === newFile.path)) {
+            updatedList = prev;
+            return prev;
+        }
+        updatedList = [...prev, newFile];
+        return updatedList;
+      });
+      
+      // Index outside state setter
+      if (updatedList.length > 0) {
+         handleIndexKnowledgeBase(updatedList);
+      }
+
       setActiveFileId(newFile.id);
       showToast(t.importSuccess);
-      
-      // Auto-index
-      setTimeout(() => {
-         handleIndexKnowledgeBase([...filesRef.current, newFile]);
-      }, 500);
     } catch (e: any) {
       showToast(`${t.importFail}: ${e.message}`, true);
     } finally {
@@ -575,27 +616,23 @@ const App: React.FC = () => {
   const handleImportQuiz = async (file: File) => {
     setAiState({ isThinking: true, message: t.processingFile, error: null });
     try {
-      // 1. Try structured CSV import
       if (file.name.toLowerCase().endsWith('.csv')) {
          const csvQuiz = await parseCsvToQuiz(file);
          if (csvQuiz) {
              const textContent = await extractTextFromFile(file, aiConfig.apiKey);
-             setQuizContext(textContent); // Store raw CSV text as context for AI explanation
+             setQuizContext(textContent); 
              setCurrentQuiz(csvQuiz);
              setViewMode(ViewMode.Quiz);
              showToast(t.importSuccess);
              setAiState(prev => ({ ...prev, isThinking: false, message: null }));
              return;
          }
-         console.log("CSV structured parse failed, falling back to AI extraction");
       }
 
-      // 2. Fallback: Extract raw text for AI processing
       const textContent = await extractTextFromFile(file, aiConfig.apiKey);
-      setQuizContext(textContent); // Store extracted text as context
+      setQuizContext(textContent);
       
       setAiState({ isThinking: true, message: t.analyzingQuiz, error: null });
-      
       const quiz = await extractQuizFromRawContent(textContent, aiConfig);
       
       setCurrentQuiz(quiz);
@@ -645,7 +682,7 @@ const App: React.FC = () => {
     setAiState({ isThinking: true, message: "Creating Quiz...", error: null });
     try {
       const quiz = await generateQuiz(activeFile.content, aiConfig);
-      setQuizContext(activeFile.content); // Store current file as context
+      setQuizContext(activeFile.content); 
       setCurrentQuiz(quiz);
       setViewMode(ViewMode.Quiz);
     } catch (e: any) {
@@ -670,7 +707,6 @@ const App: React.FC = () => {
       
       updateActiveFile(newContent);
       
-      // We need to wait for React to re-render with the new content before setting selection
       setTimeout(() => {
           if (editorRef.current) {
               editorRef.current.focus();
@@ -678,11 +714,42 @@ const App: React.FC = () => {
           }
       }, 0);
   };
-
-  // --- AI Tool Integration ---
   
+  // -- AI Actions Wrappers for Shortcuts --
+  const performPolish = async () => {
+     try {
+        saveSnapshot(); 
+        setAiState({ isThinking: true, message: "Polishing...", error: null });
+        const res = await polishContent(activeFile.content, aiConfig);
+        updateActiveFile(res);
+        showToast("Polished!");
+     } catch(e:any) { showToast(e.message, true); }
+     finally { setAiState(p => ({...p, isThinking: false, message: null})); }
+  };
+  
+  const performGraph = async () => {
+      try {
+        setAiState({ isThinking: true, message: "Analyzing Graph...", error: null });
+        const data = await generateKnowledgeGraph(files, aiConfig);
+        setGraphData(data);
+        setViewMode(ViewMode.Graph);
+     } catch(e:any) { showToast(e.message, true); }
+     finally { setAiState(p => ({...p, isThinking: false, message: null})); }
+  };
+  
+  const performSynthesize = async () => {
+     try {
+        setAiState({ isThinking: true, message: "Synthesizing Knowledge Base...", error: null });
+        const summary = await synthesizeKnowledgeBase(files, aiConfig);
+        const newFile: MarkdownFile = { id: generateId(), name: 'Master-Summary', content: summary, lastModified: Date.now(), path: 'Master-Summary.md' };
+        setFiles([...files, newFile]);
+        setActiveFileId(newFile.id);
+        setViewMode(ViewMode.Preview);
+     } catch(e:any) { showToast(e.message, true); }
+     finally { setAiState(p => ({...p, isThinking: false, message: null})); }
+  };
+
   const executeAiTool = async (toolName: string, args: any) => {
-    // 1. Core File System Tools
     if (toolName === 'create_file') {
       const newFile: MarkdownFile = {
         id: generateId(),
@@ -718,8 +785,6 @@ const App: React.FC = () => {
        return { success: false, message: "File not found" };
     }
 
-    // 2. MCP Injection Handling
-    // If we reach here, it's an external MCP tool call
     console.log(`[MCP Injection] External Tool Called: ${toolName}`, args);
     return { 
       success: true, 
@@ -731,15 +796,10 @@ const App: React.FC = () => {
     const userMsg: ChatMessage = { id: generateId(), role: 'user', content: text, timestamp: Date.now() };
     setChatMessages(prev => [...prev, userMsg]);
     
-    // RAG Logic: Check if files need indexing
     setAiState({ isThinking: true, message: "Indexing Knowledge Base...", error: null });
-    
-    // Ensure index is up to date (Just In Time)
     await handleIndexKnowledgeBase();
     
-    // Perform Search
     setAiState({ isThinking: true, message: "Searching Knowledge Base...", error: null });
-    
     const relevantContext = await vectorStore.search(text, aiConfig);
     
     setAiState({ isThinking: true, message: "Thinking...", error: null });
@@ -750,9 +810,9 @@ const App: React.FC = () => {
         aiConfig, 
         "You are NeonMark AI. You can edit files using tools. If asked about user's notes, use the provided Knowledge Base context.",
         false,
-        [], // No raw files passed, strictly RAG
+        [], 
         executeAiTool,
-        relevantContext // Pass retrieved chunks
+        relevantContext 
       );
       
       const botMsg: ChatMessage = { id: generateId(), role: 'assistant', content: response, timestamp: Date.now() };
@@ -765,9 +825,95 @@ const App: React.FC = () => {
     }
   };
 
-  const showToast = (message: string, isError: boolean = false) => {
-    setAiState({ isThinking: false, error: isError ? message : null, message: isError ? null : message });
-    setTimeout(() => setAiState(prev => ({ ...prev, message: null, error: null })), 4000);
+  const handleCompactChat = async () => {
+     if (chatMessages.length <= 3) {
+         showToast("Not enough history to compact.", true);
+         return;
+     }
+
+     setAiState({ isThinking: true, message: "Summarizing conversation...", error: null });
+     try {
+         const compacted = await compactConversation(chatMessages, aiConfig);
+         setChatMessages(compacted);
+         showToast("Context compacted.");
+     } catch(e: any) {
+         showToast(e.message, true);
+     } finally {
+         setAiState(prev => ({ ...prev, isThinking: false, message: null }));
+     }
+  };
+
+  // --- Keyboard Shortcuts Logic ---
+  const handleShortcutCommand = (actionId: string) => {
+    switch (actionId) {
+      case 'save':
+        // Explicit save to disk
+        if (activeFile.isLocal && activeFile.handle) {
+          saveFileToDisk(activeFile).then(() => showToast('File Saved', false));
+        } else {
+          showToast('Saved locally', false);
+        }
+        break;
+      case 'toggle_sidebar':
+        setIsSidebarOpen(prev => !prev);
+        break;
+      case 'toggle_chat':
+        setIsChatOpen(prev => !prev);
+        break;
+      case 'open_settings':
+        setIsSettingsOpen(true);
+        break;
+      case 'new_file':
+        handleCreateItem('file', 'Untitled', '');
+        break;
+      case 'ai_polish':
+        if (!aiState.isThinking) performPolish();
+        break;
+      case 'build_graph':
+        if (!aiState.isThinking) performGraph();
+        break;
+      default:
+        console.warn(`Unknown action ID: ${actionId}`);
+    }
+  };
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+       // Construct key string from event
+       const parts = [];
+       if (e.ctrlKey) parts.push('Ctrl');
+       if (e.metaKey) parts.push('Cmd');
+       if (e.altKey) parts.push('Alt');
+       if (e.shiftKey) parts.push('Shift');
+       
+       let key = e.key;
+       if (key === ' ') key = 'Space';
+       if (key.length === 1) key = key.toUpperCase();
+       
+       // Don't add key if it is a modifier
+       if (!['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) {
+         parts.push(key);
+       }
+       
+       const combo = parts.join('+');
+       
+       const match = shortcuts.find(s => s.keys === combo);
+       if (match) {
+         e.preventDefault();
+         handleShortcutCommand(match.actionId);
+       }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [shortcuts, activeFile, aiState.isThinking]); // Dependencies crucial for actions to access latest state
+
+  const handleUpdateShortcut = (id: string, keys: string) => {
+     setShortcuts(prev => prev.map(s => s.id === id ? { ...s, keys } : s));
+  };
+  
+  const handleResetShortcuts = () => {
+    setShortcuts(DEFAULT_SHORTCUTS);
   };
 
   const currentThemeObj = themes.find(t => t.id === activeThemeId) || themes[0];
@@ -799,19 +945,10 @@ const App: React.FC = () => {
           setViewMode={setViewMode} 
           onClear={() => updateActiveFile('')}
           onExport={handleExport}
-          onAIPolish={async () => {
-             try {
-                saveSnapshot(); // Save current state before AI polish
-                setAiState({ isThinking: true, message: "Polishing...", error: null });
-                const res = await polishContent(activeFile.content, aiConfig);
-                updateActiveFile(res);
-                showToast("Polished!");
-             } catch(e:any) { showToast(e.message, true); }
-             finally { setAiState(p => ({...p, isThinking: false, message: null})); }
-          }}
+          onAIPolish={performPolish}
           onAIExpand={async () => {
               try {
-                saveSnapshot(); // Save current state before AI expand
+                saveSnapshot(); 
                 setAiState({ isThinking: true, message: "Expanding...", error: null });
                 const res = await expandContent(activeFile.content, aiConfig);
                 updateActiveFile(res);
@@ -819,26 +956,8 @@ const App: React.FC = () => {
              } catch(e:any) { showToast(e.message, true); }
              finally { setAiState(p => ({...p, isThinking: false, message: null})); }
           }}
-          onBuildGraph={async () => {
-              try {
-                setAiState({ isThinking: true, message: "Analyzing Graph...", error: null });
-                const data = await generateKnowledgeGraph(files, aiConfig);
-                setGraphData(data);
-                setViewMode(ViewMode.Graph);
-             } catch(e:any) { showToast(e.message, true); }
-             finally { setAiState(p => ({...p, isThinking: false, message: null})); }
-          }}
-          onSynthesize={async () => {
-             try {
-                setAiState({ isThinking: true, message: "Synthesizing Knowledge Base...", error: null });
-                const summary = await synthesizeKnowledgeBase(files, aiConfig);
-                const newFile: MarkdownFile = { id: generateId(), name: 'Master-Summary', content: summary, lastModified: Date.now(), path: 'Master-Summary.md' };
-                setFiles([...files, newFile]);
-                setActiveFileId(newFile.id);
-                setViewMode(ViewMode.Preview);
-             } catch(e:any) { showToast(e.message, true); }
-             finally { setAiState(p => ({...p, isThinking: false, message: null})); }
-          }}
+          onBuildGraph={performGraph}
+          onSynthesize={performSynthesize}
           onGenerateMindMap={handleGenerateMindMap}
           onGenerateQuiz={handleGenerateQuiz}
           onFormatBold={() => handleTextFormat('**', '**')}
@@ -864,7 +983,7 @@ const App: React.FC = () => {
               key={activeThemeId}
               data={graphData} 
               theme={currentThemeObj?.type || 'dark'} 
-              onNodeClick={(id) => showToast(`Selected: ${id}`)} 
+              onNodeClick={handleNodeClick} 
             />
           )}
 
@@ -912,6 +1031,7 @@ const App: React.FC = () => {
             messages={chatMessages}
             onSendMessage={handleChatMessage}
             onClearChat={() => setChatMessages([])}
+            onCompactChat={handleCompactChat}
             aiState={aiState}
             language={lang}
           />
@@ -936,6 +1056,9 @@ const App: React.FC = () => {
         onImportTheme={(t) => { saveCustomTheme(t); setThemes(getAllThemes()); handleThemeChange(t.id); }}
         onDeleteTheme={(id) => { deleteCustomTheme(id); setThemes(getAllThemes()); if(activeThemeId === id) handleThemeChange(getAllThemes()[0].id); }}
         language={lang}
+        shortcuts={shortcuts}
+        onUpdateShortcut={handleUpdateShortcut}
+        onResetShortcuts={handleResetShortcuts}
       />
     </div>
   );

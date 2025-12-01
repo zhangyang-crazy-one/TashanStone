@@ -72,6 +72,7 @@ export interface AIConfig {
   provider: AIProvider;
   model: string;
   embeddingModel?: string; // Added embedding model selection
+  compactModel?: string; // Model used for compacting context
   baseUrl?: string; 
   apiKey?: string; 
   temperature: number;
@@ -146,4 +147,11 @@ export interface RAGStats {
   indexedFiles: number;
   totalChunks: number;
   isIndexing: boolean;
+}
+
+export interface AppShortcut {
+  id: string;
+  label: string;
+  keys: string; // e.g. "Ctrl+S", "Alt+Shift+P"
+  actionId: string;
 }

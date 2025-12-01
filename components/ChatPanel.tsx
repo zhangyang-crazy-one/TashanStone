@@ -1,6 +1,5 @@
-
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, User, Sparkles, Bot, X, Trash2 } from 'lucide-react';
+import { Send, User, Sparkles, Bot, X, Trash2, Minimize2 } from 'lucide-react';
 import { ChatMessage, AIState } from '../types';
 import ReactMarkdown from 'react-markdown';
 import { translations, Language } from '../utils/translations';
@@ -11,6 +10,7 @@ interface ChatPanelProps {
   messages: ChatMessage[];
   onSendMessage: (text: string) => void;
   onClearChat: () => void;
+  onCompactChat?: () => void; // Optional for backward compatibility, though implemented in App
   aiState: AIState;
   language?: Language;
 }
@@ -21,6 +21,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   messages,
   onSendMessage,
   onClearChat,
+  onCompactChat,
   aiState,
   language = 'en'
 }) => {
@@ -59,6 +60,16 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             <span>{t.aiCompanion}</span>
           </div>
           <div className="flex items-center gap-1">
+             {onCompactChat && (
+                <button
+                   onClick={onCompactChat}
+                   className={`p-1 transition-colors mr-1 ${messages.length > 3 ? 'text-slate-400 hover:text-cyan-500' : 'text-slate-300 dark:text-slate-600 cursor-not-allowed'}`}
+                   title={messages.length > 3 ? "Compact Context (Summarize History)" : "Compact Context (Requires > 3 messages)"}
+                   disabled={aiState.isThinking || messages.length <= 3}
+                >
+                   <Minimize2 size={18} />
+                </button>
+             )}
             <button 
               onClick={onClearChat}
               className="p-1 text-slate-400 hover:text-red-500 transition-colors mr-1"
@@ -91,17 +102,23 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                 <div 
                   className={`
                     w-8 h-8 rounded-full flex items-center justify-center shrink-0
-                    ${msg.role === 'user' ? 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400' : 'bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400'}
+                    ${msg.role === 'user' 
+                        ? 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400' 
+                        : msg.role === 'system' 
+                           ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+                           : 'bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400'}
                   `}
                 >
-                  {msg.role === 'user' ? <User size={16} /> : <Bot size={16} />}
+                  {msg.role === 'user' ? <User size={16} /> : (msg.role === 'system' ? <Sparkles size={16} /> : <Bot size={16} />)}
                 </div>
                 <div 
                   className={`
                     max-w-[85%] p-3 rounded-2xl text-sm leading-relaxed
                     ${msg.role === 'user' 
                       ? 'bg-cyan-50 dark:bg-cyber-800 text-slate-800 dark:text-slate-200 rounded-tr-none' 
-                      : 'bg-white dark:bg-cyber-800/50 border border-paper-200 dark:border-cyber-700 text-slate-700 dark:text-slate-300 rounded-tl-none'}
+                      : msg.role === 'system'
+                        ? 'bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 text-slate-700 dark:text-slate-300 italic text-xs'
+                        : 'bg-white dark:bg-cyber-800/50 border border-paper-200 dark:border-cyber-700 text-slate-700 dark:text-slate-300 rounded-tl-none'}
                   `}
                 >
                   <ReactMarkdown>{msg.content}</ReactMarkdown>
