@@ -1,7 +1,5 @@
-
-
 import React, { useState, useRef, useMemo } from 'react';
-import { X, Save, Server, Cpu, Key, Globe, Palette, Upload, Trash2, Check, Download, Plus, Languages, MessageSquare, ChevronDown, Wrench, AlertTriangle, Play, Terminal, Code2, Box, Keyboard, Command } from 'lucide-react';
+import { X, Save, Server, Cpu, Key, Globe, Palette, Upload, Trash2, Check, Download, Plus, Languages, MessageSquare, ChevronDown, Wrench, AlertTriangle, Play, Terminal, Code2, Box, Keyboard, Command, Shield } from 'lucide-react';
 import { AIConfig, AppTheme, AppShortcut } from '../types';
 import { translations, Language } from '../utils/translations';
 import { generateAIResponse, VirtualMCPClient } from '../services/aiService';
@@ -20,9 +18,11 @@ interface AISettingsModalProps {
   shortcuts?: AppShortcut[];
   onUpdateShortcut?: (id: string, keys: string) => void;
   onResetShortcuts?: () => void;
+  isLoginEnabled?: boolean;
+  onToggleLogin?: (enabled: boolean) => void;
 }
 
-type Tab = 'ai' | 'appearance' | 'prompts' | 'mcp' | 'keyboard';
+type Tab = 'ai' | 'appearance' | 'prompts' | 'mcp' | 'keyboard' | 'security';
 
 const RECOMMENDED_MODELS: Record<string, {id: string, name: string}[]> = {
   gemini: [
@@ -74,7 +74,9 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
   language = 'en',
   shortcuts = [],
   onUpdateShortcut,
-  onResetShortcuts
+  onResetShortcuts,
+  isLoginEnabled,
+  onToggleLogin
 }) => {
   const [activeTab, setActiveTab] = useState<Tab>('ai');
   const [tempConfig, setTempConfig] = useState<AIConfig>(config);
@@ -247,6 +249,13 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
              >
                 <MessageSquare size={18} />
                 {t.prompts || "Prompts"}
+             </button>
+             <button
+              onClick={() => setActiveTab('security')}
+              className={`text-sm font-bold flex items-center gap-2 pb-1 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'security' ? 'text-cyan-600 dark:text-cyan-400 border-cyan-500' : 'text-slate-500 border-transparent hover:text-slate-700 dark:hover:text-slate-300'}`}
+             >
+                <Shield size={18} />
+                Security
              </button>
              <button
               onClick={() => setActiveTab('keyboard')}
@@ -694,6 +703,44 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
              </div>
           )}
 
+          {/* Security Tab */}
+          {activeTab === 'security' && (
+             <div className="space-y-6 max-w-2xl mx-auto">
+                 <div className="bg-white dark:bg-cyber-800 p-4 rounded-xl border border-paper-200 dark:border-cyber-700 shadow-sm">
+                     <h3 className="text-base font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                         <Shield size={18} className="text-cyan-500" />
+                         Security Configuration
+                     </h3>
+                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                         Manage access control and authentication settings.
+                     </p>
+                 </div>
+
+                 <div className="flex items-center justify-between p-4 bg-white dark:bg-cyber-800 rounded-lg border border-paper-200 dark:border-cyber-700">
+                     <div>
+                         <div className="font-medium text-slate-700 dark:text-slate-300">Login Interface</div>
+                         <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                             Require authentication (Operator ID & Code) when launching the application.
+                         </div>
+                     </div>
+                     
+                     {/* Toggle Switch */}
+                     <button
+                         onClick={() => onToggleLogin?.(!isLoginEnabled)}
+                         className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 ${
+                             isLoginEnabled ? 'bg-cyan-500' : 'bg-slate-200 dark:bg-slate-700'
+                         }`}
+                     >
+                         <span
+                             className={`${
+                                 isLoginEnabled ? 'translate-x-6' : 'translate-x-1'
+                             } inline-block h-4 w-4 transform rounded-full bg-white transition-transform`}
+                         />
+                     </button>
+                 </div>
+             </div>
+          )}
+
           {/* Appearance Tab */}
           {activeTab === 'appearance' && (
             <div className="space-y-6 max-w-3xl mx-auto">
@@ -770,7 +817,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
         </div>
 
         {/* Footer */}
-        {activeTab === 'ai' || activeTab === 'prompts' || activeTab === 'mcp' || activeTab === 'keyboard' ? (
+        {activeTab === 'ai' || activeTab === 'prompts' || activeTab === 'mcp' || activeTab === 'keyboard' || activeTab === 'security' ? (
           <div className="p-4 border-t border-paper-200 dark:border-cyber-700 flex justify-end gap-3 bg-paper-50 dark:bg-cyber-800/50 flex-shrink-0">
              <button onClick={onClose} className="px-4 py-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-paper-200 dark:hover:bg-cyber-700">{t.cancel}</button>
              <button onClick={handleSubmit} className="flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-cyan-500 to-violet-500 text-white rounded-lg shadow-lg hover:shadow-cyan-500/25">

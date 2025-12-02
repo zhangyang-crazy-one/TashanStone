@@ -62,7 +62,21 @@ interface FileHistory {
 
 const App: React.FC = () => {
   // --- Auth State ---
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isLoginEnabled, setIsLoginEnabled] = useState(() => {
+      // Default to false (disabled) if not set
+      return localStorage.getItem('neon-login-enabled') === 'true';
+  });
+
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+      // If login is disabled, we are automatically authenticated
+      const loginEnabled = localStorage.getItem('neon-login-enabled') === 'true';
+      return !loginEnabled;
+  });
+
+  const handleToggleLogin = (enabled: boolean) => {
+      setIsLoginEnabled(enabled);
+      localStorage.setItem('neon-login-enabled', String(enabled));
+  };
 
   // --- Theme State ---
   const [themes, setThemes] = useState<AppTheme[]>(() => {
@@ -457,6 +471,49 @@ const App: React.FC = () => {
         handleSelectFile(newFile.id);
         showToast(`File '${sanitizedName}' created`);
     }
+  };
+
+  const handleRenameNode = (id: string, newName: string, type: 'file' | 'folder', oldPath: string) => {
+    const sanitizedName = newName.replace(/[\\/:*?"<>|]/g, '-').trim();
+    if (!sanitizedName || sanitizedName === oldPath.split('/').pop()) return; // No change
+
+    if (type === 'file') {
+         setFiles(prev => prev.map(f => {
+             if (f.id === id) {
+                 const pathParts = (f.path || f.name).split('/');
+                 const oldNameWithExt = pathParts.pop() || '';
+                 const oldExt = oldNameWithExt.includes('.') ? oldNameWithExt.split('.').pop() : '';
+                 
+                 let finalName = sanitizedName;
+                 // Preserve extension if user didn't type one and one existed
+                 if (oldExt && !finalName.toLowerCase().endsWith(`.${oldExt.toLowerCase()}`)) {
+                      if (!finalName.includes('.')) {
+                          finalName = `${finalName}.${oldExt}`;
+                      }
+                 }
+
+                 const newPath = [...pathParts, finalName].join('/');
+                 const nameForDisplay = finalName.replace(/\.[^/.]+$/, "");
+                 
+                 return { ...f, name: nameForDisplay, path: newPath };
+             }
+             return f;
+         }));
+    } else {
+        // Folder Rename
+        const parentPath = oldPath.substring(0, oldPath.lastIndexOf('/'));
+        const newFolderPath = parentPath ? `${parentPath}/${sanitizedName}` : sanitizedName;
+
+        setFiles(prev => prev.map(f => {
+            const fPath = f.path || f.name;
+            if (fPath === oldPath || fPath.startsWith(oldPath + '/')) {
+                const relative = fPath.substring(oldPath.length);
+                return { ...f, path: newFolderPath + relative };
+            }
+            return f;
+        }));
+    }
+    showToast(`${type === 'file' ? 'File' : 'Folder'} renamed to '${sanitizedName}'`);
   };
 
   const handleMoveItem = (sourceId: string, targetFolderPath: string | null) => {
@@ -949,7 +1006,8 @@ const App: React.FC = () => {
     }
   };
   
-  if (!isAuthenticated) {
+  // Show Login Screen if enabled and not authenticated
+  if (isLoginEnabled && !isAuthenticated) {
     return <LoginScreen onLogin={() => setIsAuthenticated(true)} />;
   }
 
@@ -1047,6 +1105,7 @@ const App: React.FC = () => {
         onCreateItem={handleCreateItem}
         onDeleteFile={handleDeleteFile}
         onMoveItem={handleMoveItem}
+        onRenameItem={handleRenameNode}
         isOpen={isSidebarOpen}
         onCloseMobile={() => setIsSidebarOpen(false)}
         onOpenFolder={handleOpenFolder}
@@ -1151,6 +1210,8 @@ const App: React.FC = () => {
         shortcuts={shortcuts}
         onUpdateShortcut={(id, keys) => setShortcuts(prev => prev.map(s => s.id === id ? { ...s, keys } : s))}
         onResetShortcuts={() => setShortcuts(DEFAULT_SHORTCUTS)}
+        isLoginEnabled={isLoginEnabled}
+        onToggleLogin={handleToggleLogin}
       />
     </div>
   );

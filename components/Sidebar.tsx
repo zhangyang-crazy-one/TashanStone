@@ -1,10 +1,9 @@
-
 import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   FileText, Plus, Trash2, FolderOpen, Search, X, FolderInput, 
   FileType, List, AlignLeft, ChevronRight, GraduationCap, 
   Folder, FileCode, FileImage, FileJson, FileSpreadsheet, File as FileIcon,
-  Lock, Upload, Database, Loader2, RefreshCw
+  Lock, Upload, Database, Loader2, RefreshCw, Edit2
 } from 'lucide-react';
 import { MarkdownFile, RAGStats } from '../types';
 import { translations, Language } from '../utils/translations';
@@ -16,6 +15,7 @@ interface SidebarProps {
   onCreateItem: (type: 'file' | 'folder', name: string, parentPath: string) => void;
   onDeleteFile: (id: string) => void;
   onMoveItem: (sourceId: string, targetFolderPath: string | null) => void;
+  onRenameItem: (id: string, newName: string, type: 'file' | 'folder', path: string) => void;
   isOpen: boolean;
   onCloseMobile: () => void;
   onOpenFolder: () => Promise<void>;
@@ -105,9 +105,35 @@ const FileTreeRow = React.memo<{
     onDragOver: (e: React.DragEvent, nodeId: string) => void;
     onDrop: (e: React.DragEvent, targetPath: string) => void;
     isDropTarget: boolean;
-}>(({ node, activeFileId, onSelect, onToggle, onDelete, onRequestCreate, onDragStart, onDragOver, onDrop, isDropTarget }) => {
+    isRenaming: boolean;
+    renameValue: string;
+    onRenameChange: (val: string) => void;
+    onRenameSubmit: () => void;
+    onRenameCancel: () => void;
+    onStartRename: (id: string, initialName: string) => void;
+}>(({ 
+    node, activeFileId, onSelect, onToggle, onDelete, onRequestCreate, 
+    onDragStart, onDragOver, onDrop, isDropTarget,
+    isRenaming, renameValue, onRenameChange, onRenameSubmit, onRenameCancel, onStartRename
+}) => {
     const indentStyle = { paddingLeft: `${node.level * 12 + 12}px` };
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        if (isRenaming && inputRef.current) {
+            inputRef.current.focus();
+            inputRef.current.select();
+        }
+    }, [isRenaming]);
     
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') {
+            onRenameSubmit();
+        } else if (e.key === 'Escape') {
+            onRenameCancel();
+        }
+    };
+
     if (node.type === 'folder') {
         return (
             <div 
@@ -116,8 +142,8 @@ const FileTreeRow = React.memo<{
                     ${isDropTarget ? 'bg-cyan-100 dark:bg-cyan-900/40 ring-1 ring-cyan-400 inset-0' : 'hover:bg-paper-200 dark:hover:bg-cyber-800 text-slate-600 dark:text-slate-300'}
                 `}
                 style={indentStyle}
-                onClick={() => onToggle(node.path)}
-                draggable
+                onClick={() => !isRenaming && onToggle(node.path)}
+                draggable={!isRenaming}
                 onDragStart={(e) => onDragStart(e, node.fileId || node.id)}
                 onDragOver={(e) => onDragOver(e, node.id)}
                 onDrop={(e) => onDrop(e, node.path)}
@@ -131,25 +157,48 @@ const FileTreeRow = React.memo<{
                 <span className="text-amber-400 shrink-0">
                      {node.isExpanded ? <FolderOpen size={16} /> : <Folder size={16} />}
                 </span>
-                <span className="text-sm font-semibold truncate flex-1">{node.name}</span>
                 
-                {/* Quick Add Buttons (Visible on Hover) */}
-                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                     <button 
-                        onClick={(e) => { e.stopPropagation(); onRequestCreate('file', node.path); }}
-                        className="p-1 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 rounded text-slate-500 hover:text-cyan-600"
-                        title="New File inside"
-                     >
-                         <Plus size={12} />
-                     </button>
-                     <button 
-                        onClick={(e) => { e.stopPropagation(); onRequestCreate('folder', node.path); }}
-                        className="p-1 hover:bg-amber-100 dark:hover:bg-amber-900/50 rounded text-slate-500 hover:text-amber-600"
-                        title="New Folder inside"
-                     >
-                         <FolderInput size={12} />
-                     </button>
-                </div>
+                {isRenaming ? (
+                     <input 
+                        ref={inputRef}
+                        type="text" 
+                        value={renameValue}
+                        onChange={(e) => onRenameChange(e.target.value)}
+                        onBlur={onRenameSubmit}
+                        onKeyDown={handleKeyDown}
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex-1 min-w-0 bg-white dark:bg-cyber-900 border border-cyan-500 rounded px-1 text-sm focus:outline-none h-6"
+                     />
+                ) : (
+                    <span className="text-sm font-semibold truncate flex-1">{node.name}</span>
+                )}
+                
+                {/* Actions (Visible on Hover) */}
+                {!isRenaming && (
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                         <button 
+                            onClick={(e) => { e.stopPropagation(); onStartRename(node.id, node.name); }}
+                            className="p-1 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 rounded text-slate-500 hover:text-cyan-600"
+                            title="Rename Folder"
+                         >
+                             <Edit2 size={12} />
+                         </button>
+                         <button 
+                            onClick={(e) => { e.stopPropagation(); onRequestCreate('file', node.path); }}
+                            className="p-1 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 rounded text-slate-500 hover:text-cyan-600"
+                            title="New File inside"
+                         >
+                             <Plus size={12} />
+                         </button>
+                         <button 
+                            onClick={(e) => { e.stopPropagation(); onRequestCreate('folder', node.path); }}
+                            className="p-1 hover:bg-amber-100 dark:hover:bg-amber-900/50 rounded text-slate-500 hover:text-amber-600"
+                            title="New Folder inside"
+                         >
+                             <FolderInput size={12} />
+                         </button>
+                    </div>
+                )}
             </div>
         );
     }
@@ -170,9 +219,9 @@ const FileTreeRow = React.memo<{
              ${!isOperable ? 'opacity-60 cursor-default' : 'cursor-pointer'}
            `}
            style={indentStyle}
-           onClick={() => isOperable && onSelect(node.fileId!)}
+           onClick={() => isOperable && !isRenaming && onSelect(node.fileId!)}
            title={!isOperable ? "Read Only / Extraction Source" : node.name}
-           draggable={isOperable}
+           draggable={isOperable && !isRenaming}
            onDragStart={(e) => isOperable && onDragStart(e, node.fileId!)}
         >
            {/* Indent Guide */}
@@ -182,18 +231,41 @@ const FileTreeRow = React.memo<{
            {isActive && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-cyan-500" />}
            
            <span className="opacity-80 shrink-0">{getIconForFile(node.name)}</span>
-           <span className="text-sm truncate flex-1 leading-none pt-0.5">{node.name}</span>
+           
+           {isRenaming ? (
+                 <input 
+                    ref={inputRef}
+                    type="text" 
+                    value={renameValue}
+                    onChange={(e) => onRenameChange(e.target.value)}
+                    onBlur={onRenameSubmit}
+                    onKeyDown={handleKeyDown}
+                    onClick={(e) => e.stopPropagation()}
+                    className="flex-1 min-w-0 bg-white dark:bg-cyber-900 border border-cyan-500 rounded px-1 text-sm focus:outline-none h-6"
+                 />
+            ) : (
+                <span className="text-sm truncate flex-1 leading-none pt-0.5">{node.name}</span>
+            )}
            
            {!isOperable && <Lock size={10} className="text-slate-400" />}
 
-           {isOperable && (
-               <button
-                onClick={(e) => { e.stopPropagation(); onDelete(node.fileId!); }}
-                className="p-1 opacity-0 group-hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-500 rounded transition-all shrink-0"
-                title="Delete File"
-               >
-                 <Trash2 size={12} />
-               </button>
+           {isOperable && !isRenaming && (
+               <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                   <button
+                    onClick={(e) => { e.stopPropagation(); onStartRename(node.fileId!, node.name); }}
+                    className="p-1 hover:bg-cyan-100 dark:hover:bg-cyan-900/30 hover:text-cyan-500 rounded transition-all"
+                    title="Rename File"
+                   >
+                     <Edit2 size={12} />
+                   </button>
+                   <button
+                    onClick={(e) => { e.stopPropagation(); onDelete(node.fileId!); }}
+                    className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-500 rounded transition-all"
+                    title="Delete File"
+                   >
+                     <Trash2 size={12} />
+                   </button>
+               </div>
            )}
         </div>
     );
@@ -206,6 +278,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onCreateItem,
   onDeleteFile,
   onMoveItem,
+  onRenameItem,
   isOpen,
   onCloseMobile,
   onOpenFolder,
@@ -231,6 +304,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
     parentPath: string;
     value: string;
   }>({ isOpen: false, type: 'file', parentPath: '', value: '' });
+
+  // Renaming State
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
 
   const creationInputRef = useRef<HTMLInputElement>(null);
 
@@ -497,6 +574,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
       }
   };
 
+  // Renaming Handlers
+  const handleStartRename = useCallback((id: string, initialName: string) => {
+      setRenamingId(id);
+      setRenameValue(initialName);
+  }, []);
+
+  const handleRenameCancel = useCallback(() => {
+      setRenamingId(null);
+      setRenameValue('');
+  }, []);
+
+  const handleRenameSubmit = useCallback(() => {
+      if (!renamingId || !renameValue.trim()) {
+          handleRenameCancel();
+          return;
+      }
+      
+      const node = visibleFlatNodes.find(n => (n.fileId === renamingId) || (n.id === renamingId));
+      if (node && node.name !== renameValue.trim()) {
+          onRenameItem(node.fileId || node.id, renameValue.trim(), node.type, node.path);
+      }
+      setRenamingId(null);
+      setRenameValue('');
+  }, [renamingId, renameValue, visibleFlatNodes, onRenameItem, handleRenameCancel]);
+
   // Drag and Drop Logic
   const handleDragStart = (e: React.DragEvent, nodeId: string) => {
     e.dataTransfer.setData('text/plain', nodeId);
@@ -635,6 +737,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           onDragOver={handleDragOver}
                           onDrop={handleDrop}
                           isDropTarget={dragOverNodeId === node.id}
+                          isRenaming={(renamingId === node.fileId) || (renamingId === node.id)}
+                          renameValue={renameValue}
+                          onRenameChange={setRenameValue}
+                          onRenameSubmit={handleRenameSubmit}
+                          onRenameCancel={handleRenameCancel}
+                          onStartRename={handleStartRename}
                        />
                    ))
                )}
