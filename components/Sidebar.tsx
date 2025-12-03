@@ -1,12 +1,15 @@
+
+
 import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   FileText, Plus, Trash2, FolderOpen, Search, X, FolderInput, 
   FileType, List, AlignLeft, ChevronRight, GraduationCap, 
   Folder, FileCode, FileImage, FileJson, FileSpreadsheet, File as FileIcon,
-  Lock, Upload, Database, Loader2, RefreshCw, Edit2
+  Lock, Upload, Database, Loader2, RefreshCw, Edit2, Tag as TagIcon, Hash, Scissors, Copy
 } from 'lucide-react';
-import { MarkdownFile, RAGStats } from '../types';
+import { MarkdownFile, RAGStats, Snippet } from '../types';
 import { translations, Language } from '../utils/translations';
+import { extractTags } from '../services/knowledgeService';
 
 interface SidebarProps {
   files: MarkdownFile[];
@@ -25,6 +28,7 @@ interface SidebarProps {
   language?: Language;
   ragStats?: RAGStats;
   onRefreshIndex?: () => void;
+  onInsertSnippet?: (text: string) => void;
 }
 
 interface OutlineItem {
@@ -56,6 +60,14 @@ const DISPLAY_EXTENSIONS = ['.md', '.markdown', '.csv', '.pdf', '.docx', '.doc',
 
 // Config: Extensions that can be Operated On (Selected/Edited)
 const OPERABLE_EXTENSIONS = ['.md', '.markdown', '.csv', '.txt'];
+
+const DEFAULT_SNIPPETS: Snippet[] = [
+    { id: 'tbl', name: 'Table', category: 'template', content: '| Header 1 | Header 2 |\n| -------- | -------- |\n| Cell 1   | Cell 2   |\n' },
+    { id: 'math', name: 'Math Block', category: 'code', content: '$$\n  \\int_0^\\infty x^2 dx\n$$\n' },
+    { id: 'mermaid', name: 'Mermaid Diagram', category: 'code', content: '```mermaid\ngraph TD;\n    A-->B;\n    A-->C;\n```\n' },
+    { id: 'todo', name: 'Task List', category: 'template', content: '- [ ] Task 1\n- [ ] Task 2\n' },
+    { id: 'js', name: 'JS Code Block', category: 'code', content: '```javascript\nconsole.log("Hello");\n```\n' },
+];
 
 const isExtensionInList = (filename: string, list: string[]) => {
     if (!filename) return false;
@@ -287,9 +299,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onImportQuiz,
   language = 'en',
   ragStats,
-  onRefreshIndex
+  onRefreshIndex,
+  onInsertSnippet
 }) => {
-  const [activeTab, setActiveTab] = useState<'files' | 'outline'>('files');
+  const [activeTab, setActiveTab] = useState<'files' | 'outline' | 'tags' | 'snippets'>('files');
   const [outline, setOutline] = useState<OutlineItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   
@@ -342,11 +355,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const filesInputRef = useRef<HTMLInputElement>(null);
   const t = translations[language];
 
-  // Sync ref in render to ensure it's up to date for useMemo calculation
   const filesRef = useRef(files);
   filesRef.current = files;
 
-  // 1. Structure Hash: Create a stable dependency key for tree building
+  // 1. Structure Hash
   const filesStructureHash = useMemo(() => {
      if (!files || !Array.isArray(files)) return "";
      return files
@@ -355,18 +367,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
         .join(';');
   }, [files]);
   
-  // 2. Build Tree Structure (Hierarchical)
+  // 2. Build Tree Structure
   const fileTree = useMemo(() => {
     const currentFiles = filesRef.current || [];
     const rootNodes: FileTreeNode[] = [];
     const pathMap = new Map<string, FileTreeNode>();
 
-    // 1. Filter Files
     const visibleFiles = currentFiles.filter(f => 
         f && (f.path || f.name) && isExtensionInList(f.path || f.name, DISPLAY_EXTENSIONS)
     );
 
-    // 2. Build Nodes
     visibleFiles.forEach(file => {
         const rawPath = file.path || file.name;
         const normalizedPath = rawPath.replace(/\\/g, '/');
@@ -379,7 +389,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             const parentPath = currentPath; 
             currentPath = currentPath ? `${currentPath}/${part}` : part;
 
-            // Find or Create Node
             let node = pathMap.get(currentPath);
 
             if (!node) {
@@ -393,7 +402,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 };
                 pathMap.set(currentPath, node);
 
-                // Attach to Parent or Root
                 if (parentPath) {
                     const parent = pathMap.get(parentPath);
                     if (parent && parent.children) {
@@ -408,7 +416,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         });
     });
 
-    // 3. Sort Nodes Recursively
     const sortNodes = (nodes: FileTreeNode[]): FileTreeNode[] => {
         return nodes.sort((a, b) => {
             if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
@@ -424,7 +431,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     return sortNodes(rootNodes);
   }, [filesStructureHash]); 
 
-  // Auto-expand to active file
+  // Auto-expand and Outline logic
   useEffect(() => {
     const activeFile = files.find(f => f.id === activeFileId);
     if (activeFile && (activeFile.path || activeFile.name)) {
@@ -435,7 +442,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                  const next = { ...prev };
                  let currentPath = '';
                  let changed = false;
-                 // Expand all parents
                  for (let i = 0; i < parts.length - 1; i++) {
                      currentPath = currentPath ? `${currentPath}/${parts[i]}` : parts[i];
                      if (!next[currentPath]) {
@@ -448,7 +454,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
          }
     }
     
-    // Also update outline
     if (activeFile) {
       const lines = (activeFile.content || '').split('\n');
       const headers: OutlineItem[] = [];
@@ -468,11 +473,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   }, [activeFileId, files]);
 
+  // Tag Indexing Logic
+  const tagIndex = useMemo(() => {
+    const index = new Map<string, string[]>();
+    files.forEach(f => {
+      extractTags(f.content).forEach(tag => {
+        if (!index.has(tag)) index.set(tag, []);
+        index.get(tag)?.push(f.id);
+      });
+    });
+    return index;
+  }, [files]);
+
   const toggleFolder = useCallback((path: string) => {
       setExpandedFolders(prev => ({ ...prev, [path]: !prev[path] }));
   }, []);
 
-  // 3. Flatten Tree for Rendering
   const visibleFlatNodes = useMemo(() => {
       if (!fileTree) return [];
       const flatList: FlatNode[] = [];
@@ -491,7 +507,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
               flatList.push(flatNode);
 
-              if (isFolder && (isExpanded || searchQuery)) { // Auto-expand on search
+              if (isFolder && (isExpanded || searchQuery)) { 
                   if (node.children) {
                       traverse(node.children, level + 1);
                   }
@@ -499,7 +515,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           }
       };
       
-      // Filter Logic for Search
       const getFilteredNodes = (nodes: FileTreeNode[]): FileTreeNode[] => {
           if (!searchQuery) return nodes;
           const result: FileTreeNode[] = [];
@@ -557,7 +572,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   };
 
-  // Creation Modal Handlers
   const handleOpenCreation = (type: 'file' | 'folder', parentPath: string = '') => {
       setCreationModal({ isOpen: true, type, parentPath, value: '' });
   };
@@ -567,14 +581,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       if (creationModal.value.trim()) {
           onCreateItem(creationModal.type, creationModal.value.trim(), creationModal.parentPath);
           setCreationModal({ isOpen: false, type: 'file', parentPath: '', value: '' });
-          // If created in a folder, ensure it's expanded
           if (creationModal.parentPath) {
               setExpandedFolders(prev => ({ ...prev, [creationModal.parentPath]: true }));
           }
       }
   };
 
-  // Renaming Handlers
   const handleStartRename = useCallback((id: string, initialName: string) => {
       setRenamingId(id);
       setRenameValue(initialName);
@@ -590,7 +602,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           handleRenameCancel();
           return;
       }
-      
       const node = visibleFlatNodes.find(n => (n.fileId === renamingId) || (n.id === renamingId));
       if (node && node.name !== renameValue.trim()) {
           onRenameItem(node.fileId || node.id, renameValue.trim(), node.type, node.path);
@@ -599,14 +610,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       setRenameValue('');
   }, [renamingId, renameValue, visibleFlatNodes, onRenameItem, handleRenameCancel]);
 
-  // Drag and Drop Logic
   const handleDragStart = (e: React.DragEvent, nodeId: string) => {
     e.dataTransfer.setData('text/plain', nodeId);
     e.dataTransfer.effectAllowed = 'move';
   };
 
   const handleDragOver = (e: React.DragEvent, nodeId: string | null) => {
-    e.preventDefault(); // Necessary to allow dropping
+    e.preventDefault(); 
     e.dataTransfer.dropEffect = 'move';
     if (dragOverNodeId !== nodeId) {
         setDragOverNodeId(nodeId);
@@ -636,7 +646,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         ${isOpen ? 'translate-x-0' : '-translate-x-full lg:hidden'}
       `}>
         
-        {/* Creation Modal Overlay */}
         {creationModal.isOpen && (
             <div className="absolute inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-start justify-center pt-20">
                 <form onSubmit={handleCreateSubmit} className="w-64 bg-white dark:bg-cyber-800 rounded-lg shadow-xl border border-paper-200 dark:border-cyber-600 p-3 animate-slideDown">
@@ -675,25 +684,41 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               onClick={() => setActiveTab('files')}
               className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-t-lg text-sm font-medium transition-colors border-b-2 ${activeTab === 'files' ? 'border-cyan-500 text-cyan-700 dark:text-cyan-400 bg-white/50 dark:bg-cyber-900/50' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+              title="Files"
             >
-              <FolderOpen size={15} /> {t.explorer}
+              <FolderOpen size={15} />
+            </button>
+            <button
+              onClick={() => setActiveTab('tags')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-t-lg text-sm font-medium transition-colors border-b-2 ${activeTab === 'tags' ? 'border-emerald-500 text-emerald-700 dark:text-emerald-400 bg-white/50 dark:bg-cyber-900/50' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+              title="Tags"
+            >
+              <TagIcon size={15} />
             </button>
             <button
               onClick={() => setActiveTab('outline')}
               className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-t-lg text-sm font-medium transition-colors border-b-2 ${activeTab === 'outline' ? 'border-violet-500 text-violet-700 dark:text-violet-400 bg-white/50 dark:bg-cyber-900/50' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+              title="Outline"
             >
-              <List size={15} /> Outline
+              <List size={15} />
+            </button>
+            <button
+              onClick={() => setActiveTab('snippets')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-t-lg text-sm font-medium transition-colors border-b-2 ${activeTab === 'snippets' ? 'border-amber-500 text-amber-700 dark:text-amber-400 bg-white/50 dark:bg-cyber-900/50' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+              title="Snippets"
+            >
+              <Scissors size={15} />
             </button>
         </div>
 
-        {/* Search Bar - Only show when Files tab is active */}
-        {activeTab === 'files' && (
+        {/* Search Bar */}
+        {(activeTab === 'files' || activeTab === 'tags') && (
             <div className="p-2 border-b border-paper-200 dark:border-cyber-700 bg-paper-50 dark:bg-cyber-800/50 shrink-0">
                 <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                     <input 
                         type="text" 
-                        placeholder="Search files..." 
+                        placeholder={activeTab === 'files' ? "Search files..." : "Search tags..."} 
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         className="w-full pl-9 pr-3 py-1.5 text-sm bg-white dark:bg-cyber-900 border border-paper-200 dark:border-cyber-600 rounded-md focus:outline-none focus:ring-1 focus:ring-cyan-500 text-slate-800 dark:text-slate-200 placeholder-slate-400"
@@ -762,6 +787,66 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </button>
                </div>
             </div>
+          ) : activeTab === 'tags' ? (
+              <div className="p-2">
+                  {Array.from(tagIndex.keys()).sort().filter(t => t.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 ? (
+                       <div className="flex flex-col items-center justify-center h-40 text-slate-400 text-xs text-center p-4">
+                           <Hash size={32} className="mb-2 opacity-50" />
+                           <p>No tags found</p>
+                       </div>
+                  ) : (
+                      <div className="space-y-1">
+                          {Array.from(tagIndex.keys()).sort().filter(t => t.toLowerCase().includes(searchQuery.toLowerCase())).map(tag => (
+                              <div key={tag} className="group">
+                                  <div className="flex items-center gap-2 px-2 py-1.5 text-sm text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-paper-200 dark:hover:bg-cyber-700 rounded cursor-pointer font-medium">
+                                      <Hash size={12} className="text-emerald-500" />
+                                      {tag}
+                                      <span className="ml-auto text-xs text-slate-400 bg-paper-200 dark:bg-cyber-800 px-1.5 rounded-full">
+                                          {tagIndex.get(tag)?.length}
+                                      </span>
+                                  </div>
+                                  <div className="ml-6 space-y-0.5 mt-0.5 hidden group-hover:block">
+                                      {tagIndex.get(tag)?.map(fileId => {
+                                          const file = files.find(f => f.id === fileId);
+                                          if (!file) return null;
+                                          return (
+                                              <div 
+                                                  key={fileId}
+                                                  onClick={() => onSelectFile(fileId)}
+                                                  className="text-xs text-slate-500 hover:text-emerald-600 cursor-pointer py-0.5 truncate"
+                                              >
+                                                  {file.name}
+                                              </div>
+                                          )
+                                      })}
+                                  </div>
+                              </div>
+                          ))}
+                      </div>
+                  )}
+              </div>
+          ) : activeTab === 'snippets' ? (
+              <div className="p-2 space-y-2">
+                  <div className="text-xs text-slate-500 px-1 font-semibold uppercase tracking-wider mb-2">Templates & Snippets</div>
+                  {DEFAULT_SNIPPETS.map(snippet => (
+                      <div 
+                          key={snippet.id} 
+                          onClick={() => onInsertSnippet?.(snippet.content)}
+                          className="group flex items-center justify-between p-2 rounded bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-700 hover:border-amber-400 cursor-pointer shadow-sm transition-all"
+                      >
+                          <div className="flex items-center gap-2 overflow-hidden">
+                               {snippet.category === 'code' ? <FileCode size={14} className="text-blue-500 shrink-0" /> : <List size={14} className="text-amber-500 shrink-0" />}
+                               <span className="text-sm text-slate-700 dark:text-slate-300 truncate">{snippet.name}</span>
+                          </div>
+                          <button className="text-slate-400 hover:text-amber-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Plus size={14} />
+                          </button>
+                      </div>
+                  ))}
+                  <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-900/10 rounded border border-amber-200 dark:border-amber-800/30 text-xs text-amber-800 dark:text-amber-200">
+                      <p>Click to insert into editor at cursor position.</p>
+                  </div>
+              </div>
           ) : (
             <div className="p-4">
               {outline.length === 0 ? (
@@ -776,10 +861,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       key={idx}
                       className="text-sm py-1 px-2 hover:bg-paper-200 dark:hover:bg-cyber-700 rounded cursor-pointer text-slate-600 dark:text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors truncate"
                       style={{ paddingLeft: `${(item.level - 1) * 12 + 8}px` }}
-                      onClick={() => {
-                          // Simple scroll to line logic
-                          // Ideally this would use an Editor ref to scroll to line
-                      }}
                     >
                       {item.text}
                     </div>

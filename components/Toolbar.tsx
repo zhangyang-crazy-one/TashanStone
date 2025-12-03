@@ -1,4 +1,5 @@
-import React from 'react';
+
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   Columns, 
   Eye, 
@@ -26,7 +27,11 @@ import {
   PanelRightOpen,
   PanelRightClose,
   Mic,
-  Box
+  Box,
+  LayoutGrid,
+  BarChart2,
+  ChevronDown,
+  Workflow
 } from 'lucide-react';
 import { ViewMode, Theme, AIProvider } from '../types';
 import { translations, Language } from '../utils/translations';
@@ -38,6 +43,7 @@ interface ToolbarProps {
   onExport: () => void;
   onAIPolish: () => void;
   onAIExpand: () => void;
+  onAIEntityExtraction: () => void;
   onBuildGraph: () => void;
   onSynthesize: () => void;
   onGenerateMindMap: () => void;
@@ -73,6 +79,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onExport,
   onAIPolish,
   onAIExpand,
+  onAIEntityExtraction,
   onBuildGraph,
   onSynthesize,
   onGenerateMindMap,
@@ -97,6 +104,18 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onToggleDictation
 }) => {
   const t = translations[language];
+  const [isAiMenuOpen, setIsAiMenuOpen] = useState(false);
+  const aiMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (aiMenuRef.current && !aiMenuRef.current.contains(event.target as Node)) {
+        setIsAiMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   return (
     <div className="h-16 border-b border-paper-200 dark:border-cyber-700 bg-white/80 dark:bg-cyber-800/80 backdrop-blur-md flex items-center justify-between px-4 sticky top-0 z-30 transition-colors duration-300">
@@ -141,24 +160,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           </button>
         </div>
 
-        {/* Formatting Controls */}
-        <div className="flex bg-paper-100 dark:bg-cyber-800 rounded-lg p-1 border border-paper-200 dark:border-cyber-700 transition-colors hidden sm:flex">
-          <button
-            onClick={onFormatBold}
-            className="p-2 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all hover:bg-white dark:hover:bg-cyber-700"
-            title="Bold"
-          >
-            <Bold size={18} />
-          </button>
-          <button
-            onClick={onFormatItalic}
-            className="p-2 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all hover:bg-white dark:hover:bg-cyber-700"
-            title="Italic"
-          >
-            <Italic size={18} />
-          </button>
-        </div>
-
         <div className="h-6 w-px bg-paper-200 dark:bg-cyber-700 mx-1 hidden sm:block"></div>
 
         {/* Layout Controls */}
@@ -177,21 +178,29 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           >
             <Columns size={18} />
           </button>
-          <button
-            onClick={() => setViewMode(ViewMode.Preview)}
-            className={`p-2 rounded-md transition-all ${viewMode === ViewMode.Preview ? 'bg-white dark:bg-cyber-500 text-cyan-600 dark:text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
-            title={t.preview}
-          >
-            <Eye size={18} />
-          </button>
           
-          {/* Note Space 3D Toggle */}
           <button
-            onClick={() => setViewMode(ViewMode.NoteSpace)}
-            className={`p-2 rounded-md transition-all ${viewMode === ViewMode.NoteSpace ? 'bg-white dark:bg-cyber-500 text-violet-500 dark:text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
-            title="3D Note Space"
+            onClick={() => setViewMode(ViewMode.Library)}
+            className={`p-2 rounded-md transition-all ${viewMode === ViewMode.Library ? 'bg-white dark:bg-cyber-500 text-emerald-600 dark:text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
+            title="Library View"
           >
-            <Box size={18} />
+            <LayoutGrid size={18} />
+          </button>
+
+          <button
+            onClick={() => setViewMode(ViewMode.Analytics)}
+            className={`p-2 rounded-md transition-all ${viewMode === ViewMode.Analytics ? 'bg-white dark:bg-cyber-500 text-amber-500 dark:text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
+            title="Analytics"
+          >
+            <BarChart2 size={18} />
+          </button>
+
+          <button
+            onClick={onBuildGraph}
+            className={`p-2 rounded-md transition-all ${viewMode === ViewMode.Graph ? 'bg-white dark:bg-cyber-500 text-cyan-600 dark:text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
+            title={t.graph}
+          >
+            <Network size={18} />
           </button>
           
           <div className="w-px h-full bg-paper-300 dark:bg-cyber-600 mx-1"></div>
@@ -200,7 +209,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             onClick={onToggleSplitView}
             className={`p-2 rounded-md transition-all ${isSplitView ? 'bg-white dark:bg-cyber-500 text-cyan-600 dark:text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
             title={isSplitView ? "Close Split View" : "Split View (Multi-file)"}
-            disabled={viewMode === ViewMode.NoteSpace} // Disable in 3D mode
+            disabled={viewMode === ViewMode.NoteSpace || viewMode === ViewMode.Library} // Disable in special modes
           >
             {isSplitView ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
           </button>
@@ -208,26 +217,63 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
         <div className="h-6 w-px bg-paper-200 dark:bg-cyber-700 mx-1 hidden md:block"></div>
 
-        {/* AI Action Group */}
+        {/* AI Action Group (Dropdown Menu) */}
         <div className="flex items-center gap-1">
-          <div className="hidden sm:flex rounded-lg border border-cyan-500/20 bg-cyan-50/50 dark:bg-cyan-900/10 p-0.5">
+          <div className="relative" ref={aiMenuRef}>
             <button
-              onClick={onAIPolish}
-              disabled={isAIThinking || viewMode === ViewMode.NoteSpace}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium text-cyan-700 dark:text-cyan-400 hover:bg-white dark:hover:bg-cyber-700/50 transition-all disabled:opacity-50"
-              title={`${t.polish} (${activeProvider})`}
+              onClick={() => setIsAiMenuOpen(!isAiMenuOpen)}
+              disabled={isAIThinking || viewMode === ViewMode.NoteSpace || viewMode === ViewMode.Library}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-cyan-50 dark:bg-cyan-900/20 text-cyan-700 dark:text-cyan-400 border border-cyan-500/30 hover:bg-white dark:hover:bg-cyber-700/50 transition-all disabled:opacity-50"
             >
-              <Sparkles size={14} className={isAIThinking ? 'animate-spin' : ''} />
-              <span>{t.polish}</span>
+              <Sparkles size={16} className={isAIThinking ? 'animate-spin' : ''} />
+              <span className="text-sm font-medium hidden sm:inline">AI Actions</span>
+              <ChevronDown size={14} />
             </button>
-            <div className="w-px h-4 bg-cyan-200 dark:bg-cyan-800 mx-1 self-center"></div>
-            
-            <button onClick={onGenerateMindMap} disabled={isAIThinking} className="p-2 hover:bg-white dark:hover:bg-cyber-700/50 rounded-md text-cyan-700 dark:text-cyan-400 transition-all" title={t.mindMap}>
-               <BrainCircuit size={16} />
-            </button>
-             <button onClick={onGenerateQuiz} disabled={isAIThinking} className="p-2 hover:bg-white dark:hover:bg-cyber-700/50 rounded-md text-cyan-700 dark:text-cyan-400 transition-all" title={t.quiz}>
-               <GraduationCap size={16} />
-            </button>
+
+            {isAiMenuOpen && (
+              <div className="absolute top-full right-0 mt-2 w-56 bg-white dark:bg-cyber-800 rounded-xl shadow-xl border border-paper-200 dark:border-cyber-700 py-2 z-50 animate-slideDown">
+                <div className="px-3 py-1.5 text-xs font-bold text-slate-400 uppercase tracking-wider">Editing</div>
+                <button
+                  onClick={() => { onAIPolish(); setIsAiMenuOpen(false); }}
+                  className="w-full text-left px-4 py-2 hover:bg-paper-100 dark:hover:bg-cyber-700 text-sm text-slate-700 dark:text-slate-200 flex items-center gap-2"
+                >
+                  <PenTool size={14} className="text-cyan-500" /> {t.polish}
+                </button>
+                <button
+                  onClick={() => { onAIExpand(); setIsAiMenuOpen(false); }}
+                  className="w-full text-left px-4 py-2 hover:bg-paper-100 dark:hover:bg-cyber-700 text-sm text-slate-700 dark:text-slate-200 flex items-center gap-2"
+                >
+                  <Maximize2 size={14} className="text-violet-500" /> {t.expand}
+                </button>
+                
+                <div className="my-1 h-px bg-paper-200 dark:bg-cyber-700"></div>
+                <div className="px-3 py-1.5 text-xs font-bold text-slate-400 uppercase tracking-wider">Generation</div>
+                
+                <button
+                  onClick={() => { onGenerateMindMap(); setIsAiMenuOpen(false); }}
+                  className="w-full text-left px-4 py-2 hover:bg-paper-100 dark:hover:bg-cyber-700 text-sm text-slate-700 dark:text-slate-200 flex items-center gap-2"
+                >
+                  <BrainCircuit size={14} className="text-emerald-500" /> {t.mindMap}
+                </button>
+                <button
+                  onClick={() => { onGenerateQuiz(); setIsAiMenuOpen(false); }}
+                  className="w-full text-left px-4 py-2 hover:bg-paper-100 dark:hover:bg-cyber-700 text-sm text-slate-700 dark:text-slate-200 flex items-center gap-2"
+                >
+                  <GraduationCap size={14} className="text-amber-500" /> {t.quiz}
+                </button>
+
+                <div className="my-1 h-px bg-paper-200 dark:bg-cyber-700"></div>
+                <div className="px-3 py-1.5 text-xs font-bold text-slate-400 uppercase tracking-wider">Deep Analysis</div>
+
+                <button
+                  onClick={() => { onAIEntityExtraction(); setIsAiMenuOpen(false); }}
+                  className="w-full text-left px-4 py-2 hover:bg-paper-100 dark:hover:bg-cyber-700 text-sm text-slate-700 dark:text-slate-200 flex items-center gap-2 group"
+                >
+                  <Workflow size={14} className="text-red-500 group-hover:scale-110 transition-transform" /> 
+                  <span>Extract Entities</span>
+                </button>
+              </div>
+            )}
           </div>
           
           {/* Voice Dictation Toggle */}

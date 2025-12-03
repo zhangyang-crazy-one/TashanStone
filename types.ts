@@ -8,6 +8,7 @@ export interface MarkdownFile {
   handle?: FileSystemFileHandle; // For local file persistence
   isLocal?: boolean;
   path?: string; // Relative path for folder imports (e.g. "docs/v1/intro.md")
+  summary?: string; // AI Generated Summary for search previews
 }
 
 export enum ViewMode {
@@ -17,7 +18,9 @@ export enum ViewMode {
   Graph = 'GRAPH',
   Quiz = 'QUIZ',
   MindMap = 'MINDMAP',
-  NoteSpace = 'NOTE_SPACE'
+  NoteSpace = 'NOTE_SPACE',
+  Library = 'LIBRARY',
+  Analytics = 'ANALYTICS'
 }
 
 export type ThemeType = 'dark' | 'light';
@@ -70,6 +73,8 @@ export interface AIState {
 
 export type AIProvider = 'gemini' | 'ollama' | 'openai';
 
+export type BackupFrequency = 'never' | 'daily' | 'weekly' | 'monthly';
+
 export interface AIConfig {
   provider: AIProvider;
   model: string;
@@ -84,6 +89,10 @@ export interface AIConfig {
   customPrompts?: {
     polish?: string;
     expand?: string;
+  };
+  backup?: {
+    frequency: BackupFrequency;
+    lastBackup: number;
   };
 }
 
@@ -172,6 +181,27 @@ export interface AppShortcut {
   actionId: string;
 }
 
+export interface Snippet {
+  id: string;
+  name: string;
+  content: string;
+  category: 'code' | 'text' | 'template';
+}
+
+export interface SearchResult {
+  fileId: string;
+  fileName: string;
+  path: string;
+  score: number;
+  matches: {
+    type: 'title' | 'content' | 'tag';
+    text: string;
+    indices?: [number, number]; // Start/End index of match
+  }[];
+  lastModified: number;
+  tags: string[];
+}
+
 // --- Web Speech API Types ---
 export interface SpeechRecognition extends EventTarget {
   continuous: boolean;
@@ -222,5 +252,6 @@ declare global {
     webkitSpeechRecognition: {
       new (): SpeechRecognition;
     };
+    jspdf: any;
   }
 }

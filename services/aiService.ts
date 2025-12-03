@@ -457,6 +457,77 @@ export const expandContent = async (content: string, config: AIConfig): Promise<
     return generateAIResponse(prompt, config, config.customPrompts?.expand || "You are a creative writer.", true);
 };
 
+export const generateSummary = async (content: string, config: AIConfig): Promise<string> => {
+    const prompt = `Generate a concise 2-3 sentence summary of the following content. Focus on key concepts and main ideas.\n\n${content.substring(0, 3000)}`;
+    return generateAIResponse(prompt, config, "You are a knowledge organizer.", true);
+};
+
+export const suggestTags = async (content: string, config: AIConfig): Promise<string[]> => {
+    const prompt = `Analyze the following content and suggest 3-5 relevant hierarchical tags (e.g. #topic/subtopic). 
+    Return ONLY a JSON array of strings. Example: ["#project/ui", "#dev/react"]
+    
+    Content:
+    ${content.substring(0, 1000)}...`;
+
+    const res = await generateAIResponse(prompt, config, "You are a taxonomy expert.", true);
+    try {
+        const jsonStr = res.replace(/```json/g, '').replace(/```/g, '').trim();
+        const parsed = JSON.parse(jsonStr);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+        return [];
+    }
+};
+
+export const suggestCategory = async (content: string, config: AIConfig): Promise<string> => {
+    const prompt = `Analyze this content and suggest a single folder path (e.g. "Work/Projects" or "Personal/Journal"). Return ONLY the path string.
+    
+    Content:
+    ${content.substring(0, 1000)}...`;
+
+    return await generateAIResponse(prompt, config, "You are a librarian.", true);
+};
+
+export const extractEntitiesAndRelationships = async (content: string, config: AIConfig): Promise<GraphData> => {
+    const prompt = `
+    Analyze the provided text and perform entity-relationship abstraction.
+    Identify key entities (concepts, people, places, organizations) and their semantic relationships.
+    
+    Return a JSON object with this exact structure:
+    {
+      "nodes": [
+        { "id": "Entity Name", "label": "Entity Name", "group": 5, "val": 2 } 
+      ],
+      "links": [
+        { "source": "Entity Name 1", "target": "Entity Name 2", "relationship": "verb or phrase" }
+      ]
+    }
+    
+    Rules:
+    1. Entities should be concise (1-3 words).
+    2. 'group' should be 5 for these extracted entities to distinguish them visually.
+    3. 'val' represents importance (1-10).
+    4. Return ONLY valid JSON. Do not use Markdown code blocks.
+    
+    Text to analyze:
+    ${content.substring(0, 4000)}
+    `;
+
+    const res = await generateAIResponse(prompt, config, "You are a knowledge graph engineer.", true);
+    try {
+        const jsonStr = res.replace(/```json/g, '').replace(/```/g, '').trim();
+        const data = JSON.parse(jsonStr);
+        // Validate structure basics
+        if (Array.isArray(data.nodes) && Array.isArray(data.links)) {
+            return data;
+        }
+        return { nodes: [], links: [] };
+    } catch (e) {
+        console.error("Failed to parse extracted graph", e);
+        return { nodes: [], links: [] };
+    }
+};
+
 export const generateKnowledgeGraph = async (files: MarkdownFile[], config: AIConfig): Promise<GraphData> => {
     const context = files.slice(0, 5).map(f => `File: ${f.name}\n${f.content.substring(0, 500)}...`).join('\n\n');
     const prompt = `Analyze these files and generate a knowledge graph JSON.
