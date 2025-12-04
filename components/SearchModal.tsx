@@ -4,6 +4,7 @@ import { Search, FileText, Hash, Calendar, ArrowRight, Loader2, Sparkles, BrainC
 import { MarkdownFile, SearchResult, AIConfig } from '../types';
 import { performGlobalSearch } from '../services/searchService';
 import { generateSummary } from '../services/aiService';
+import { translations, Language } from '../utils/translations';
 
 interface SearchModalProps {
   isOpen: boolean;
@@ -33,6 +34,8 @@ export const SearchModal: React.FC<SearchModalProps> = ({
   
   const inputRef = useRef<HTMLInputElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
+  
+  const t = translations[aiConfig.language as Language || 'en'];
 
   useEffect(() => {
     if (isOpen) {
@@ -148,20 +151,20 @@ export const SearchModal: React.FC<SearchModalProps> = ({
                     onChange={(e) => setQuery(e.target.value)}
                     onKeyDown={handleKeyDown}
                     className="flex-1 bg-transparent text-lg text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none"
-                    placeholder="Search files, tags, or ask a question..."
+                    placeholder={t.searchPlaceholder}
                 />
                 <div className="flex gap-2 text-xs">
                      <button 
                         onClick={() => setActiveTab('instant')}
                         className={`px-3 py-1 rounded-full transition-colors ${activeTab === 'instant' ? 'bg-cyan-100 dark:bg-cyan-900 text-cyan-700 dark:text-cyan-300' : 'text-slate-500 hover:bg-paper-100 dark:hover:bg-cyber-700'}`}
                      >
-                         Instant
+                         {t.instant}
                      </button>
                      <button 
                         onClick={triggerSemanticSearch}
                         className={`flex items-center gap-1 px-3 py-1 rounded-full transition-colors ${activeTab === 'semantic' ? 'bg-violet-100 dark:bg-violet-900 text-violet-700 dark:text-violet-300' : 'text-slate-500 hover:bg-paper-100 dark:hover:bg-cyber-700'}`}
                      >
-                         <Sparkles size={12} /> Semantic
+                         <Sparkles size={12} /> {t.semantic}
                      </button>
                 </div>
                 <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
@@ -181,7 +184,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({
                     {activeResults.length === 0 && !isSearchingAI && (
                         <div className="text-center py-10 text-slate-400">
                             <Search size={48} className="mx-auto mb-2 opacity-20" />
-                            <p>No results found.</p>
+                            <p>{t.noResults}</p>
                             {activeTab === 'instant' && query && (
                                 <button onClick={triggerSemanticSearch} className="mt-2 text-violet-500 hover:underline text-sm">
                                     Try Semantic Search?
@@ -250,7 +253,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({
                             {/* AI Summary Section */}
                             <div className="bg-white dark:bg-cyber-800 p-4 rounded-xl border border-paper-200 dark:border-cyber-700 shadow-sm relative overflow-hidden group">
                                 <h3 className="text-xs font-bold text-violet-500 uppercase tracking-wider mb-2 flex items-center gap-2">
-                                    <Sparkles size={12} /> AI Summary
+                                    <Sparkles size={12} /> {t.aiSummary}
                                 </h3>
                                 {isGeneratingSummary ? (
                                     <div className="flex items-center gap-2 text-sm text-slate-500">
@@ -267,7 +270,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({
                             {relatedFileIds.length > 0 && (
                                 <div>
                                     <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-                                        <BrainCircuit size={14} /> Related Notes
+                                        <BrainCircuit size={14} /> {t.relatedNotes}
                                     </h3>
                                     <div className="space-y-2">
                                         {relatedFileIds.map(id => {
@@ -290,7 +293,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({
 
                             {/* Raw Content Preview (Truncated) */}
                             <div className="opacity-50 hover:opacity-100 transition-opacity">
-                                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Content Snippet</h3>
+                                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">{t.contentSnippet}</h3>
                                 <pre className="text-xs font-mono text-slate-600 dark:text-slate-400 whitespace-pre-wrap">
                                     {selectedFile.content.substring(0, 500)}...
                                 </pre>

@@ -1,6 +1,5 @@
 
-
-import { MarkdownFile, GraphData } from '../types';
+import { MarkdownFile, GraphData, ExamResult, GraphNode, GraphLink } from '../types';
 
 export interface WikiLink {
   sourceId: string;
@@ -107,16 +106,18 @@ export const preprocessWikiLinks = (content: string): string => {
 
 /**
  * Deterministically generates a Knowledge Graph based on file links.
+ * Now supports injecting Exam nodes.
  */
-export const generateFileLinkGraph = (files: MarkdownFile[]): GraphData => {
-    const nodes = files.map(f => ({
+export const generateFileLinkGraph = (files: MarkdownFile[], exams: ExamResult[] = []): GraphData => {
+    const nodes: GraphNode[] = files.map(f => ({
         id: f.id,
         label: f.name,
-        group: 1, // Default group
-        val: 1 // Base value
+        group: 1, // Default group for files
+        val: 1, // Base value
+        type: 'file'
     }));
 
-    const links: any[] = [];
+    const links: GraphLink[] = [];
     const idMap = new Map<string, string>();
     const nameMap = new Map<string, string>();
     
@@ -126,6 +127,7 @@ export const generateFileLinkGraph = (files: MarkdownFile[]): GraphData => {
         nameMap.set(f.name.toLowerCase(), f.id);
     });
 
+    // 1. Process File Links
     files.forEach(source => {
         const extracted = extractLinks(source.content);
         extracted.forEach(link => {
@@ -143,6 +145,32 @@ export const generateFileLinkGraph = (files: MarkdownFile[]): GraphData => {
                 }
             }
         });
+    });
+
+    // 2. Process Exams
+    exams.forEach(exam => {
+        // Create Exam Node
+        const examNode: GraphNode = {
+            id: exam.id,
+            label: exam.quizTitle || 'Exam',
+            group: 20, // Distinct group for exams
+            val: 2, // Slightly larger base
+            type: 'exam',
+            score: exam.score
+        };
+        nodes.push(examNode);
+
+        // Link to Source File if it exists
+        if (exam.sourceFileId) {
+            // Ensure source file actually exists (might have been deleted)
+            if (idMap.has(exam.sourceFileId)) {
+                links.push({
+                    source: examNode.id,
+                    target: exam.sourceFileId,
+                    relationship: 'generated_from'
+                });
+            }
+        }
     });
 
     // Update node values (degree centrality)
@@ -204,13 +232,14 @@ export const getAnalyticsData = (files: MarkdownFile[]): AnalyticsData => {
 
     // 3. Connectivity
     const topConnected = graph.nodes
+        .filter(n => n.type === 'file') // Only count files
         .sort((a, b) => (b.val || 0) - (a.val || 0))
         .slice(0, 10)
         .map(n => ({ name: n.label, connections: (n.val || 1) - 1 })); // subtract base val 1
 
     // 4. Density
     // Density = 2 * Links / (Nodes * (Nodes - 1))
-    const nodeCount = graph.nodes.length;
+    const nodeCount = graph.nodes.filter(n => n.type === 'file').length;
     const linkCount = graph.links.length;
     const possibleLinks = nodeCount * (nodeCount - 1);
     const density = possibleLinks > 0 ? (2 * linkCount) / possibleLinks : 0;

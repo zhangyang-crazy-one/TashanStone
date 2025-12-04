@@ -64,6 +64,65 @@ const RECOMMENDED_EMBEDDING_MODELS: Record<string, {id: string, name: string}[]>
   ]
 };
 
+interface ThemedDropdownProps {
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+  placeholder?: string;
+  className?: string;
+}
+
+const ThemedDropdown: React.FC<ThemedDropdownProps> = ({ value, onChange, options, placeholder, className = '' }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    if (isOpen) document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen]);
+
+  const selectedOption = options.find(o => o.value === value);
+  const displayLabel = selectedOption ? selectedOption.label : (placeholder || "Select...");
+
+  return (
+    <div className={`relative ${className}`} ref={ref}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between px-3 py-2 bg-paper-50 dark:bg-cyber-900 border border-paper-300 dark:border-cyber-600 rounded-lg text-xs text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-cyan-500 transition-all hover:border-cyan-500"
+      >
+        <span className="truncate">{displayLabel}</span>
+        <ChevronDown size={14} className={`transition-transform text-slate-400 shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+      
+      {isOpen && (
+        <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-700 rounded-lg shadow-xl z-50 overflow-hidden animate-slideDown max-h-48 overflow-y-auto custom-scrollbar">
+          {options.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => { onChange(opt.value); setIsOpen(false); }}
+              className={`w-full text-left px-3 py-2 text-xs transition-colors truncate
+                ${value === opt.value 
+                  ? 'text-cyan-600 dark:text-cyan-400 font-bold bg-cyan-50/50 dark:bg-cyan-900/20' 
+                  : 'text-slate-600 dark:text-slate-300 hover:bg-paper-100 dark:hover:bg-cyber-700 hover:text-cyan-600 dark:hover:text-cyan-400'}
+              `}
+              title={opt.label}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const AISettingsModal: React.FC<AISettingsModalProps> = ({
   isOpen,
   onClose,
@@ -84,8 +143,8 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<Tab>(initialTab);
   const [tempConfig, setTempConfig] = useState<AIConfig>(config);
+  const t = translations[language];
   
-  // Sync tab on open
   useEffect(() => {
       if (isOpen) {
           setActiveTab(initialTab);
@@ -93,925 +152,557 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
       }
   }, [isOpen, initialTab, config]);
   
-  // Test State
-  const [testTool, setTestTool] = useState<string | null>(null); // Name of tool being tested
+  const [testTool, setTestTool] = useState<string | null>(null); 
   const [testPrompt, setTestPrompt] = useState<string>('');
   const [testLog, setTestLog] = useState<string[]>([]);
   const [isTesting, setIsTesting] = useState(false);
 
-  // Keyboard Recording State
   const [recordingId, setRecordingId] = useState<string | null>(null);
   const [conflictWarning, setConflictWarning] = useState<string | null>(null);
 
-  // Backup/Security State
   const [exportPassword, setExportPassword] = useState('');
   const [importPassword, setImportPassword] = useState('');
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
-  const [backupStatus, setBackupStatus] = useState<string | null>(null);
-  const [showExportPass, setShowExportPass] = useState(false);
-  const [showImportPass, setShowImportPass] = useState(false);
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const dbInputRef = useRef<HTMLInputElement>(null);
-
-  // Derived state for MCP parsing
-  const { parsedTools, activeServers, parseError } = useMemo(() => {
-    if (!tempConfig.mcpTools || tempConfig.mcpTools.trim() === '[]') {
-      return { parsedTools: [], activeServers: [], parseError: null };
-    }
-    try {
-      // Use the Virtual Client to analyze the config without actually launching
-      const client = new VirtualMCPClient(tempConfig.mcpTools);
-      // We simulate a connection to get list of potential tools
-      // This is a synchronous check for UI purposes
-      const tools = client.getTools(); 
-      
-      const json = JSON.parse(tempConfig.mcpTools);
-      const servers = json.mcpServers ? Object.keys(json.mcpServers) : [];
-
-      return { 
-          parsedTools: tools.map(t => t), 
-          activeServers: servers,
-          parseError: null
-      };
-    } catch (e: any) {
-      return { parsedTools: [], activeServers: [], parseError: e.message };
-    }
-  }, [tempConfig.mcpTools]);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
 
-  const currentUiLang: Language = tempConfig.language === 'zh' ? 'zh' : 'en';
-  const t = translations[currentUiLang];
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSave(tempConfig);
-    onClose();
+  const handleChange = (key: keyof AIConfig, value: any) => {
+    setTempConfig(prev => ({ ...prev, [key]: value }));
   };
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  const handleCustomPromptChange = (key: keyof NonNullable<AIConfig['customPrompts']>, value: string) => {
+    setTempConfig(prev => ({
+      ...prev,
+      customPrompts: { ...prev.customPrompts, [key]: value }
+    }));
+  };
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
+  const handleThemeImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files?.[0]) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          const theme = JSON.parse(ev.target?.result as string);
+          if (theme.colors && theme.name) {
+            onImportTheme({ ...theme, id: `custom-${Date.now()}` });
+          } else {
+            alert("Invalid theme format");
+          }
+        } catch (err) { alert("Failed to parse theme file"); }
+      };
+      reader.readAsText(e.target.files[0]);
+    }
+  };
+
+  const handleTestTool = async () => {
+      setIsTesting(true);
+      setTestLog(['Running test...']);
       try {
-        const content = e.target?.result as string;
-        const json = JSON.parse(content);
-        
-        if (!json.name || !json.type || !json.colors) {
-          alert('Invalid Theme: Missing name, type ("light"|"dark"), or colors object.');
-          return;
-        }
-
-        const newTheme: AppTheme = {
-          ...json,
-          id: json.id || `custom-${Date.now()}`,
-          isCustom: true
-        };
-        onImportTheme(newTheme);
-      } catch (err) {
-        alert('Failed to parse JSON file. Please ensure it is valid JSON.');
+          const client = new VirtualMCPClient(tempConfig.mcpTools || '{}');
+          // Dummy simulation for UI feedback
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          setTestLog(prev => [...prev, 'MCP Client Initialized.', `Tools found: ${client.getTools().length}`]);
+      } catch (e: any) {
+          setTestLog(prev => [...prev, `Error: ${e.message}`]);
+      } finally {
+          setIsTesting(false);
       }
-    };
-    reader.readAsText(file);
-    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleDbExport = async () => {
+  const handleShortcutKeyDown = (e: React.KeyboardEvent, id: string) => {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      const keys = [];
+      if (e.ctrlKey) keys.push('Ctrl');
+      if (e.metaKey) keys.push('Cmd');
+      if (e.altKey) keys.push('Alt');
+      if (e.shiftKey) keys.push('Shift');
+      
+      const key = e.key.toUpperCase();
+      if (!['CONTROL', 'META', 'ALT', 'SHIFT'].includes(key)) {
+          if (e.code === 'Space') keys.push('Space');
+          else keys.push(key);
+      }
+
+      if (keys.length > 0 && !['CONTROL', 'META', 'ALT', 'SHIFT'].includes(key)) {
+          const combo = keys.join('+');
+          
+          // Check conflict
+          const conflict = shortcuts.find(s => s.keys === combo && s.id !== id);
+          if (conflict) {
+              setConflictWarning(`Conflict with "${conflict.label}"`);
+          } else {
+              setConflictWarning(null);
+              if (onUpdateShortcut) onUpdateShortcut(id, combo);
+              setRecordingId(null);
+          }
+      }
+  };
+
+  const handleExport = async () => {
       if (!exportPassword) {
-          setBackupStatus("Error: Password required to encrypt backup.");
+          alert("Please set a password for the backup.");
           return;
       }
       setIsExporting(true);
-      setBackupStatus("Encrypting and exporting...");
-      
       try {
-          // This uses the updated dataService with fallback
           const success = await exportDatabaseToFile(exportPassword);
-          if (success) {
-              setBackupStatus("Export Successful!");
-              const newConfig = { 
-                  ...tempConfig, 
-                  backup: { 
-                      frequency: tempConfig.backup?.frequency || 'weekly', 
-                      lastBackup: Date.now() 
-                  } 
-              };
-              setTempConfig(newConfig);
-              onSave(newConfig); // Persist immediately
-              setExportPassword('');
-              setShowExportPass(false);
-          } else {
-              setBackupStatus("Export cancelled.");
-          }
+          if (success) alert("Export successful!");
       } catch (e: any) {
-          console.error(e);
-          setBackupStatus(`Export Failed: ${e.message}`);
+          alert(`Export failed: ${e.message}`);
       } finally {
           setIsExporting(false);
-          // Clear status message after delay
-          setTimeout(() => {
-              setBackupStatus(prev => prev?.includes("Successful") ? null : prev);
-          }, 3000);
       }
   };
 
-  const handleDbImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (!e.target.files?.[0]) return;
       if (!importPassword) {
-          setBackupStatus("Error: Decryption password required.");
-          if (dbInputRef.current) dbInputRef.current.value = '';
+          alert("Please enter the password to decrypt this backup.");
           return;
       }
-
       setIsImporting(true);
       try {
-          await importDatabaseFromFile(file, importPassword);
-          setBackupStatus("Import Successful! Reloading...");
-          setTimeout(() => window.location.reload(), 1500);
-      } catch (err: any) {
-          setBackupStatus(`Import Failed: ${err.message}`);
-          if (dbInputRef.current) dbInputRef.current.value = '';
+          const success = await importDatabaseFromFile(e.target.files[0], importPassword);
+          if (success) {
+              alert("Import successful! Reloading...");
+              window.location.reload();
+          }
+      } catch (e: any) {
+          alert(`Import failed: ${e.message}`);
       } finally {
           setIsImporting(false);
+          if (importInputRef.current) importInputRef.current.value = '';
       }
   };
 
-  // ... (Previous logic for shortcuts, MCP etc) ...
-  const handleInsertTemplate = () => {
-    const template = `{
-  "mcpServers": {
-    "chrome-devtools": {
-      "command": "npx",
-      "args": ["-y", "chrome-devtools-mcp@latest"]
-    }
-  }
-}`;
-    setTempConfig({ ...tempConfig, mcpTools: template });
-  };
-
-  const runToolTest = async () => {
-    if (!testPrompt.trim() || !testTool) return;
-    setIsTesting(true);
-    setTestLog([`> Sending prompt: "${testPrompt}"...`]);
-
-    try {
-      const mockToolCallback = async (name: string, args: any) => {
-        setTestLog(prev => [...prev, `\n✅ Tool '${name}' triggered!`, `📦 Arguments:\n${JSON.stringify(args, null, 2)}`]);
-        return { success: true, message: "Test execution simulated." };
-      };
-
-      await generateAIResponse(
-        testPrompt,
-        tempConfig,
-        `You are testing a tool named '${testTool}'. Trigger it if the user asks.`,
-        false,
-        [], 
-        mockToolCallback
-      );
-
-      setTestLog(prev => [...prev, `\n> Test complete.`]);
-    } catch (error: any) {
-      setTestLog(prev => [...prev, `\n❌ Error: ${error.message}`]);
-    } finally {
-      setIsTesting(false);
-    }
-  };
-
-  const checkConflict = (combo: string, currentId: string) => {
-      const existing = shortcuts?.find(s => s.keys.toUpperCase() === combo.toUpperCase() && s.id !== currentId);
-      if (existing) return `Conflicts with "${existing.label}"`;
-      
-      const reserved = ['CTRL+W', 'CTRL+N', 'CTRL+T', 'CTRL+SHIFT+W', 'ALT+F4'];
-      if (reserved.includes(combo.toUpperCase())) return "Warning: Browser reserved key";
-      
-      return null;
-  };
-
-  const handleKeyDownRecord = (e: React.KeyboardEvent, shortcutId: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return;
-
-    const parts = [];
-    if (e.ctrlKey) parts.push('Ctrl');
-    if (e.metaKey) parts.push('Cmd');
-    if (e.altKey) parts.push('Alt');
-    if (e.shiftKey) parts.push('Shift');
-    
-    let key = e.key;
-    if (key === ' ') key = 'Space';
-    if (key.length === 1) key = key.toUpperCase();
-    
-    parts.push(key);
-    
-    const combo = parts.join('+');
-    
-    const conflict = checkConflict(combo, shortcutId);
-    if (conflict) {
-        setConflictWarning(conflict);
-    } else {
-        setConflictWarning(null);
-    }
-
-    if (onUpdateShortcut) onUpdateShortcut(shortcutId, combo);
-    setRecordingId(null);
-  };
-
-  const currentModels = RECOMMENDED_MODELS[tempConfig.provider] || [];
-  const currentEmbeddingModels = RECOMMENDED_EMBEDDING_MODELS[tempConfig.provider] || [];
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="w-full max-w-4xl bg-white dark:bg-cyber-900 rounded-xl shadow-2xl border border-paper-200 dark:border-cyber-700 overflow-hidden transform transition-all scale-100 flex flex-col h-[85vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="w-full max-w-4xl bg-white dark:bg-cyber-900 rounded-xl shadow-2xl border border-paper-200 dark:border-cyber-700 overflow-hidden flex flex-col max-h-[90vh] animate-scaleIn">
         
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-paper-200 dark:border-cyber-700 bg-paper-50 dark:bg-cyber-800/50 flex-shrink-0">
-          <div className="flex gap-4 overflow-x-auto no-scrollbar">
-             <button
-              onClick={() => setActiveTab('ai')}
-              className={`text-sm font-bold flex items-center gap-2 pb-1 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'ai' ? 'text-cyan-600 dark:text-cyan-400 border-cyan-500' : 'text-slate-500 border-transparent hover:text-slate-700 dark:hover:text-slate-300'}`}
-             >
-                <Cpu size={18} />
-                {t.aiConfig}
-             </button>
-             <button
-              onClick={() => setActiveTab('prompts')}
-              className={`text-sm font-bold flex items-center gap-2 pb-1 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'prompts' ? 'text-cyan-600 dark:text-cyan-400 border-cyan-500' : 'text-slate-500 border-transparent hover:text-slate-700 dark:hover:text-slate-300'}`}
-             >
-                <MessageSquare size={18} />
-                {t.prompts || "Prompts"}
-             </button>
-             <button
-              onClick={() => setActiveTab('security')}
-              className={`text-sm font-bold flex items-center gap-2 pb-1 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'security' ? 'text-cyan-600 dark:text-cyan-400 border-cyan-500' : 'text-slate-500 border-transparent hover:text-slate-700 dark:hover:text-slate-300'}`}
-             >
-                <Shield size={18} />
-                Security
-             </button>
-             <button
-              onClick={() => setActiveTab('keyboard')}
-              className={`text-sm font-bold flex items-center gap-2 pb-1 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'keyboard' ? 'text-cyan-600 dark:text-cyan-400 border-cyan-500' : 'text-slate-500 border-transparent hover:text-slate-700 dark:hover:text-slate-300'}`}
-             >
-                <Keyboard size={18} />
-                {t.keyboardShortcuts || "Shortcuts"}
-             </button>
-             <button
-              onClick={() => setActiveTab('mcp')}
-              className={`text-sm font-bold flex items-center gap-2 pb-1 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'mcp' ? 'text-emerald-600 dark:text-emerald-400 border-emerald-500' : 'text-slate-500 border-transparent hover:text-slate-700 dark:hover:text-slate-300'}`}
-             >
-                <Wrench size={18} />
-                MCP / Tools
-             </button>
-             <button
-              onClick={() => setActiveTab('appearance')}
-              className={`text-sm font-bold flex items-center gap-2 pb-1 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'appearance' ? 'text-violet-600 dark:text-violet-400 border-violet-500' : 'text-slate-500 border-transparent hover:text-slate-700 dark:hover:text-slate-300'}`}
-             >
-                <Palette size={18} />
-                {t.appearance}
-             </button>
-          </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
+        <div className="flex items-center justify-between p-4 border-b border-paper-200 dark:border-cyber-700 bg-paper-50 dark:bg-cyber-800">
+          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+            <Wrench className="text-cyan-500" /> {t.settings}
+          </h2>
+          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-paper-100 dark:hover:bg-cyber-700 transition-colors">
             <X size={20} />
           </button>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-6 bg-paper-50 dark:bg-cyber-900">
+        {/* Layout */}
+        <div className="flex flex-1 overflow-hidden">
           
-          {/* AI Settings Tab */}
-          {activeTab === 'ai' && (
-            <form onSubmit={handleSubmit} className="space-y-5 max-w-2xl mx-auto">
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                   <Languages size={16} />
-                   {t.languageMode}
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                    <button
-                        type="button"
-                        onClick={() => setTempConfig({...tempConfig, language: 'en'})}
-                        className={`p-2 rounded-lg border text-sm font-medium transition-all ${tempConfig.language === 'en' ? 'bg-cyan-500 text-white border-cyan-500' : 'bg-white dark:bg-cyber-800 border-paper-200 dark:border-cyber-600 text-slate-600 dark:text-slate-300 hover:border-cyan-500'}`}
-                    >
-                        English
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setTempConfig({...tempConfig, language: 'zh'})}
-                        className={`p-2 rounded-lg border text-sm font-medium transition-all ${tempConfig.language === 'zh' ? 'bg-cyan-500 text-white border-cyan-500' : 'bg-white dark:bg-cyber-800 border-paper-200 dark:border-cyber-600 text-slate-600 dark:text-slate-300 hover:border-cyan-500'}`}
-                    >
-                        中文 (Simplified)
-                    </button>
-                </div>
-              </div>
+          {/* Sidebar Tabs */}
+          <div className="w-48 border-r border-paper-200 dark:border-cyber-700 bg-paper-50 dark:bg-cyber-800/50 flex flex-col gap-1 p-2 shrink-0 overflow-y-auto">
+            {[
+              { id: 'ai', label: t.aiConfig, icon: Cpu },
+              { id: 'appearance', label: t.appearance, icon: Palette },
+              { id: 'prompts', label: t.prompts, icon: MessageSquare },
+              { id: 'mcp', label: t.mcpTools, icon: Box },
+              { id: 'keyboard', label: t.keyboardShortcuts, icon: Keyboard },
+              { id: 'security', label: t.security, icon: Shield },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as Tab)}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all
+                  ${activeTab === tab.id 
+                    ? 'bg-white dark:bg-cyber-700 text-cyan-600 dark:text-cyan-400 shadow-sm border border-paper-200 dark:border-cyber-600' 
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-paper-200 dark:hover:bg-cyber-700/50 hover:text-slate-900 dark:hover:text-slate-200'}
+                `}
+              >
+                <tab.icon size={16} />
+                {tab.label}
+              </button>
+            ))}
+          </div>
 
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                  <Server size={16} />
-                  {t.provider}
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {(['gemini', 'openai', 'ollama'] as const).map(p => (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => setTempConfig({ ...tempConfig, provider: p, model: '' })} // Reset model on provider change
-                      className={`p-2 rounded-lg border text-sm font-medium transition-all capitalize ${tempConfig.provider === p ? 'bg-cyan-500 text-white border-cyan-500' : 'bg-white dark:bg-cyber-800 border-paper-200 dark:border-cyber-600 text-slate-600 dark:text-slate-300 hover:border-cyan-500'}`}
-                    >
-                      {p}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {tempConfig.provider === 'gemini' && (
-                  <div className="p-3 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-lg text-xs text-amber-800 dark:text-amber-200">
-                      <strong>Gemini 2.5/3.0:</strong> Requires a valid API Key from Google AI Studio. Supports Thinking Budget and Search Grounding.
+          {/* Content Area */}
+          <div className="flex-1 overflow-y-auto p-6 bg-white dark:bg-cyber-900 custom-scrollbar">
+            
+            {activeTab === 'ai' && (
+              <div className="space-y-6 animate-fadeIn">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-4">
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">{t.languageMode}</label>
+                    <div className="grid grid-cols-2 gap-2">
+                        <button 
+                            onClick={() => handleChange('language', 'en')}
+                            className={`flex items-center justify-center gap-2 py-2 rounded border transition-all ${tempConfig.language === 'en' ? 'bg-cyan-50 dark:bg-cyan-900/20 border-cyan-500 text-cyan-700 dark:text-cyan-400' : 'border-paper-200 dark:border-cyber-600 text-slate-600 dark:text-slate-400'}`}
+                        >
+                            English
+                        </button>
+                        <button 
+                            onClick={() => handleChange('language', 'zh')}
+                            className={`flex items-center justify-center gap-2 py-2 rounded border transition-all ${tempConfig.language === 'zh' ? 'bg-cyan-50 dark:bg-cyan-900/20 border-cyan-500 text-cyan-700 dark:text-cyan-400' : 'border-paper-200 dark:border-cyber-600 text-slate-600 dark:text-slate-400'}`}
+                        >
+                            中文
+                        </button>
+                    </div>
                   </div>
-              )}
 
-              {tempConfig.provider !== 'gemini' && (
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                     <Globe size={16} />
-                     {t.apiEndpoint}
-                  </label>
-                  <input
-                    type="text"
-                    value={tempConfig.baseUrl || ''}
-                    onChange={(e) => setTempConfig({ ...tempConfig, baseUrl: e.target.value })}
-                    placeholder={tempConfig.provider === 'ollama' ? 'http://localhost:11434' : 'https://api.openai.com/v1'}
-                    className="w-full px-3 py-2 bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:outline-none text-slate-800 dark:text-slate-200 text-sm"
-                  />
-                </div>
-              )}
-
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                   <Key size={16} />
-                   {t.apiKey}
-                </label>
-                <input
-                  type="password"
-                  value={tempConfig.apiKey || ''}
-                  onChange={(e) => setTempConfig({ ...tempConfig, apiKey: e.target.value })}
-                  placeholder={tempConfig.provider === 'ollama' ? 'Optional for Ollama' : 'sk-...'}
-                  className="w-full px-3 py-2 bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:outline-none text-slate-800 dark:text-slate-200 text-sm"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                   <Cpu size={16} />
-                   {t.modelName}
-                </label>
-                <div className="relative">
-                    <input
-                      type="text"
-                      value={tempConfig.model}
-                      onChange={(e) => setTempConfig({ ...tempConfig, model: e.target.value })}
-                      placeholder="e.g. gpt-4, gemini-pro, llama2"
-                      className="w-full px-3 py-2 bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:outline-none text-slate-800 dark:text-slate-200 text-sm"
-                      list="recommended-models"
+                  <div className="space-y-4">
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">{t.provider}</label>
+                    <ThemedDropdown 
+                        value={tempConfig.provider} 
+                        onChange={(v) => handleChange('provider', v)}
+                        options={[
+                            { value: 'gemini', label: 'Google Gemini' },
+                            { value: 'openai', label: 'OpenAI Compatible' },
+                            { value: 'ollama', label: 'Ollama (Local)' }
+                        ]}
                     />
-                    <datalist id="recommended-models">
-                        {currentModels.map(m => (
-                            <option key={m.id} value={m.id}>{m.name}</option>
-                        ))}
-                    </datalist>
+                  </div>
                 </div>
-                {tempConfig.provider === 'ollama' && (
-                    <p className="text-xs text-slate-500">Make sure to <code>ollama pull &lt;model&gt;</code> first.</p>
-                )}
-              </div>
 
-              <div className="space-y-2">
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                    <Database size={16} />
-                    Embedding Model (RAG)
-                  </label>
+                <div className="space-y-2">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">{t.apiKey}</label>
                   <div className="relative">
+                    <Key className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                    <input
+                      type="password"
+                      value={tempConfig.apiKey || ''}
+                      onChange={(e) => handleChange('apiKey', e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 bg-paper-50 dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600 rounded-lg text-sm focus:ring-2 focus:ring-cyan-500 focus:outline-none transition-shadow"
+                      placeholder={tempConfig.provider === 'ollama' ? 'Optional for Ollama' : 'sk-...'}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">{t.modelName}</label>
+                        <ThemedDropdown 
+                            value={tempConfig.model} 
+                            onChange={(v) => handleChange('model', v)}
+                            options={RECOMMENDED_MODELS[tempConfig.provider] ? 
+                                [...RECOMMENDED_MODELS[tempConfig.provider].map(m => ({ value: m.id, label: m.name })), { value: 'custom', label: 'Custom...' }] 
+                                : []}
+                        />
+                        {/* Custom Model Input if not in list */}
+                        {!RECOMMENDED_MODELS[tempConfig.provider].some(m => m.id === tempConfig.model) && (
+                             <input
+                                type="text"
+                                value={tempConfig.model}
+                                onChange={(e) => handleChange('model', e.target.value)}
+                                className="w-full px-3 py-2 mt-2 bg-paper-50 dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600 rounded-lg text-sm"
+                                placeholder="Enter custom model ID"
+                             />
+                        )}
+                    </div>
+                    
+                    <div className="space-y-2">
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Embedding Model (RAG)</label>
+                        <ThemedDropdown 
+                            value={tempConfig.embeddingModel || ''} 
+                            onChange={(v) => handleChange('embeddingModel', v)}
+                            options={RECOMMENDED_EMBEDDING_MODELS[tempConfig.provider] ? 
+                                [...RECOMMENDED_EMBEDDING_MODELS[tempConfig.provider].map(m => ({ value: m.id, label: m.name })), { value: 'custom', label: 'Custom...' }] 
+                                : []}
+                        />
+                    </div>
+                </div>
+
+                {tempConfig.provider !== 'gemini' && (
+                  <div className="space-y-2">
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Base URL</label>
+                    <div className="relative">
+                      <Server className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                       <input
                         type="text"
-                        value={tempConfig.embeddingModel || ''}
-                        onChange={(e) => setTempConfig({ ...tempConfig, embeddingModel: e.target.value })}
-                        placeholder="e.g. text-embedding-3-small"
-                        className="w-full px-3 py-2 bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:outline-none text-slate-800 dark:text-slate-200 text-sm"
-                        list="recommended-embedding-models"
+                        value={tempConfig.baseUrl || ''}
+                        onChange={(e) => handleChange('baseUrl', e.target.value)}
+                        className="w-full pl-10 pr-4 py-2 bg-paper-50 dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600 rounded-lg text-sm focus:ring-2 focus:ring-cyan-500 focus:outline-none transition-shadow"
+                        placeholder={tempConfig.provider === 'ollama' ? 'http://localhost:11434' : 'https://api.openai.com/v1'}
                       />
-                      <datalist id="recommended-embedding-models">
-                          {currentEmbeddingModels.map(m => (
-                              <option key={m.id} value={m.id}>{m.name}</option>
-                          ))}
-                      </datalist>
+                    </div>
                   </div>
-                  <p className="text-xs text-slate-500">Used for "Chat with Files" and Knowledge Graph connections.</p>
-              </div>
-
-              {tempConfig.provider === 'gemini' && (
-                  <div className="space-y-2 pt-2 border-t border-paper-200 dark:border-cyber-700">
-                     <div className="flex items-center gap-3">
-                        <label className="relative inline-flex items-center cursor-pointer">
-                            <input 
-                                type="checkbox" 
-                                checked={tempConfig.enableWebSearch || false} 
-                                onChange={(e) => setTempConfig({...tempConfig, enableWebSearch: e.target.checked})}
-                                className="sr-only peer" 
-                            />
-                            <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-gray-600 peer-checked:bg-cyan-600"></div>
-                            <span className="ml-3 text-sm font-medium text-slate-700 dark:text-slate-300">{t.enableWebSearch}</span>
+                )}
+                
+                {tempConfig.provider === 'gemini' && (
+                    <div className="flex items-center gap-3 p-3 bg-cyan-50 dark:bg-cyan-900/20 rounded-lg border border-cyan-100 dark:border-cyan-800/30">
+                        <input 
+                            type="checkbox" 
+                            id="webSearch"
+                            checked={tempConfig.enableWebSearch} 
+                            onChange={(e) => handleChange('enableWebSearch', e.target.checked)}
+                            className="w-4 h-4 text-cyan-600 rounded focus:ring-cyan-500 border-gray-300"
+                        />
+                        <label htmlFor="webSearch" className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+                            <Globe size={16} /> {t.enableWebSearch}
                         </label>
-                     </div>
-                  </div>
-              )}
-
-              <div className="pt-4 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-4 py-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-paper-100 dark:hover:bg-cyber-800 transition-colors"
-                >
-                  {t.cancel}
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-600 text-white font-medium shadow-lg shadow-cyan-500/30 transition-all transform hover:scale-105"
-                >
-                  {t.save}
-                </button>
+                    </div>
+                )}
               </div>
-            </form>
-          )}
+            )}
 
-          {/* Security Tab */}
-          {activeTab === 'security' && (
-            <div className="max-w-2xl mx-auto space-y-8 animate-fadeIn">
-               
-               {/* Login Config */}
-               <div className="space-y-4 border-b border-paper-200 dark:border-cyber-700 pb-6">
-                   <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                       <Lock size={20} className="text-yellow-500" />
-                       Access Control
-                   </h3>
-                   
-                   <div className="bg-white dark:bg-cyber-800 p-4 rounded-lg border border-paper-200 dark:border-cyber-700">
-                       <div className="flex items-center justify-between">
-                           <div>
-                               <div className="font-medium text-slate-700 dark:text-slate-200">Require Login</div>
-                               <div className="text-xs text-slate-500 dark:text-slate-400">Lock app with a password on startup</div>
-                           </div>
-                           <label className="relative inline-flex items-center cursor-pointer">
+            {activeTab === 'appearance' && (
+              <div className="space-y-6 animate-fadeIn">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                  {themes.map(theme => (
+                    <button
+                      key={theme.id}
+                      onClick={() => onSelectTheme(theme.id)}
+                      className={`
+                        relative group p-4 rounded-xl border-2 text-left transition-all duration-200 overflow-hidden
+                        ${activeThemeId === theme.id 
+                          ? 'border-cyan-500 ring-2 ring-cyan-500/20' 
+                          : 'border-paper-200 dark:border-cyber-700 hover:border-cyan-400'}
+                      `}
+                      style={{ background: `rgb(${theme.colors['--bg-main']})` }}
+                    >
+                      <div className="relative z-10 flex flex-col h-full">
+                        <div className="flex items-center justify-between mb-3">
+                           <span style={{ color: `rgb(${theme.colors['--text-primary']})` }} className="font-bold text-sm">{theme.name}</span>
+                           {activeThemeId === theme.id && <Check size={16} className="text-cyan-500" />}
+                        </div>
+                        
+                        {/* Preview UI Elements */}
+                        <div className="space-y-2 opacity-80">
+                            <div className="h-2 w-1/2 rounded-full" style={{ background: `rgb(${theme.colors['--primary-500']})` }}></div>
+                            <div className="h-2 w-3/4 rounded-full" style={{ background: `rgb(${theme.colors['--text-secondary']})` }}></div>
+                        </div>
+
+                        {theme.isCustom && (
+                            <button 
+                                onClick={(e) => { e.stopPropagation(); onDeleteTheme(theme.id); }}
+                                className="absolute bottom-0 right-0 p-1.5 bg-red-500 text-white rounded-tl-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                                title="Delete Theme"
+                            >
+                                <Trash2 size={12} />
+                            </button>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                  
+                  {/* Import Card */}
+                  <label className="cursor-pointer flex flex-col items-center justify-center p-4 rounded-xl border-2 border-dashed border-paper-300 dark:border-cyber-600 hover:border-cyan-500 hover:bg-cyan-50/50 dark:hover:bg-cyan-900/10 transition-all text-slate-400 hover:text-cyan-600">
+                      <Upload size={24} className="mb-2" />
+                      <span className="text-xs font-bold uppercase tracking-wider">{t.importTheme}</span>
+                      <input type="file" className="hidden" accept=".json" onChange={handleThemeImport} />
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'prompts' && (
+              <div className="space-y-6 animate-fadeIn">
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    <Terminal size={14} /> {t.polish} Prompt
+                  </label>
+                  <textarea
+                    value={tempConfig.customPrompts?.polish}
+                    onChange={(e) => handleCustomPromptChange('polish', e.target.value)}
+                    className="w-full h-24 p-3 bg-paper-50 dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600 rounded-lg text-sm font-mono text-slate-700 dark:text-slate-300 focus:ring-2 focus:ring-cyan-500 focus:outline-none resize-y"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    <Terminal size={14} /> {t.expand} Prompt
+                  </label>
+                  <textarea
+                    value={tempConfig.customPrompts?.expand}
+                    onChange={(e) => handleCustomPromptChange('expand', e.target.value)}
+                    className="w-full h-24 p-3 bg-paper-50 dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600 rounded-lg text-sm font-mono text-slate-700 dark:text-slate-300 focus:ring-2 focus:ring-cyan-500 focus:outline-none resize-y"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    <Terminal size={14} /> {t.enhancePrompt} Prompt
+                  </label>
+                  <textarea
+                    value={tempConfig.customPrompts?.enhance}
+                    onChange={(e) => handleCustomPromptChange('enhance', e.target.value)}
+                    className="w-full h-24 p-3 bg-paper-50 dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600 rounded-lg text-sm font-mono text-slate-700 dark:text-slate-300 focus:ring-2 focus:ring-cyan-500 focus:outline-none resize-y"
+                  />
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'mcp' && (
+                <div className="space-y-6 animate-fadeIn h-full flex flex-col">
+                    <div className="p-4 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-lg flex gap-3 text-sm text-amber-800 dark:text-amber-200">
+                        <AlertTriangle className="shrink-0" size={20} />
+                        <div>
+                            <p className="font-bold mb-1">Experimental Feature</p>
+                            <p>Model Context Protocol (MCP) allows the AI to interact with external tools. Configure your MCP servers JSON below.</p>
+                        </div>
+                    </div>
+
+                    <div className="flex-1 flex flex-col">
+                        <div className="flex justify-between items-center mb-2">
+                            <label className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                                <Code2 size={14} /> MCP Configuration (JSON)
+                            </label>
+                            <button onClick={handleTestTool} disabled={isTesting} className="text-xs bg-cyan-100 dark:bg-cyan-900/30 text-cyan-600 dark:text-cyan-400 px-2 py-1 rounded hover:bg-cyan-200 transition-colors flex items-center gap-1">
+                                <Play size={12} /> Test Config
+                            </button>
+                        </div>
+                        <textarea 
+                            value={tempConfig.mcpTools || ''}
+                            onChange={(e) => handleChange('mcpTools', e.target.value)}
+                            className="flex-1 p-3 bg-paper-50 dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600 rounded-lg text-xs font-mono text-slate-700 dark:text-slate-300 focus:ring-2 focus:ring-cyan-500 focus:outline-none resize-none"
+                            placeholder='{ "mcpServers": { ... } }'
+                        />
+                    </div>
+
+                    {testLog.length > 0 && (
+                        <div className="h-32 bg-black text-green-400 p-3 rounded-lg font-mono text-xs overflow-y-auto">
+                            {testLog.map((line, i) => <div key={i}>{line}</div>)}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {activeTab === 'keyboard' && (
+                <div className="space-y-6 animate-fadeIn">
+                    <div className="flex justify-between items-center">
+                        <h3 className="font-bold text-lg text-slate-800 dark:text-slate-100">{t.shortcutManager}</h3>
+                        <button onClick={onResetShortcuts} className="text-xs text-red-500 hover:underline">{t.resetDefaults}</button>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-2">
+                        {shortcuts.map(sc => (
+                            <div key={sc.id} className="flex items-center justify-between p-3 bg-paper-50 dark:bg-cyber-800 border border-paper-200 dark:border-cyber-700 rounded-lg group">
+                                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{sc.label}</span>
+                                
+                                <button 
+                                    onClick={() => setRecordingId(sc.id)}
+                                    className={`
+                                        min-w-[80px] px-3 py-1.5 rounded text-xs font-mono font-bold transition-all border
+                                        ${recordingId === sc.id 
+                                            ? 'bg-red-500 text-white border-red-500 animate-pulse' 
+                                            : 'bg-white dark:bg-cyber-900 text-slate-600 dark:text-slate-400 border-paper-300 dark:border-cyber-600 hover:border-cyan-500'}
+                                    `}
+                                    onKeyDown={(e) => recordingId === sc.id && handleShortcutKeyDown(e, sc.id)}
+                                >
+                                    {recordingId === sc.id ? t.pressKeys : sc.keys}
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                    {conflictWarning && (
+                        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 bg-red-500 text-white px-4 py-2 rounded-lg shadow-lg text-sm font-bold animate-bounce">
+                            {conflictWarning}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {activeTab === 'security' && (
+                <div className="space-y-8 animate-fadeIn">
+                    <div className="space-y-4">
+                        <h3 className="font-bold text-slate-700 dark:text-slate-200 border-b border-paper-200 dark:border-cyber-700 pb-2">{t.accessControl}</h3>
+                        <div className="flex items-center justify-between p-4 bg-paper-50 dark:bg-cyber-800 rounded-lg">
+                            <div className="flex items-center gap-3">
+                                <div className={`p-2 rounded-full ${isLoginEnabled ? 'bg-green-100 text-green-600' : 'bg-slate-200 text-slate-500'}`}>
+                                    <Lock size={20} />
+                                </div>
+                                <div>
+                                    <div className="font-bold text-slate-800 dark:text-slate-100">{t.requireLogin}</div>
+                                    <div className="text-xs text-slate-500">Protect app with a password on startup</div>
+                                </div>
+                            </div>
+                            <div className="relative inline-block w-12 h-6 transition duration-200 ease-in-out rounded-full border-2 border-transparent">
                                 <input 
                                     type="checkbox" 
                                     checked={isLoginEnabled} 
-                                    onChange={(e) => onToggleLogin && onToggleLogin(e.target.checked)}
-                                    className="sr-only peer" 
+                                    onChange={(e) => onToggleLogin?.(e.target.checked)}
+                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                                 />
-                                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-yellow-500"></div>
-                           </label>
-                       </div>
-                   </div>
-               </div>
-
-               {/* Database Backup Section */}
-               <div className="space-y-4 border-b border-paper-200 dark:border-cyber-700 pb-6">
-                    <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                       <Database size={20} className="text-emerald-500" />
-                       Database Management
-                   </h3>
-                   
-                   <div className="bg-white dark:bg-cyber-800 p-5 rounded-lg border border-paper-200 dark:border-cyber-700 space-y-4">
-                        <div className="flex items-center justify-between">
-                             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                                Automatic Backup Frequency
-                             </label>
-                             <select 
-                                value={tempConfig.backup?.frequency || 'weekly'}
-                                onChange={(e) => setTempConfig({ 
-                                    ...tempConfig, 
-                                    backup: { ...(tempConfig.backup || { lastBackup: 0 }), frequency: e.target.value as BackupFrequency }
-                                })}
-                                className="bg-paper-50 dark:bg-cyber-900 border border-paper-300 dark:border-cyber-600 rounded-md text-sm px-3 py-1 text-slate-700 dark:text-slate-200 focus:outline-none"
-                             >
-                                 <option value="never">Never</option>
-                                 <option value="daily">Daily</option>
-                                 <option value="weekly">Weekly</option>
-                                 <option value="monthly">Monthly</option>
-                             </select>
+                                <div className={`block w-full h-full rounded-full transition-colors ${isLoginEnabled ? 'bg-cyan-500' : 'bg-slate-300 dark:bg-slate-600'}`}></div>
+                                <div className={`absolute left-0 top-0 w-5 h-5 bg-white rounded-full shadow transform transition-transform duration-200 ease-in-out ${isLoginEnabled ? 'translate-x-6' : 'translate-x-0.5 mt-0.5'}`}></div>
+                            </div>
                         </div>
-                        
-                        <div className="text-xs text-slate-500 dark:text-slate-400">
-                             Last Backup: {tempConfig.backup?.lastBackup ? new Date(tempConfig.backup.lastBackup).toLocaleString() : 'Never'}
-                        </div>
-                   </div>
-               </div>
-
-               {/* Import / Export */}
-               <div className="space-y-4">
-                   <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                       <RefreshCw size={20} className="text-cyan-500" />
-                       Backup & Restore
-                   </h3>
-
-                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                       {/* Export */}
-                       <div className="bg-white dark:bg-cyber-800 p-5 rounded-lg border border-paper-200 dark:border-cyber-700 flex flex-col gap-3">
-                            <div className="font-medium text-slate-700 dark:text-slate-200 flex items-center gap-2">
-                                <Download size={16} /> Export Database
-                            </div>
-                            <p className="text-xs text-slate-500">Save all files, settings, and chat history to an encrypted .db file.</p>
-                            
-                            <div className="mt-auto pt-2">
-                                {showExportPass ? (
-                                    <div className="space-y-2 animate-fadeIn">
-                                        <input 
-                                            type="password" 
-                                            placeholder="Set Encryption Password"
-                                            value={exportPassword}
-                                            onChange={(e) => setExportPassword(e.target.value)}
-                                            className="w-full px-3 py-2 text-sm border border-paper-300 dark:border-cyber-600 rounded-md bg-paper-50 dark:bg-cyber-900 text-slate-800 dark:text-slate-200"
-                                        />
-                                        <div className="flex gap-2">
-                                            <button 
-                                                onClick={handleDbExport}
-                                                disabled={!exportPassword || isExporting}
-                                                className="flex-1 px-3 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-md text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-50"
-                                            >
-                                                {isExporting ? <RefreshCw className="animate-spin" size={14} /> : <Check size={14} />} Confirm
-                                            </button>
-                                            <button 
-                                                onClick={() => setShowExportPass(false)}
-                                                className="px-3 py-2 bg-paper-200 dark:bg-cyber-700 text-slate-600 dark:text-slate-300 rounded-md text-sm"
-                                            >
-                                                Cancel
-                                            </button>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <button 
-                                        onClick={() => setShowExportPass(true)}
-                                        className="w-full px-3 py-2 bg-paper-100 dark:bg-cyber-700 hover:bg-cyan-100 dark:hover:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-800/50 rounded-md text-sm font-bold transition-colors"
-                                    >
-                                        Export Backup
-                                    </button>
-                                )}
-                            </div>
-                       </div>
-
-                       {/* Import */}
-                       <div className="bg-white dark:bg-cyber-800 p-5 rounded-lg border border-paper-200 dark:border-cyber-700 flex flex-col gap-3">
-                            <div className="font-medium text-slate-700 dark:text-slate-200 flex items-center gap-2">
-                                <Upload size={16} /> Import Database
-                            </div>
-                            <p className="text-xs text-slate-500">Restore from a previous backup file. Requires password.</p>
-                            
-                            <div className="mt-auto pt-2">
-                                 {showImportPass ? (
-                                    <div className="space-y-2 animate-fadeIn">
-                                        <input 
-                                            type="password" 
-                                            placeholder="Enter Decryption Password"
-                                            value={importPassword}
-                                            onChange={(e) => setImportPassword(e.target.value)}
-                                            className="w-full px-3 py-2 text-sm border border-paper-300 dark:border-cyber-600 rounded-md bg-paper-50 dark:bg-cyber-900 text-slate-800 dark:text-slate-200"
-                                        />
-                                        <div className="flex gap-2">
-                                            <button 
-                                                onClick={() => dbInputRef.current?.click()}
-                                                disabled={!importPassword || isImporting}
-                                                className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-50"
-                                            >
-                                                {isImporting ? <RefreshCw className="animate-spin" size={14} /> : <Upload size={14} />} Select File
-                                            </button>
-                                            <button 
-                                                onClick={() => setShowImportPass(false)}
-                                                className="px-3 py-2 bg-paper-200 dark:bg-cyber-700 text-slate-600 dark:text-slate-300 rounded-md text-sm"
-                                            >
-                                                Cancel
-                                            </button>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <button 
-                                        onClick={() => setShowImportPass(true)}
-                                        className="w-full px-3 py-2 bg-paper-100 dark:bg-cyber-700 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/50 rounded-md text-sm font-bold transition-colors"
-                                    >
-                                        Import Backup
-                                    </button>
-                                )}
-                            </div>
-                            <input type="file" ref={dbInputRef} className="hidden" accept=".db" onChange={handleDbImport} />
-                       </div>
-                   </div>
-
-                   {backupStatus && (
-                       <div className={`p-3 rounded-lg text-sm text-center font-medium animate-fadeIn ${backupStatus.includes("Error") || backupStatus.includes("Failed") ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"}`}>
-                           {backupStatus}
-                       </div>
-                   )}
-               </div>
-
-               <div className="pt-4 flex justify-end gap-2 border-t border-paper-200 dark:border-cyber-700">
-                    <button
-                        onClick={handleSubmit}
-                        className="px-6 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-600 text-white font-medium shadow-lg shadow-cyan-500/30 transition-all transform hover:scale-105"
-                    >
-                        Done
-                    </button>
-                </div>
-            </div>
-          )}
-
-          {/* Prompts Tab */}
-          {activeTab === 'prompts' && (
-              <form onSubmit={handleSubmit} className="space-y-6 max-w-2xl mx-auto">
-                  {/* ... Existing prompt content ... */}
-                  <div className="space-y-2">
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                          {t.polishPrompt}
-                      </label>
-                      <textarea 
-                          className="w-full h-32 px-3 py-2 bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:outline-none text-slate-800 dark:text-slate-200 text-sm resize-none"
-                          value={tempConfig.customPrompts?.polish || ''}
-                          onChange={e => setTempConfig({ ...tempConfig, customPrompts: { ...tempConfig.customPrompts, polish: e.target.value } })}
-                          placeholder="Instructions for the 'Polish' feature..."
-                      />
-                  </div>
-                  <div className="space-y-2">
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                          {t.expandPrompt}
-                      </label>
-                      <textarea 
-                          className="w-full h-32 px-3 py-2 bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:outline-none text-slate-800 dark:text-slate-200 text-sm resize-none"
-                          value={tempConfig.customPrompts?.expand || ''}
-                          onChange={e => setTempConfig({ ...tempConfig, customPrompts: { ...tempConfig.customPrompts, expand: e.target.value } })}
-                          placeholder="Instructions for the 'Expand' feature..."
-                      />
-                  </div>
-                   <div className="pt-4 flex justify-end gap-2">
-                        <button
-                        type="button"
-                        onClick={onClose}
-                        className="px-4 py-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-paper-100 dark:hover:bg-cyber-800 transition-colors"
-                        >
-                        {t.cancel}
-                        </button>
-                        <button
-                        type="submit"
-                        className="px-6 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-600 text-white font-medium shadow-lg shadow-cyan-500/30 transition-all transform hover:scale-105"
-                        >
-                        {t.save}
-                        </button>
                     </div>
-              </form>
-          )}
 
-          {/* MCP / Tools Tab */}
-          {activeTab === 'mcp' && (
-            <div className="space-y-6 max-w-3xl mx-auto">
-               <div className="bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-800 rounded-lg p-4">
-                  <div className="flex items-start gap-3">
-                      <Wrench className="text-emerald-600 dark:text-emerald-400 mt-1" size={20} />
-                      <div>
-                          <h3 className="font-bold text-emerald-800 dark:text-emerald-300 text-sm">Model Context Protocol (MCP) Config</h3>
-                          <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-1">
-                              Define custom tools and MCP servers here. The editor acts as an MCP Client. 
-                              Use JSON format compatible with standard MCP server definitions.
-                          </p>
-                      </div>
-                  </div>
-               </div>
-
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                   <div className="space-y-2">
-                       <label className="text-sm font-bold text-slate-700 dark:text-slate-300 flex justify-between items-center">
-                           <span>Configuration (JSON)</span>
-                           <button onClick={handleInsertTemplate} className="text-xs text-cyan-500 hover:underline">Insert Template</button>
-                       </label>
-                       <textarea 
-                           className="w-full h-80 font-mono text-xs p-3 bg-slate-900 text-slate-200 rounded-lg border border-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
-                           value={tempConfig.mcpTools || ''}
-                           onChange={e => setTempConfig({ ...tempConfig, mcpTools: e.target.value })}
-                           spellCheck={false}
-                       />
-                       {parseError && (
-                           <div className="text-xs text-red-500 flex items-center gap-1">
-                               <AlertTriangle size={12} /> {parseError}
-                           </div>
-                       )}
-                   </div>
-
-                   <div className="space-y-4">
-                        {/* Live Tool Test */}
-                        <div className="bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-700 rounded-lg p-3">
-                            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
-                                <Play size={12} /> Tool Simulator
-                            </div>
-                            <div className="space-y-2">
-                                <select 
-                                    className="w-full text-xs p-1.5 bg-paper-50 dark:bg-cyber-900 border border-paper-200 dark:border-cyber-600 rounded"
-                                    onChange={(e) => setTestTool(e.target.value)}
-                                    value={testTool || ''}
-                                >
-                                    <option value="">Select a tool to test...</option>
-                                    {parsedTools.map(t => <option key={t.name} value={t.name}>{t.name}</option>)}
-                                </select>
-                                <textarea 
-                                    className="w-full h-16 text-xs p-2 bg-paper-50 dark:bg-cyber-900 border border-paper-200 dark:border-cyber-600 rounded resize-none focus:outline-none"
-                                    placeholder="Enter a user prompt to trigger this tool..."
-                                    value={testPrompt}
-                                    onChange={e => setTestPrompt(e.target.value)}
-                                />
-                                <button 
-                                    onClick={runToolTest}
-                                    disabled={isTesting || !testTool}
-                                    className="w-full py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded disabled:opacity-50"
-                                >
-                                    {isTesting ? 'Running...' : 'Test Tool'}
-                                </button>
-                                
-                                {testLog.length > 0 && (
-                                    <div className="mt-2 p-2 bg-black rounded text-[10px] font-mono text-green-400 h-24 overflow-y-auto whitespace-pre-wrap">
-                                        {testLog.map((l, i) => <div key={i}>{l}</div>)}
-                                    </div>
-                                )}
+                    <div className="space-y-4">
+                        <h3 className="font-bold text-slate-700 dark:text-slate-200 border-b border-paper-200 dark:border-cyber-700 pb-2">{t.databaseMgmt}</h3>
+                        
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t.backupFreq}</label>
+                            <div className="flex gap-2">
+                                {['never', 'daily', 'weekly', 'monthly'].map((freq) => (
+                                    <button
+                                        key={freq}
+                                        onClick={() => handleChange('backup', { ...tempConfig.backup, frequency: freq as BackupFrequency })}
+                                        className={`px-3 py-1.5 rounded text-sm capitalize transition-colors ${tempConfig.backup?.frequency === freq ? 'bg-cyan-500 text-white' : 'bg-paper-100 dark:bg-cyber-800 text-slate-600 dark:text-slate-400'}`}
+                                    >
+                                        {freq}
+                                    </button>
+                                ))}
                             </div>
                         </div>
 
-                        {/* Active Tools List */}
-                        <div className="bg-paper-50 dark:bg-cyber-900/50 p-3 rounded-lg border border-paper-200 dark:border-cyber-700">
-                             <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Detected Tools</div>
-                             {parsedTools.length === 0 ? (
-                                 <div className="text-xs text-slate-400 italic">No tools defined.</div>
-                             ) : (
-                                 <div className="space-y-1 max-h-40 overflow-y-auto custom-scrollbar">
-                                     {parsedTools.map(t => (
-                                         <div key={t.name} className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 bg-white dark:bg-cyber-800 p-1.5 rounded border border-paper-100 dark:border-cyber-600">
-                                             <Code2 size={12} className="text-emerald-500" />
-                                             <span className="font-mono font-bold">{t.name}</span>
-                                             <span className="text-slate-400 truncate flex-1 ml-2">{t.description}</span>
-                                         </div>
-                                     ))}
-                                 </div>
-                             )}
-                        </div>
-                   </div>
-               </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {/* Export */}
+                            <div className="p-4 bg-paper-50 dark:bg-cyber-800 rounded-xl border border-paper-200 dark:border-cyber-700">
+                                <h4 className="font-bold text-sm text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2"><Download size={16}/> {t.exportDb}</h4>
+                                <div className="space-y-3">
+                                    <input 
+                                        type="password" 
+                                        placeholder="Set Encryption Password"
+                                        value={exportPassword}
+                                        onChange={e => setExportPassword(e.target.value)}
+                                        className="w-full px-3 py-2 bg-white dark:bg-cyber-900 border border-paper-300 dark:border-cyber-600 rounded text-sm"
+                                    />
+                                    <button 
+                                        onClick={handleExport}
+                                        disabled={isExporting || !exportPassword}
+                                        className="w-full py-2 bg-slate-800 hover:bg-slate-700 dark:bg-white dark:hover:bg-slate-200 text-white dark:text-slate-900 font-bold rounded text-sm transition-colors disabled:opacity-50"
+                                    >
+                                        {isExporting ? 'Exporting...' : 'Export Backup'}
+                                    </button>
+                                </div>
+                            </div>
 
-                <div className="pt-4 flex justify-end gap-2">
-                    <button
-                    type="button"
-                    onClick={onClose}
-                    className="px-4 py-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-paper-100 dark:hover:bg-cyber-800 transition-colors"
-                    >
-                    {t.cancel}
-                    </button>
-                    <button
-                    type="button"
-                    onClick={() => { onSave(tempConfig); onClose(); }}
-                    className="px-6 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-lg shadow-emerald-500/30 transition-all transform hover:scale-105"
-                    >
-                    Save Tools
-                    </button>
+                            {/* Import */}
+                            <div className="p-4 bg-paper-50 dark:bg-cyber-800 rounded-xl border border-paper-200 dark:border-cyber-700">
+                                <h4 className="font-bold text-sm text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2"><Upload size={16}/> {t.importDb}</h4>
+                                <div className="space-y-3">
+                                    <input 
+                                        type="password" 
+                                        placeholder="Enter Decryption Password"
+                                        value={importPassword}
+                                        onChange={e => setImportPassword(e.target.value)}
+                                        className="w-full px-3 py-2 bg-white dark:bg-cyber-900 border border-paper-300 dark:border-cyber-600 rounded text-sm"
+                                    />
+                                    <label className={`w-full py-2 bg-red-500 hover:bg-red-600 text-white font-bold rounded text-sm transition-colors text-center cursor-pointer block ${(!importPassword || isImporting) ? 'opacity-50 pointer-events-none' : ''}`}>
+                                        {isImporting ? 'Importing...' : 'Restore Backup'}
+                                        <input type="file" className="hidden" accept=".db" onChange={handleImport} ref={importInputRef} disabled={!importPassword || isImporting} />
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            </div>
-          )}
+            )}
 
-          {/* Keyboard Shortcuts Tab */}
-          {activeTab === 'keyboard' && (
-              <div className="max-w-3xl mx-auto space-y-6">
-                  <div className="flex items-center justify-between pb-4 border-b border-paper-200 dark:border-cyber-700">
-                      <div>
-                          <h3 className="font-bold text-slate-800 dark:text-slate-100">{t.keyboardShortcuts}</h3>
-                          <p className="text-xs text-slate-500">Click a shortcut field and press keys to rebind.</p>
-                      </div>
-                      <button 
-                         onClick={onResetShortcuts}
-                         className="px-3 py-1.5 text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded border border-red-200 dark:border-red-900/50"
-                      >
-                          {t.resetDefaults}
-                      </button>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[500px] overflow-y-auto custom-scrollbar p-1">
-                      {shortcuts.map(sc => {
-                          const isRecording = recordingId === sc.id;
-                          return (
-                              <div key={sc.id} className="flex items-center justify-between p-3 bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-700 rounded-lg">
-                                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{sc.label}</span>
-                                  <div className="relative">
-                                      <input 
-                                          type="text" 
-                                          readOnly
-                                          value={isRecording ? (t.pressKeys || "Press keys...") : sc.keys}
-                                          onClick={() => setRecordingId(sc.id)}
-                                          onKeyDown={(e) => handleKeyDownRecord(e, sc.id)}
-                                          onBlur={() => { setRecordingId(null); setConflictWarning(null); }}
-                                          className={`
-                                              w-32 text-center text-xs font-mono py-1.5 px-2 rounded cursor-pointer border-2 transition-all outline-none
-                                              ${isRecording 
-                                                  ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-900/20 text-cyan-700 dark:text-cyan-300 animate-pulse' 
-                                                  : 'border-paper-200 dark:border-cyber-600 bg-paper-50 dark:bg-cyber-900 text-slate-600 dark:text-slate-400 hover:border-cyan-400'}
-                                          `}
-                                      />
-                                      {isRecording && conflictWarning && (
-                                          <div className="absolute top-full right-0 mt-2 z-10 bg-red-100 text-red-700 text-[10px] px-2 py-1 rounded shadow-lg whitespace-nowrap">
-                                              {conflictWarning}
-                                          </div>
-                                      )}
-                                  </div>
-                              </div>
-                          );
-                      })}
-                  </div>
-
-                  <div className="pt-4 flex justify-end">
-                    <button
-                      onClick={onClose}
-                      className="px-6 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-600 text-white font-medium shadow-lg shadow-cyan-500/30 transition-all transform hover:scale-105"
-                    >
-                      {t.save}
-                    </button>
-                  </div>
-              </div>
-          )}
-
-          {/* Appearance Tab */}
-          {activeTab === 'appearance' && (
-            <div className="space-y-8 max-w-4xl mx-auto">
-              {/* Existing Themes Grid */}
-              <div className="space-y-4">
-                  <h3 className="font-bold text-slate-800 dark:text-slate-100">{t.availableThemes}</h3>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                    {themes.map((theme) => (
-                      <button
-                        key={theme.id}
-                        onClick={() => onSelectTheme(theme.id)}
-                        className={`
-                          relative group rounded-xl p-3 border-2 transition-all text-left overflow-hidden
-                          ${activeThemeId === theme.id 
-                            ? 'border-cyan-500 shadow-lg shadow-cyan-500/20 scale-[1.02]' 
-                            : 'border-paper-200 dark:border-cyber-700 hover:border-cyan-300 dark:hover:border-cyan-700'}
-                        `}
-                      >
-                        <div 
-                           className="h-20 w-full rounded-lg mb-3 relative shadow-inner"
-                           style={{ backgroundColor: theme.colors['--bg-main'] }}
-                        >
-                           <div className="absolute top-2 left-2 w-8 h-8 rounded bg-[rgb(var(--primary-500))]" style={{ backgroundColor: theme.colors['--primary-500'] }}></div>
-                           <div className="absolute bottom-2 right-2 w-16 h-4 rounded bg-[rgb(var(--bg-panel))]" style={{ backgroundColor: theme.colors['--bg-panel'] }}></div>
-                           
-                           {theme.isCustom && (
-                             <div className="absolute top-0 right-0 bg-amber-500 text-white text-[10px] px-1.5 py-0.5 rounded-bl-lg font-bold">CUSTOM</div>
-                           )}
-                        </div>
-                        <div className="flex justify-between items-center">
-                            <div>
-                                <h3 className="font-bold text-slate-800 dark:text-slate-200 text-sm">{theme.name}</h3>
-                                <p className="text-xs text-slate-500 capitalize">{theme.type} Mode</p>
-                            </div>
-                            {theme.isCustom && (
-                                <button 
-                                    onClick={(e) => { e.stopPropagation(); onDeleteTheme(theme.id); }}
-                                    className="p-1.5 text-slate-400 hover:text-red-500 rounded-lg hover:bg-paper-100 dark:hover:bg-cyber-800 transition-colors"
-                                    title={t.deleteTheme}
-                                >
-                                    <Trash2 size={14} />
-                                </button>
-                            )}
-                        </div>
-                      </button>
-                    ))}
-                    
-                    {/* Import Theme Button */}
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      className="rounded-xl p-3 border-2 border-dashed border-paper-300 dark:border-cyber-600 flex flex-col items-center justify-center gap-2 text-slate-400 hover:text-cyan-500 hover:border-cyan-400 hover:bg-paper-50 dark:hover:bg-cyber-800/50 transition-all min-h-[140px]"
-                    >
-                      <Upload size={24} />
-                      <span className="text-sm font-medium">{t.importTheme}</span>
-                      <span className="text-[10px] opacity-70">(.json)</span>
-                    </button>
-                  </div>
-              </div>
-              <input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={handleFileUpload} />
-              
-              <div className="pt-4 flex justify-end">
-                <button
-                  onClick={onClose}
-                  className="px-6 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-600 text-white font-medium shadow-lg shadow-cyan-500/30 transition-all transform hover:scale-105"
-                >
-                  {t.close}
-                </button>
-              </div>
-            </div>
-          )}
+          </div>
         </div>
+
+        {/* Footer */}
+        <div className="p-4 bg-paper-50 dark:bg-cyber-800 border-t border-paper-200 dark:border-cyber-700 flex justify-end gap-3">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-slate-600 dark:text-slate-300 hover:bg-paper-200 dark:hover:bg-cyber-700 rounded-lg text-sm font-medium transition-colors"
+          >
+            {t.cancel}
+          </button>
+          <button
+            onClick={() => { onSave(tempConfig); onClose(); }}
+            className="px-6 py-2 bg-gradient-to-r from-cyan-500 to-violet-500 hover:from-cyan-600 hover:to-violet-600 text-white rounded-lg text-sm font-bold shadow-lg shadow-cyan-500/20 transition-all transform hover:scale-105"
+          >
+            {t.save}
+          </button>
+        </div>
+
       </div>
     </div>
   );

@@ -9,6 +9,8 @@ export interface MarkdownFile {
   isLocal?: boolean;
   path?: string; // Relative path for folder imports (e.g. "docs/v1/intro.md")
   summary?: string; // AI Generated Summary for search previews
+  importance?: number; // 0-10 Score automatically assessed by AI
+  keyConcepts?: string[]; // Auto-extracted key concepts
 }
 
 export enum ViewMode {
@@ -89,6 +91,7 @@ export interface AIConfig {
   customPrompts?: {
     polish?: string;
     expand?: string;
+    enhance?: string; // New: Enhance User Prompt
   };
   backup?: {
     frequency: BackupFrequency;
@@ -108,7 +111,9 @@ export interface GraphNode {
   id: string;
   label: string;
   group?: number;
-  val?: number; 
+  val?: number;
+  type?: 'file' | 'exam' | 'question'; // Added type for node distinction
+  score?: number; // 0-100 for exam mastery coloring
 }
 
 export interface GraphLink {
@@ -137,15 +142,44 @@ export interface NoteLayoutItem {
 }
 
 // Quiz System Types
+export type QuestionType = 'single' | 'multiple' | 'text' | 'fill_blank';
+export type DifficultyLevel = 'easy' | 'medium' | 'hard';
+export type ExamMode = 'practice' | 'exam';
+
+export interface ExamConfig {
+  mode: ExamMode;
+  duration: number; // minutes, 0 for unlimited
+  passingScore: number; // percentage
+  showAnswers: 'immediate' | 'after_submit';
+}
+
+export interface GradingResult {
+  score: number; // 0-100
+  feedback: string;
+  keyPointsMatched: string[];
+  keyPointsMissed: string[];
+  suggestion?: string;
+}
+
 export interface QuizQuestion {
   id: string;
-  type: 'single' | 'multiple' | 'text';
+  type: QuestionType;
   question: string;
   options?: string[];
   correctAnswer?: string | string[]; // For auto-grading if applicable
   userAnswer?: string | string[];
   explanation?: string;
   isCorrect?: boolean;
+  
+  // Intelligent Grading Result
+  gradingResult?: GradingResult;
+
+  // New Metadata fields
+  difficulty?: DifficultyLevel;
+  tags?: string[];
+  knowledgePoints?: string[];
+  sourceFileId?: string;
+  created?: number;
 }
 
 export interface Quiz {
@@ -154,7 +188,14 @@ export interface Quiz {
   description: string;
   questions: QuizQuestion[];
   isGraded: boolean;
-  score?: number;
+  score?: number; // Percentage
+  
+  // Exam Specifics
+  config?: ExamConfig;
+  startTime?: number;
+  endTime?: number;
+  status?: 'not_started' | 'in_progress' | 'completed';
+  sourceFileId?: string; // Link back to note
 }
 
 export interface MistakeRecord {
@@ -165,6 +206,26 @@ export interface MistakeRecord {
   explanation?: string;
   timestamp: number;
   quizTitle?: string;
+}
+
+// Analytics Types
+export interface ExamResult {
+  id: string;
+  quizTitle: string;
+  date: number; // timestamp
+  score: number; // percentage
+  totalQuestions: number;
+  correctCount: number;
+  duration: number; // seconds
+  tags: string[]; // Aggregated tags from questions
+  sourceFileId?: string; // Added to link back for graph
+}
+
+export interface KnowledgePointStat {
+  tag: string;
+  totalQuestions: number;
+  correctQuestions: number;
+  accuracy: number; // 0-100
 }
 
 export interface RAGStats {

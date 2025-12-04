@@ -31,7 +31,8 @@ import {
   LayoutGrid,
   BarChart2,
   ChevronDown,
-  Workflow
+  Workflow,
+  Lightbulb
 } from 'lucide-react';
 import { ViewMode, Theme, AIProvider } from '../types';
 import { translations, Language } from '../utils/translations';
@@ -70,6 +71,9 @@ interface ToolbarProps {
   // Voice Support
   isDictating?: boolean;
   onToggleDictation?: () => void;
+
+  // Smart Organize
+  onSmartOrganize?: () => void;
 }
 
 export const Toolbar: React.FC<ToolbarProps> = ({
@@ -101,7 +105,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   isSplitView,
   onToggleSplitView,
   isDictating,
-  onToggleDictation
+  onToggleDictation,
+  onSmartOrganize
 }) => {
   const t = translations[language];
   const [isAiMenuOpen, setIsAiMenuOpen] = useState(false);
@@ -246,6 +251,15 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                   <Maximize2 size={14} className="text-violet-500" /> {t.expand}
                 </button>
                 
+                {onSmartOrganize && (
+                  <button
+                    onClick={() => { onSmartOrganize(); setIsAiMenuOpen(false); }}
+                    className="w-full text-left px-4 py-2 hover:bg-paper-100 dark:hover:bg-cyber-700 text-sm text-slate-700 dark:text-slate-200 flex items-center gap-2"
+                  >
+                    <Lightbulb size={14} className="text-amber-500" /> Smart Organize
+                  </button>
+                )}
+                
                 <div className="my-1 h-px bg-paper-200 dark:bg-cyber-700"></div>
                 <div className="px-3 py-1.5 text-xs font-bold text-slate-400 uppercase tracking-wider">Generation</div>
                 
@@ -255,11 +269,12 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                 >
                   <BrainCircuit size={14} className="text-emerald-500" /> {t.mindMap}
                 </button>
+                
                 <button
                   onClick={() => { onGenerateQuiz(); setIsAiMenuOpen(false); }}
                   className="w-full text-left px-4 py-2 hover:bg-paper-100 dark:hover:bg-cyber-700 text-sm text-slate-700 dark:text-slate-200 flex items-center gap-2"
                 >
-                  <GraduationCap size={14} className="text-amber-500" /> {t.quiz}
+                  <GraduationCap size={14} className="text-amber-500" /> Question Bank
                 </button>
 
                 <div className="my-1 h-px bg-paper-200 dark:bg-cyber-700"></div>

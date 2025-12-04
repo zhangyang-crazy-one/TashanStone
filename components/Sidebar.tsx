@@ -1,5 +1,4 @@
 
-
 import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   FileText, Plus, Trash2, FolderOpen, Search, X, FolderInput, 
@@ -29,6 +28,7 @@ interface SidebarProps {
   ragStats?: RAGStats;
   onRefreshIndex?: () => void;
   onInsertSnippet?: (text: string) => void;
+  onGenerateExam?: (fileId: string) => void; 
 }
 
 interface OutlineItem {
@@ -39,26 +39,23 @@ interface OutlineItem {
 
 // Tree Node Interface
 interface FileTreeNode {
-    id: string; // unique ID
+    id: string; 
     name: string;
     path: string;
     type: 'file' | 'folder';
     fileId?: string;
     children?: FileTreeNode[];
     level?: number;
+    importance?: number; 
 }
 
-// Flat Node Interface for Virtual-ish Rendering
 interface FlatNode extends FileTreeNode {
     level: number;
     isExpanded?: boolean;
     hasChildren?: boolean;
 }
 
-// Config: Extensions to Display in Sidebar
 const DISPLAY_EXTENSIONS = ['.md', '.markdown', '.csv', '.pdf', '.docx', '.doc', '.txt', '.keep'];
-
-// Config: Extensions that can be Operated On (Selected/Edited)
 const OPERABLE_EXTENSIONS = ['.md', '.markdown', '.csv', '.txt'];
 
 const DEFAULT_SNIPPETS: Snippet[] = [
@@ -72,40 +69,28 @@ const DEFAULT_SNIPPETS: Snippet[] = [
 const isExtensionInList = (filename: string, list: string[]) => {
     if (!filename) return false;
     const lower = filename.toLowerCase();
-    // Allow any file ending in .keep to be processed as a node, but filtered out of operability usually
     if (lower.endsWith('.keep')) return true;
     return list.some(ext => lower.endsWith(ext));
 };
 
 const getIconForFile = (name: string) => {
     const lower = name?.toLowerCase() || '';
-    
-    // Markdown
     if (lower.endsWith('.md')) return <FileText size={14} className="text-cyan-500" />;
     if (lower.endsWith('.txt')) return <FileText size={14} className="text-slate-500" />;
-    
-    // Code
     if (lower.endsWith('.js') || lower.endsWith('.jsx')) return <FileCode size={14} className="text-yellow-500" />;
     if (lower.endsWith('.ts') || lower.endsWith('.tsx')) return <FileCode size={14} className="text-blue-500" />;
     if (lower.endsWith('.css') || lower.endsWith('.scss')) return <FileCode size={14} className="text-pink-500" />;
     if (lower.endsWith('.html')) return <FileCode size={14} className="text-orange-500" />;
     if (lower.endsWith('.json')) return <FileJson size={14} className="text-green-500" />;
-    
-    // Data & Docs
     if (lower.endsWith('.csv')) return <FileSpreadsheet size={14} className="text-emerald-500" />;
     if (lower.endsWith('.pdf')) return <FileType size={14} className="text-red-500" />;
     if (lower.endsWith('.docx') || lower.endsWith('.doc')) return <FileType size={14} className="text-blue-600" />;
-    
-    // Images
     if (['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp'].some(ext => lower.endsWith(ext))) {
         return <FileImage size={14} className="text-purple-500" />;
     }
-
-    // Default
     return <FileIcon size={14} className="text-slate-400" />;
 };
 
-// Memoized Row Component
 const FileTreeRow = React.memo<{
     node: FlatNode;
     activeFileId: string;
@@ -123,10 +108,12 @@ const FileTreeRow = React.memo<{
     onRenameSubmit: () => void;
     onRenameCancel: () => void;
     onStartRename: (id: string, initialName: string) => void;
+    onGenerateExam: (id: string) => void;
+    t: any;
 }>(({ 
     node, activeFileId, onSelect, onToggle, onDelete, onRequestCreate, 
     onDragStart, onDragOver, onDrop, isDropTarget,
-    isRenaming, renameValue, onRenameChange, onRenameSubmit, onRenameCancel, onStartRename
+    isRenaming, renameValue, onRenameChange, onRenameSubmit, onRenameCancel, onStartRename, onGenerateExam, t
 }) => {
     const indentStyle = { paddingLeft: `${node.level * 12 + 12}px` };
     const inputRef = useRef<HTMLInputElement>(null);
@@ -139,11 +126,8 @@ const FileTreeRow = React.memo<{
     }, [isRenaming]);
     
     const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter') {
-            onRenameSubmit();
-        } else if (e.key === 'Escape') {
-            onRenameCancel();
-        }
+        if (e.key === 'Enter') onRenameSubmit();
+        else if (e.key === 'Escape') onRenameCancel();
     };
 
     if (node.type === 'folder') {
@@ -160,7 +144,6 @@ const FileTreeRow = React.memo<{
                 onDragOver={(e) => onDragOver(e, node.id)}
                 onDrop={(e) => onDrop(e, node.path)}
             >
-                {/* Indent Guide */}
                 {node.level > 0 && <div className="absolute left-0 top-0 bottom-0 border-l border-paper-200 dark:border-cyber-800" style={{ left: `${node.level * 12 + 4}px` }} />}
                 
                 <span className="opacity-60 transition-transform duration-200 shrink-0" style={{ transform: node.isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>
@@ -185,27 +168,26 @@ const FileTreeRow = React.memo<{
                     <span className="text-sm font-semibold truncate flex-1">{node.name}</span>
                 )}
                 
-                {/* Actions (Visible on Hover) */}
                 {!isRenaming && (
                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                          <button 
                             onClick={(e) => { e.stopPropagation(); onStartRename(node.id, node.name); }}
                             className="p-1 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 rounded text-slate-500 hover:text-cyan-600"
-                            title="Rename Folder"
+                            title={t.rename || "Rename"}
                          >
                              <Edit2 size={12} />
                          </button>
                          <button 
                             onClick={(e) => { e.stopPropagation(); onRequestCreate('file', node.path); }}
                             className="p-1 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 rounded text-slate-500 hover:text-cyan-600"
-                            title="New File inside"
+                            title={t.newFile || "New File"}
                          >
                              <Plus size={12} />
                          </button>
                          <button 
                             onClick={(e) => { e.stopPropagation(); onRequestCreate('folder', node.path); }}
                             className="p-1 hover:bg-amber-100 dark:hover:bg-amber-900/50 rounded text-slate-500 hover:text-amber-600"
-                            title="New Folder inside"
+                            title="New Folder"
                          >
                              <FolderInput size={12} />
                          </button>
@@ -217,8 +199,8 @@ const FileTreeRow = React.memo<{
 
     const isActive = activeFileId === node.fileId;
     const isOperable = isExtensionInList(node.name, OPERABLE_EXTENSIONS);
+    const isImportant = (node.importance || 0) >= 7;
     
-    // Hide .keep files from the list view
     if (node.name === '.keep') return null;
 
     return (
@@ -232,14 +214,12 @@ const FileTreeRow = React.memo<{
            `}
            style={indentStyle}
            onClick={() => isOperable && !isRenaming && onSelect(node.fileId!)}
-           title={!isOperable ? "Read Only / Extraction Source" : node.name}
+           title={!isOperable ? "Read Only" : node.name}
            draggable={isOperable && !isRenaming}
            onDragStart={(e) => isOperable && onDragStart(e, node.fileId!)}
         >
-           {/* Indent Guide */}
            {node.level > 0 && <div className="absolute left-0 top-0 bottom-0 border-l border-paper-200 dark:border-cyber-800" style={{ left: `${node.level * 12 + 4}px` }} />}
            
-           {/* Active Indicator */}
            {isActive && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-cyan-500" />}
            
            <span className="opacity-80 shrink-0">{getIconForFile(node.name)}</span>
@@ -256,7 +236,10 @@ const FileTreeRow = React.memo<{
                     className="flex-1 min-w-0 bg-white dark:bg-cyber-900 border border-cyan-500 rounded px-1 text-sm focus:outline-none h-6"
                  />
             ) : (
-                <span className="text-sm truncate flex-1 leading-none pt-0.5">{node.name}</span>
+                <span className="text-sm truncate flex-1 leading-none pt-0.5 flex items-center gap-2">
+                    {node.name}
+                    {isImportant && <div className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" title="Important" />}
+                </span>
             )}
            
            {!isOperable && <Lock size={10} className="text-slate-400" />}
@@ -264,16 +247,23 @@ const FileTreeRow = React.memo<{
            {isOperable && !isRenaming && (
                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                    <button
+                    onClick={(e) => { e.stopPropagation(); onGenerateExam(node.fileId!); }}
+                    className="p-1 hover:bg-violet-100 dark:hover:bg-violet-900/30 hover:text-violet-500 rounded transition-all"
+                    title={t.createExamFromNote}
+                   >
+                     <GraduationCap size={12} />
+                   </button>
+                   <button
                     onClick={(e) => { e.stopPropagation(); onStartRename(node.fileId!, node.name); }}
                     className="p-1 hover:bg-cyan-100 dark:hover:bg-cyan-900/30 hover:text-cyan-500 rounded transition-all"
-                    title="Rename File"
+                    title={t.renameFile}
                    >
                      <Edit2 size={12} />
                    </button>
                    <button
                     onClick={(e) => { e.stopPropagation(); onDelete(node.fileId!); }}
                     className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-500 rounded transition-all"
-                    title="Delete File"
+                    title={t.deleteFile}
                    >
                      <Trash2 size={12} />
                    </button>
@@ -300,17 +290,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
   language = 'en',
   ragStats,
   onRefreshIndex,
-  onInsertSnippet
+  onInsertSnippet,
+  onGenerateExam = () => {}
 }) => {
   const [activeTab, setActiveTab] = useState<'files' | 'outline' | 'tags' | 'snippets'>('files');
   const [outline, setOutline] = useState<OutlineItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   
-  // Drag and Drop State
   const [dragOverNodeId, setDragOverNodeId] = useState<string | null>(null);
   const [isRootDropTarget, setIsRootDropTarget] = useState(false);
   
-  // Creation Modal State
   const [creationModal, setCreationModal] = useState<{
     isOpen: boolean;
     type: 'file' | 'folder';
@@ -318,29 +307,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
     value: string;
   }>({ isOpen: false, type: 'file', parentPath: '', value: '' });
 
-  // Renaming State
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
 
   const creationInputRef = useRef<HTMLInputElement>(null);
 
-  // Persist expanded state to localStorage
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>(() => {
     try {
       const saved = localStorage.getItem('neon-sidebar-expanded');
       return saved ? JSON.parse(saved) : {};
     } catch (e) {
-      console.warn("Failed to load sidebar state", e);
       return {};
     }
   });
 
   useEffect(() => {
-    try {
-      localStorage.setItem('neon-sidebar-expanded', JSON.stringify(expandedFolders));
-    } catch (e) {
-      console.error("Failed to save sidebar state", e);
-    }
+    localStorage.setItem('neon-sidebar-expanded', JSON.stringify(expandedFolders));
   }, [expandedFolders]);
 
   useEffect(() => {
@@ -358,16 +340,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const filesRef = useRef(files);
   filesRef.current = files;
 
-  // 1. Structure Hash
   const filesStructureHash = useMemo(() => {
      if (!files || !Array.isArray(files)) return "";
      return files
         .filter(f => isExtensionInList(f.path || f.name, DISPLAY_EXTENSIONS))
-        .map(f => `${f.id}|${f.path || f.name}`)
+        .map(f => `${f.id}|${f.path || f.name}|${f.importance || 0}`)
         .join(';');
   }, [files]);
   
-  // 2. Build Tree Structure
   const fileTree = useMemo(() => {
     const currentFiles = filesRef.current || [];
     const rootNodes: FileTreeNode[] = [];
@@ -398,6 +378,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     path: currentPath,
                     type: isFile ? 'file' : 'folder',
                     fileId: isFile ? file.id : undefined,
+                    importance: isFile ? file.importance : undefined,
                     children: isFile ? undefined : []
                 };
                 pathMap.set(currentPath, node);
@@ -431,7 +412,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     return sortNodes(rootNodes);
   }, [filesStructureHash]); 
 
-  // Auto-expand and Outline logic
   useEffect(() => {
     const activeFile = files.find(f => f.id === activeFileId);
     if (activeFile && (activeFile.path || activeFile.name)) {
@@ -473,7 +453,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   }, [activeFileId, files]);
 
-  // Tag Indexing Logic
   const tagIndex = useMemo(() => {
     const index = new Map<string, string[]>();
     files.forEach(f => {
@@ -650,7 +629,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="absolute inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-start justify-center pt-20">
                 <form onSubmit={handleCreateSubmit} className="w-64 bg-white dark:bg-cyber-800 rounded-lg shadow-xl border border-paper-200 dark:border-cyber-600 p-3 animate-slideDown">
                     <h3 className="text-xs font-bold text-slate-500 mb-2 uppercase tracking-wide">
-                        New {creationModal.type} {creationModal.parentPath ? `in /${creationModal.parentPath.split('/').pop()}` : '(Root)'}
+                        {t.create || "Create"} {creationModal.type === 'file' ? t.newFile : t.newFolder}
                     </h3>
                     <input 
                         ref={creationInputRef}
@@ -658,7 +637,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         value={creationModal.value}
                         onChange={e => setCreationModal(p => ({ ...p, value: e.target.value }))}
                         className="w-full px-2 py-1.5 mb-2 bg-paper-100 dark:bg-cyber-900/50 border border-paper-300 dark:border-cyber-600 rounded text-sm focus:ring-1 focus:ring-cyan-500 focus:outline-none"
-                        placeholder="Enter name..."
+                        placeholder={t.filename || "Enter name..."}
                     />
                     <div className="flex gap-2 justify-end">
                         <button 
@@ -666,13 +645,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             onClick={() => setCreationModal(p => ({ ...p, isOpen: false }))}
                             className="px-2 py-1 text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
                         >
-                            Cancel
+                            {t.cancel}
                         </button>
                         <button 
                             type="submit"
-                            className="px-2 py-1 bg-cyan-500 hover:bg-cyan-600 text-white rounded text-xs font-bold"
+                            className="px-2 py-1 bg-cyan-500 hover:bg-cyan-600 text-white rounded-text-xs font-bold"
                         >
-                            Create
+                            {t.create}
                         </button>
                     </div>
                 </form>
@@ -684,28 +663,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               onClick={() => setActiveTab('files')}
               className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-t-lg text-sm font-medium transition-colors border-b-2 ${activeTab === 'files' ? 'border-cyan-500 text-cyan-700 dark:text-cyan-400 bg-white/50 dark:bg-cyber-900/50' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
-              title="Files"
+              title={t.files}
             >
               <FolderOpen size={15} />
             </button>
             <button
               onClick={() => setActiveTab('tags')}
               className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-t-lg text-sm font-medium transition-colors border-b-2 ${activeTab === 'tags' ? 'border-emerald-500 text-emerald-700 dark:text-emerald-400 bg-white/50 dark:bg-cyber-900/50' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
-              title="Tags"
+              title={t.tags}
             >
               <TagIcon size={15} />
             </button>
             <button
               onClick={() => setActiveTab('outline')}
               className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-t-lg text-sm font-medium transition-colors border-b-2 ${activeTab === 'outline' ? 'border-violet-500 text-violet-700 dark:text-violet-400 bg-white/50 dark:bg-cyber-900/50' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
-              title="Outline"
+              title={t.outline}
             >
               <List size={15} />
             </button>
             <button
               onClick={() => setActiveTab('snippets')}
               className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-t-lg text-sm font-medium transition-colors border-b-2 ${activeTab === 'snippets' ? 'border-amber-500 text-amber-700 dark:text-amber-400 bg-white/50 dark:bg-cyber-900/50' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
-              title="Snippets"
+              title={t.snippets}
             >
               <Scissors size={15} />
             </button>
@@ -718,7 +697,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                     <input 
                         type="text" 
-                        placeholder={activeTab === 'files' ? "Search files..." : "Search tags..."} 
+                        placeholder={activeTab === 'files' ? t.searchFiles : t.searchTags} 
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         className="w-full pl-9 pr-3 py-1.5 text-sm bg-white dark:bg-cyber-900 border border-paper-200 dark:border-cyber-600 rounded-md focus:outline-none focus:ring-1 focus:ring-cyan-500 text-slate-800 dark:text-slate-200 placeholder-slate-400"
@@ -746,7 +725,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                {visibleFlatNodes.length === 0 ? (
                    <div className="flex flex-col items-center justify-center h-40 text-slate-400 text-xs text-center p-4">
                        <FolderOpen size={32} className="mb-2 opacity-50" />
-                       <p>{searchQuery ? "No matching files" : t.noFilesFound}</p>
+                       <p>{searchQuery ? t.noFilesFound : t.noFilesFound}</p>
                    </div>
                ) : (
                    visibleFlatNodes.map(node => (
@@ -768,6 +747,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           onRenameSubmit={handleRenameSubmit}
                           onRenameCancel={handleRenameCancel}
                           onStartRename={handleStartRename}
+                          onGenerateExam={onGenerateExam}
+                          t={t}
                        />
                    ))
                )}
@@ -777,13 +758,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     onClick={() => handleOpenCreation('file', '')}
                     className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-slate-500 hover:text-cyan-600 hover:bg-paper-100 dark:hover:bg-cyber-800 rounded transition-colors"
                   >
-                      <Plus size={14} /> New File at Root
+                      <Plus size={14} /> {t.newFileRoot}
                   </button>
                   <button 
                     onClick={() => handleOpenCreation('folder', '')}
                     className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-slate-500 hover:text-amber-600 hover:bg-paper-100 dark:hover:bg-cyber-800 rounded transition-colors"
                   >
-                      <FolderInput size={14} /> New Folder at Root
+                      <FolderInput size={14} /> {t.newFolderRoot}
                   </button>
                </div>
             </div>
@@ -792,7 +773,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   {Array.from(tagIndex.keys()).sort().filter(t => t.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 ? (
                        <div className="flex flex-col items-center justify-center h-40 text-slate-400 text-xs text-center p-4">
                            <Hash size={32} className="mb-2 opacity-50" />
-                           <p>No tags found</p>
+                           <p>{t.noTagsFound}</p>
                        </div>
                   ) : (
                       <div className="space-y-1">
@@ -827,7 +808,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
           ) : activeTab === 'snippets' ? (
               <div className="p-2 space-y-2">
-                  <div className="text-xs text-slate-500 px-1 font-semibold uppercase tracking-wider mb-2">Templates & Snippets</div>
+                  <div className="text-xs text-slate-500 px-1 font-semibold uppercase tracking-wider mb-2">{t.templatesSnippets}</div>
                   {DEFAULT_SNIPPETS.map(snippet => (
                       <div 
                           key={snippet.id} 
@@ -844,7 +825,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       </div>
                   ))}
                   <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-900/10 rounded border border-amber-200 dark:border-amber-800/30 text-xs text-amber-800 dark:text-amber-200">
-                      <p>Click to insert into editor at cursor position.</p>
+                      <p>{t.clickToInsert}</p>
                   </div>
               </div>
           ) : (
@@ -876,17 +857,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="px-3 py-2 border-t border-paper-200 dark:border-cyber-700 bg-paper-50 dark:bg-cyber-900/80 text-[10px] flex items-center justify-between shrink-0">
                 <div className="flex flex-col">
                     <span className="font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1">
-                        <Database size={10} /> Knowledge Base
+                        <Database size={10} /> {t.knowledgeBase}
                     </span>
                     <span className="text-slate-500">
-                        {ragStats.indexedFiles}/{ragStats.totalFiles} indexed ({ragStats.totalChunks} chunks)
+                        {ragStats.indexedFiles}/{ragStats.totalFiles} {t.indexed} ({ragStats.totalChunks} chunks)
                     </span>
                 </div>
                 <button 
                     onClick={onRefreshIndex}
                     disabled={ragStats.isIndexing}
                     className={`p-1.5 rounded hover:bg-paper-200 dark:hover:bg-cyber-700 transition-colors ${ragStats.isIndexing ? 'animate-spin text-cyan-500' : 'text-slate-400'}`}
-                    title="Re-index Knowledge Base"
+                    title={t.reindex}
                 >
                     {ragStats.isIndexing ? <Loader2 size={12} /> : <RefreshCw size={12} />}
                 </button>

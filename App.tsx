@@ -15,11 +15,14 @@ import { LibraryView } from './components/LibraryView';
 import { AnalyticsDashboard } from './components/AnalyticsDashboard';
 import { DrawingModal } from './components/DrawingModal';
 import { SearchModal } from './components/SearchModal';
-import { ViewMode, AIState, MarkdownFile, AIConfig, ChatMessage, GraphData, AppTheme, Quiz, RAGStats, AppShortcut, PaneType, NoteLayoutItem, BackupFrequency } from './types';
-import { polishContent, expandContent, generateAIResponse, synthesizeKnowledgeBase, generateQuiz, generateMindMap, extractQuizFromRawContent, compactConversation, extractEntitiesAndRelationships } from './services/aiService';
+import { SmartOrganizeModal } from './components/SmartOrganizeModal';
+import { QuestionBankModal } from './components/QuestionBankModal';
+import { ViewMode, AIState, MarkdownFile, AIConfig, ChatMessage, GraphData, AppTheme, Quiz, RAGStats, AppShortcut, PaneType, NoteLayoutItem, BackupFrequency, QuizQuestion, ExamConfig } from './types';
+import { polishContent, expandContent, generateAIResponse, synthesizeKnowledgeBase, generateQuiz, generateMindMap, extractQuizFromRawContent, compactConversation, extractEntitiesAndRelationships, enhanceUserPrompt } from './services/aiService';
 import { generateFileLinkGraph } from './services/knowledgeService';
 import { applyTheme, getAllThemes, getSavedThemeId, saveCustomTheme, deleteCustomTheme, DEFAULT_THEMES, getLastUsedThemeIdForMode } from './services/themeService';
 import { readDirectory, saveFileToDisk, processPdfFile, extractTextFromFile, parseCsvToQuiz, parseJsonToQuiz, isExtensionSupported } from './services/fileService';
+import { getExamHistory } from './services/analyticsService';
 import { VectorStore } from './services/ragService';
 import { AlertCircle, CheckCircle2, X, Database } from 'lucide-react';
 import { translations, Language } from './utils/translations';
@@ -48,7 +51,8 @@ const DEFAULT_AI_CONFIG: AIConfig = {
   mcpTools: '[]',
   customPrompts: {
     polish: "You are an expert technical editor. Improve the provided Markdown content for clarity, grammar, and flow. Return only the polished Markdown.",
-    expand: "You are a creative technical writer. Expand on the provided Markdown content, adding relevant details, examples, or explanations. Return only the expanded Markdown."
+    expand: "You are a creative technical writer. Expand on the provided Markdown content, adding relevant details, examples, or explanations. Return only the expanded Markdown.",
+    enhance: "You are an expert prompt engineer. Rewrite the user's draft prompt to be more precise, effective, and context-aware. Use the provided conversation history and knowledge base context to resolve ambiguities. Return ONLY the enhanced prompt string without quotes or explanations."
   },
   backup: {
     frequency: 'weekly',
@@ -262,6 +266,8 @@ const App: React.FC = () => {
   const [mindMapContent, setMindMapContent] = useState<string | null>(null);
   const [isDrawingOpen, setIsDrawingOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isSmartOrganizeOpen, setIsSmartOrganizeOpen] = useState(false);
+  const [isQuestionBankOpen, setIsQuestionBankOpen] = useState(false);
   
   // Dictation
   const [isDictating, setIsDictating] = useState(false);
@@ -374,6 +380,20 @@ const App: React.FC = () => {
       handleUpdateFile(content, activeFileId);
   };
 
+  const handleUpdateFileMetadata = (id: string, importance: number, keyConcepts: string[]) => {
+      setFiles(prev => prev.map(f => f.id === id ? { ...f, importance, keyConcepts } : f));
+  };
+
+  const handleApplyTags = (tags: string[]) => {
+      const newContent = activeFile.content + '\n\n' + tags.join(' ');
+      handleUpdateActiveFile(newContent);
+  };
+
+  const handleInsertLink = (targetName: string) => {
+      const newContent = activeFile.content + (activeFile.content.endsWith(' ') ? '' : ' ') + `[[${targetName}]]`;
+      handleUpdateActiveFile(newContent);
+  };
+
   const handleUndo = () => {
       const fileHistory = history[activeFileId];
       if (!fileHistory || fileHistory.past.length === 0) return;
@@ -414,6 +434,15 @@ const App: React.FC = () => {
   };
 
   const handleSelectFile = (id: string) => {
+    // Special handling for exam links
+    if (id.startsWith('exam:') || id.startsWith('question:')) {
+        // Here we could implement loading an exam. 
+        // For simplicity, we just alert or could open the QuestionBank.
+        // In a real implementation, we'd lookup the Exam ID in exam history.
+        alert(`Navigating to exam/question: ${id} (Feature coming soon)`);
+        return;
+    }
+
     if (viewMode === ViewMode.Split) {
         if (activePane === 'primary') setPrimaryFileId(id);
         else setSecondaryFileId(id);
@@ -478,9 +507,13 @@ const App: React.FC = () => {
       setFiles(prev => prev.map(f => {
           if (f.id === sourceId) {
               const fileName = f.path ? f.path.split('/').pop() : f.name + '.md';
+              // Ensure we don't double up extension if path is just a folder
+              let newPath = targetPath ? `${targetPath}/${fileName}` : fileName;
+              // Clean up double slashes
+              newPath = newPath.replace('//', '/');
               return {
                   ...f,
-                  path: targetPath ? `${targetPath}/${fileName}` : fileName
+                  path: newPath
               };
           }
           return f;
@@ -651,6 +684,15 @@ const App: React.FC = () => {
     }
   };
 
+  const handleEnhancePrompt = async (draftPrompt: string): Promise<string> => {
+      // Get RAG Context for the draft prompt
+      let ragContext = "";
+      if (aiConfig.apiKey || aiConfig.provider === 'ollama') {
+          ragContext = await vectorStore.search(draftPrompt, aiConfig);
+      }
+      return await enhanceUserPrompt(draftPrompt, messages, aiConfig, ragContext);
+  };
+
   const handleAIPolish = async () => {
     setAiState({ isThinking: true, error: null, message: 'Polishing content...' });
     try {
@@ -693,16 +735,25 @@ const App: React.FC = () => {
       }
   };
 
-  const handleGenerateQuiz = async () => {
-      setAiState({ isThinking: true, error: null, message: translations[aiConfig.language as Language].analyzingQuiz });
-      try {
-          const quiz = await generateQuiz(activeFile.content, aiConfig);
-          setActiveQuiz(quiz);
-          setViewMode(ViewMode.Quiz);
-          setAiState({ isThinking: false, error: null, message: null });
-      } catch (err: any) {
-          setAiState({ isThinking: false, error: err.message, message: null });
+  const handleGenerateQuiz = async (fileId?: string) => {
+      // If fileId provided (e.g. from Sidebar context menu), switch to that file first
+      if (fileId && fileId !== activeFileId) {
+          setPrimaryFileId(fileId);
       }
+      setIsQuestionBankOpen(true);
+  };
+
+  const handleStartQuiz = (questions: QuizQuestion[], config?: ExamConfig) => {
+      setActiveQuiz({
+          id: `bank-quiz-${Date.now()}`,
+          title: config?.mode === 'exam' ? "Exam Simulation" : "Custom Quiz",
+          description: config?.mode === 'exam' ? "Timed Exam Mode" : "Practice Mode",
+          questions: questions,
+          isGraded: false,
+          config: config,
+          sourceFileId: activeFileId
+      });
+      setViewMode(ViewMode.Quiz);
   };
 
   const handleGenerateMindMap = async () => {
@@ -791,8 +842,9 @@ const App: React.FC = () => {
         }}
         language={aiConfig.language as Language}
         ragStats={ragStats}
-        onRefreshIndex={() => setRagStats(p => ({...p, isIndexing: true}))} // Trigger re-index effect
+        onRefreshIndex={() => setRagStats(p => ({...p, isIndexing: true}))} 
         onInsertSnippet={(text) => handleUpdateActiveFile(activeFile.content + text)}
+        onGenerateExam={handleGenerateQuiz}
       />
 
       <div className="flex-1 flex flex-col h-full overflow-hidden relative">
@@ -805,15 +857,13 @@ const App: React.FC = () => {
           onAIExpand={handleAIExpand}
           onAIEntityExtraction={async () => {
               const data = await extractEntitiesAndRelationships(activeFile.content, aiConfig);
-              // Show in graph view? For now, we just alert or log, or maybe switch to graph view with this data
-              // Simpler: Just append raw data to file for inspection
               handleUpdateActiveFile(activeFile.content + `\n\n\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\``);
           }}
           onBuildGraph={() => setViewMode(ViewMode.Graph)}
           onSynthesize={handleSynthesize}
           onGenerateMindMap={handleGenerateMindMap}
-          onGenerateQuiz={handleGenerateQuiz}
-          onFormatBold={() => {}} // Editor handles via refs/shortcuts usually, need to pipe through
+          onGenerateQuiz={() => handleGenerateQuiz()}
+          onFormatBold={() => {}} 
           onFormatItalic={() => {}}
           onUndo={handleUndo}
           onRedo={handleRedo}
@@ -831,6 +881,7 @@ const App: React.FC = () => {
           onToggleSplitView={() => setViewMode(viewMode === ViewMode.Split ? ViewMode.Editor : ViewMode.Split)}
           isDictating={isDictating}
           onToggleDictation={handleToggleDictation}
+          onSmartOrganize={() => setIsSmartOrganizeOpen(true)}
         />
 
         <div className="flex-1 overflow-hidden relative">
@@ -892,7 +943,7 @@ const App: React.FC = () => {
 
           {viewMode === ViewMode.Graph && (
              <KnowledgeGraph 
-                data={generateFileLinkGraph(files)} 
+                data={generateFileLinkGraph(files, getExamHistory())} 
                 theme={themes.find(t => t.id === activeThemeId)?.type || 'light'}
                 onNodeClick={handleSelectFile}
              />
@@ -937,7 +988,11 @@ const App: React.FC = () => {
           )}
           
           {viewMode === ViewMode.Analytics && (
-             <AnalyticsDashboard files={files} />
+             <AnalyticsDashboard 
+                files={files} 
+                onNavigate={handleSelectFile} 
+                language={aiConfig.language as Language}
+             />
           )}
 
         </div>
@@ -981,6 +1036,7 @@ const App: React.FC = () => {
              const compacted = await compactConversation(messages, aiConfig);
              setMessages(compacted);
           }}
+          onEnhancePrompt={handleEnhancePrompt}
           aiState={aiState}
           language={aiConfig.language as Language}
         />
@@ -1018,6 +1074,32 @@ const App: React.FC = () => {
             aiConfig={aiConfig}
             semanticSearch={(q, c) => vectorStore.semanticSearch(q, c)}
             relatedFilesProvider={(id) => vectorStore.findRelatedFiles(id)}
+        />
+
+        <SmartOrganizeModal 
+            isOpen={isSmartOrganizeOpen}
+            onClose={() => setIsSmartOrganizeOpen(false)}
+            file={activeFile}
+            allFiles={files}
+            aiConfig={aiConfig}
+            onApplyTags={handleApplyTags}
+            onMoveFile={(path) => handleMoveItem(activeFile.id, path)}
+            onInsertLink={handleInsertLink}
+            onUpdateMetadata={(score, concepts) => handleUpdateFileMetadata(activeFile.id, score, concepts)}
+            findRelatedFiles={(id) => vectorStore.findRelatedFiles(id)}
+            onOpenSettings={() => {
+                setIsSmartOrganizeOpen(false);
+                setIsSettingsOpen(true);
+                setActiveSettingsTab('ai');
+            }}
+        />
+
+        <QuestionBankModal
+            isOpen={isQuestionBankOpen}
+            onClose={() => setIsQuestionBankOpen(false)}
+            activeFile={activeFile}
+            aiConfig={aiConfig}
+            onStartQuiz={handleStartQuiz}
         />
         
         {/* Error / Status Toast */}
