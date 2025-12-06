@@ -1,116 +1,180 @@
 <div align="center">
 
+<img src="build/icon.png" alt="ZhangNote Logo" width="128" height="128">
+
 # ZhangNote
 
-**AI-Powered Markdown Editor & Knowledge Management Tool**
+**智能 AI 驱动的 Markdown 编辑器与知识管理工具**
 
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey.svg)](https://github.com/)
-[![Electron](https://img.shields.io/badge/Electron-34-47848F.svg)](https://www.electronjs.org/)
+[![Release](https://img.shields.io/github/v/release/zhangyang-crazy-one/Zhang_Note?style=flat-square)](https://github.com/zhangyang-crazy-one/Zhang_Note/releases)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=flat-square)](https://opensource.org/licenses/Apache-2.0)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20|%20Linux-lightgrey.svg?style=flat-square)](https://github.com/zhangyang-crazy-one/Zhang_Note/releases)
+[![Electron](https://img.shields.io/badge/Electron-33-47848F.svg?style=flat-square)](https://www.electronjs.org/)
+[![React](https://img.shields.io/badge/React-19-61DAFB.svg?style=flat-square)](https://reactjs.org/)
 
-[English](#features) | [中文](#功能特性)
+[English](#english) | [中文](#中文)
+
+---
+
+### 下载安装 / Download
+
+| 平台 Platform | 下载链接 Download |
+|:---:|:---:|
+| Windows x64 | [ZhangNote-Setup-1.0.0-x64.exe](https://github.com/zhangyang-crazy-one/Zhang_Note/releases/download/v1.0.0/ZhangNote-Setup-1.0.0-x64.exe) |
+| Linux x64 (Debian/Ubuntu/麒麟) | [zhangnote_1.0.0_amd64.deb](https://github.com/zhangyang-crazy-one/Zhang_Note/releases/download/v1.0.0/zhangnote_1.0.0_amd64.deb) |
 
 </div>
 
 ---
 
-## Features
+<a id="中文"></a>
+## 中文
 
-ZhangNote is a modern AI-powered Markdown editor designed for knowledge workers, researchers, and note-taking enthusiasts. It combines beautiful editing experience with powerful AI capabilities.
+### 简介
 
-### Core Features
+ZhangNote 是一款现代化的 AI 驱动 Markdown 编辑器，专为知识工作者、研究人员和笔记爱好者设计。它将优美的编辑体验与强大的 AI 能力完美结合，让您的笔记更加智能化。
 
-- **Markdown Editor** - Real-time preview with syntax highlighting, supporting split view, editor-only, and preview-only modes
-- **Multi-format Import** - Import PDF, DOCX, CSV files and automatically convert to Markdown
-- **File Management** - Folder-based organization with drag-and-drop support
-- **Theme System** - 5 built-in themes including Neon Cyber, Clean Paper, Sketchbook, Midnight Dracula, and Solarized Dawn
-- **Chinese Font Support** - Built-in Noto Sans SC, Noto Serif SC, and Ma Shan Zheng fonts
+### 核心功能
 
-### AI Capabilities
+#### 📝 Markdown 编辑
+- **实时预览** - 所见即所得的编辑体验，支持语法高亮
+- **多视图模式** - 纯编辑、纯预览、分屏三种模式自由切换
+- **代码高亮** - 支持 100+ 编程语言语法高亮
+- **数学公式** - 完整支持 LaTeX 数学公式渲染
+- **Mermaid 图表** - 支持流程图、时序图、甘特图等
 
-- **AI Chat Assistant** - Chat with your notes using context-aware AI
-- **RAG (Retrieval Augmented Generation)** - Semantic search across your knowledge base
+#### 📁 文件管理
+- **文件夹组织** - 树状结构清晰管理笔记
+- **拖拽操作** - 直观的文件移动和重命名
+- **多格式导入** - 支持 PDF、DOCX、CSV 自动转换为 Markdown
+
+#### 🤖 AI 智能功能
+- **AI 对话助手** - 与笔记内容进行上下文感知对话
+- **RAG 知识检索** - 语义搜索您的知识库，精准定位信息
+- **内容润色** - AI 驱动的写作增强，提升文笔质量
+- **知识图谱** - 可视化笔记中的概念关系网络
+- **思维导图** - 自动从内容生成结构化思维导图
+- **试卷生成** - 从学习材料智能创建测验题目
+
+#### 🔧 MCP 工具协议
+- **Chrome DevTools 集成** - 直接控制浏览器进行自动化操作
+- **自定义工具扩展** - 支持接入各类 Node.js MCP 服务
+- **灵活扩展架构** - 轻松扩展 AI 能力边界
+
+### 支持的 AI 提供商
+
+| 提供商 | 推荐模型 | 特点 |
+|--------|----------|------|
+| **Google Gemini** | gemini-2.5-flash, gemini-2.5-pro | 网络搜索、超长上下文 (100万tokens) |
+| **Ollama** | qwen3, llama3, mistral | 本地运行、完全隐私 |
+| **OpenAI 兼容** | DeepSeek, Claude, GLM-4, Kimi | 灵活 API、多选择 |
+
+### 主题系统
+
+内置 5 套精心设计的主题：
+
+| 主题 | 风格 | 适用场景 |
+|------|------|----------|
+| 霓虹赛博 | 暗色系，青紫色调 | 夜间编程、酷炫风格 |
+| 简洁纸张 | 浅色系，仿纸张 | 日常写作、阅读 |
+| 手绘风格 | 马善政楷体手写风 | 创意写作、笔记 |
+| 午夜德古拉 | 经典暗色主题 | 长时间使用 |
+| 曙光主题 | 温暖浅色调 | 清晨阅读 |
+
+### 快速开始
+
+1. **下载安装**
+   - Windows: 下载 `.exe` 安装包，双击安装
+   - Linux: 下载 `.deb` 包，运行 `sudo dpkg -i zhangnote_1.0.0_amd64.deb`
+
+2. **配置 AI**
+   - 点击设置图标 → 选择 AI 提供商
+   - 输入 API 密钥（Gemini/OpenAI）或保持默认（Ollama）
+   - 点击保存
+
+3. **开始使用**
+   - 创建新笔记或打开已有文件夹
+   - 使用工具栏切换视图模式
+   - 点击 AI 图标开启智能功能
+
+### 快捷键
+
+| 操作 | 快捷键 |
+|------|--------|
+| 加粗 | `Ctrl + B` |
+| 斜体 | `Ctrl + I` |
+| 撤销 | `Ctrl + Z` |
+| 重做 | `Ctrl + Y` |
+| 保存 | `Ctrl + S` |
+| 新建 | `Ctrl + N` |
+
+### 隐私说明
+
+- ✅ 笔记本地存储，不上传云端
+- ✅ 不收集任何使用数据
+- ⚠️ AI 功能需发送内容到配置的 AI 服务商
+
+---
+
+<a id="english"></a>
+## English
+
+### Introduction
+
+ZhangNote is a modern AI-powered Markdown editor designed for knowledge workers, researchers, and note-taking enthusiasts. It combines a beautiful editing experience with powerful AI capabilities.
+
+### Key Features
+
+#### 📝 Markdown Editing
+- **Live Preview** - Real-time rendering with syntax highlighting
+- **Multiple View Modes** - Editor-only, preview-only, or split view
+- **Code Highlighting** - 100+ programming languages supported
+- **Math Equations** - Full LaTeX math formula rendering
+- **Mermaid Diagrams** - Flowcharts, sequence diagrams, Gantt charts
+
+#### 📁 File Management
+- **Folder Organization** - Tree structure for clear note management
+- **Drag & Drop** - Intuitive file operations
+- **Multi-format Import** - PDF, DOCX, CSV auto-conversion to Markdown
+
+#### 🤖 AI-Powered Features
+- **AI Chat Assistant** - Context-aware conversations with your notes
+- **RAG Knowledge Retrieval** - Semantic search across your knowledge base
 - **Content Polish** - AI-powered writing enhancement
-- **Knowledge Graph** - Visualize relationships between concepts in your notes
-- **Mind Map Generation** - Automatically generate mind maps from content
-- **Quiz Generation** - Create quizzes from your study materials
-- **Web Search** - AI can search the web for up-to-date information (Gemini only)
+- **Knowledge Graph** - Visualize concept relationships
+- **Mind Map Generation** - Auto-generate structured mind maps
+- **Quiz Generation** - Create quizzes from study materials
+
+#### 🔧 MCP Protocol Support
+- **Chrome DevTools Integration** - Browser automation control
+- **Custom Tool Extensions** - Connect various Node.js MCP services
+- **Extensible Architecture** - Easily expand AI capabilities
 
 ### Supported AI Providers
 
-| Provider | Models | Features |
-|----------|--------|----------|
-| **Google Gemini** | gemini-2.5-flash, gemini-2.5-pro | Web Search, Large Context |
-| **Ollama** | llama3, qwen, mistral, etc. | Local, Privacy-focused |
-| **OpenAI Compatible** | GPT-4, DeepSeek, Claude, etc. | Flexible API |
+| Provider | Recommended Models | Features |
+|----------|-------------------|----------|
+| **Google Gemini** | gemini-2.5-flash, gemini-2.5-pro | Web search, 1M token context |
+| **Ollama** | qwen3, llama3, mistral | Local, fully private |
+| **OpenAI Compatible** | DeepSeek, Claude, GLM-4 | Flexible API options |
 
-### MCP (Model Context Protocol) Support
+### Quick Start
 
-ZhangNote supports MCP servers for extended AI capabilities:
-- Chrome DevTools integration
-- Custom tool definitions
-- Extensible architecture
+1. **Install**
+   - Windows: Download and run the `.exe` installer
+   - Linux: Download `.deb` and run `sudo dpkg -i zhangnote_1.0.0_amd64.deb`
 
----
+2. **Configure AI**
+   - Click Settings → Select AI provider
+   - Enter API key (Gemini/OpenAI) or use defaults (Ollama)
+   - Save settings
 
-## Installation
+3. **Start Using**
+   - Create notes or open existing folders
+   - Switch view modes via toolbar
+   - Click AI icons to enable smart features
 
-### Windows
-
-1. Download the latest installer from [Releases](https://github.com/your-repo/releases)
-2. Run `ZhangNote-Setup-x.x.x.exe`
-3. Follow the installation wizard
-
-### Portable Version
-
-Download the portable `.zip` file and extract to any location.
-
----
-
-## Quick Start
-
-### 1. Configure AI Provider
-
-1. Click the **Settings** icon in the toolbar
-2. Select your AI provider (Gemini, Ollama, or OpenAI Compatible)
-3. Enter your API key or configure the endpoint URL
-4. Click **Save**
-
-#### Gemini Setup
-- Get your API key from [Google AI Studio](https://aistudio.google.com/)
-- Paste the key in the API Key field
-
-#### Ollama Setup (Local AI)
-- Install [Ollama](https://ollama.ai/) on your machine
-- Pull a model: `ollama pull llama3`
-- Default URL: `http://localhost:11434`
-
-#### OpenAI Compatible Setup
-- Works with OpenAI, Azure OpenAI, DeepSeek, and other compatible APIs
-- Enter your Base URL and API Key
-
-### 2. Create Your First Note
-
-1. Click the **+** button in the sidebar to create a new file
-2. Start writing in Markdown
-3. Use the view mode buttons to switch between Editor, Split, and Preview modes
-
-### 3. Use AI Features
-
-- **Chat**: Click the chat icon to open AI assistant
-- **Polish**: Select text and click "Polish" to improve writing
-- **Knowledge Graph**: Click the graph icon to visualize concepts
-- **Mind Map**: Click the brain icon to generate a mind map
-- **Quiz**: Click the graduation cap icon to generate a quiz
-
-### 4. Import Files
-
-- **Drag & Drop**: Drag PDF, DOCX, or CSV files into the sidebar
-- **Open Folder**: Click "Open Folder" to import an entire directory
-
----
-
-## Keyboard Shortcuts
+### Keyboard Shortcuts
 
 | Action | Shortcut |
 |--------|----------|
@@ -121,239 +185,45 @@ Download the portable `.zip` file and extract to any location.
 | Save | `Ctrl + S` |
 | New File | `Ctrl + N` |
 
----
+### Privacy
 
-## RAG (Knowledge Base Search)
-
-ZhangNote includes a built-in vector store for semantic search:
-
-1. **Indexing**: Your notes are automatically indexed when you open them
-2. **Search**: Ask questions in the chat, and AI will search your knowledge base
-3. **Context-Aware**: AI responses are grounded in your actual notes
-
-### Embedding Providers
-
-| Provider | Model | Notes |
-|----------|-------|-------|
-| Gemini | text-embedding-004 | Recommended |
-| OpenAI | text-embedding-3-small | High quality |
-| Ollama | nomic-embed-text | Local, free |
+- ✅ Notes stored locally only
+- ✅ No usage data collection
+- ⚠️ AI features require sending content to configured AI providers
 
 ---
 
-## Themes
+## Development
 
-ZhangNote offers 5 carefully designed themes:
+```bash
+# Install dependencies
+npm install
 
-| Theme | Description |
-|-------|-------------|
-| **Neon Cyber** | Dark theme with cyan/violet accents |
-| **Clean Paper** | Light theme resembling paper |
-| **Sketchbook** | Handwriting-style with Ma Shan Zheng font |
-| **Midnight Dracula** | Classic dark theme |
-| **Solarized Dawn** | Warm light theme |
+# Development mode
+npm run dev:electron
 
-Switch themes in **Settings > Appearance**.
+# Build for production
+npm run dist:win      # Windows
+npm run dist:linux    # Linux
+```
 
----
+## Tech Stack
 
-## FAQ
-
-### Q: How do I use local AI models?
-
-Install [Ollama](https://ollama.ai/), pull a model (`ollama pull llama3`), and select "Ollama" as your provider in settings.
-
-### Q: My API key doesn't work?
-
-- Gemini: Ensure you've enabled the Generative AI API in Google Cloud Console
-- OpenAI: Check that your API key has sufficient credits
-- Ollama: Make sure Ollama is running (`ollama serve`)
-
-### Q: How do I backup my notes?
-
-Your notes are stored in the application data folder:
-- Windows: `%APPDATA%\zhangnote\`
-
-You can also export individual files using the download button.
-
-### Q: Can I use my own fonts?
-
-Custom font support is coming in a future release. Currently, 5 font combinations are available through themes.
-
----
-
-## Privacy
-
-- **Local Storage**: All notes are stored locally on your device
-- **API Calls**: AI features require sending content to your configured AI provider
-- **No Telemetry**: ZhangNote does not collect any usage data
-
----
+- **Frontend**: React 19, TypeScript, Tailwind CSS v4
+- **Desktop**: Electron 33
+- **Database**: SQLite (better-sqlite3)
+- **Build**: Vite, electron-builder
 
 ## License
 
-This project is licensed under the **Apache License 2.0** - see the [LICENSE](LICENSE) file for details.
-
-```
-Copyright 2024 ZhangNote Contributors
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-```
-
----
-
-## Acknowledgments
-
-- [Electron](https://www.electronjs.org/) - Cross-platform desktop framework
-- [React](https://reactjs.org/) - UI library
-- [Tailwind CSS](https://tailwindcss.com/) - Styling
-- [Google Gemini](https://deepmind.google/technologies/gemini/) - AI capabilities
-- [Ollama](https://ollama.ai/) - Local AI runtime
+[Apache License 2.0](LICENSE)
 
 ---
 
 <div align="center">
 
-**Made with love for knowledge seekers**
+**Made with ❤️ for knowledge seekers**
 
-[Report Bug](https://github.com/your-repo/issues) · [Request Feature](https://github.com/your-repo/issues)
-
-</div>
-
----
-
-# 中文文档
-
-## 功能特性
-
-ZhangNote 是一款现代化的 AI 驱动 Markdown 编辑器，专为知识工作者、研究人员和笔记爱好者设计。它将优美的编辑体验与强大的 AI 能力相结合。
-
-### 核心功能
-
-- **Markdown 编辑器** - 实时预览与语法高亮，支持分屏、纯编辑、纯预览三种模式
-- **多格式导入** - 支持导入 PDF、DOCX、CSV 文件并自动转换为 Markdown
-- **文件管理** - 基于文件夹的组织方式，支持拖拽操作
-- **主题系统** - 内置 5 套主题：霓虹赛博、简洁纸张、手绘风格、午夜德古拉、曙光主题
-- **中文字体** - 内置思源黑体、思源宋体、马善政楷体
-
-### AI 能力
-
-- **AI 聊天助手** - 基于上下文的智能对话
-- **RAG 知识检索** - 语义搜索您的知识库
-- **内容润色** - AI 驱动的写作增强
-- **知识图谱** - 可视化笔记中的概念关系
-- **思维导图** - 自动生成思维导图
-- **试卷生成** - 从学习材料创建测验题目
-- MCP-Client - 可以直接使用现行网络上的Node.js服务的所有MCP，强大的工具调用系统
-
-### 支持的 AI 提供商
-
-| 提供商 | 模型 | 特点 |
-|--------|------|------|
-| **Google Gemini** | gemini-2.5-flash, gemini-2.5-pro | 网络搜索、超长上下文 |
-| **Ollama** | llama3, qwen, mistral ,本地运行推荐Qwen3和Mistral | 本地运行、隐私保护 |
-| **OpenAI 兼容** | DeepSeek, Claude ,Glm4.6,Kimi等 | 灵活的 API 接口 |
-
----
-
-## 安装方法
-
-### Windows 安装版
-
-1. 从 [Releases](https://github.com/your-repo/releases) 下载最新安装包
-2. 运行 `ZhangNote-Setup-x.x.x.exe`
-3. 按照安装向导完成安装
-
-### 便携版
-
-下载 `.zip` 便携版，解压到任意位置即可使用。
-
----
-
-## 快速开始
-
-### 1. 配置 AI 提供商
-
-1. 点击工具栏的 **设置** 图标
-2. 选择 AI 提供商（Gemini、Ollama 或 OpenAI 兼容）
-3. 输入 API 密钥或配置端点 URL
-4. 点击 **保存**
-
-#### Gemini 配置
-- 从 [Google AI Studio](https://aistudio.google.com/) 获取 API 密钥
-- 将密钥粘贴到 API Key 字段
-
-#### Ollama 配置（本地 AI）
-- 在您的电脑上安装 [Ollama](https://ollama.ai/)
-- 拉取模型：`ollama pull llama3` 或 `ollama pull qwen2.5`
-- 默认地址：`http://localhost:11434`
-
-#### OpenAI 兼容配置
-- 支持 OpenAI、Azure OpenAI、DeepSeek 等兼容 API
-- 输入 Base URL 和 API Key
-
-### 2. 创建您的第一篇笔记
-
-1. 点击侧边栏的 **+** 按钮创建新文件
-2. 开始用 Markdown 写作
-3. 使用视图模式按钮在编辑器、分屏、预览之间切换
-
-### 3. 使用 AI 功能
-
-- **聊天**：点击聊天图标打开 AI 助手
-- **润色**：选中文本后点击"润色"改善写作
-- **知识图谱**：点击图谱图标可视化概念
-- **思维导图**：点击脑图图标生成思维导图
-- **测验**：点击学士帽图标生成测验题
-
-### 4. 导入文件
-
-- **拖放**：将 PDF、DOCX 或 CSV 文件拖入侧边栏
-- **打开文件夹**：点击"打开文件夹"导入整个目录
-
----
-
-## 快捷键
-
-| 操作 | 快捷键 |
-|------|--------|
-| 加粗 | `Ctrl + B` |
-| 斜体 | `Ctrl + I` |
-| 撤销 | `Ctrl + Z` |
-| 重做 | `Ctrl + Y` |
-| 保存 | `Ctrl + S` |
-| 新建文件 | `Ctrl + N` |
-
----
-
-## 隐私说明
-
-- **本地存储**：所有笔记都存储在您的设备本地
-- **API 调用**：AI 功能需要将内容发送到您配置的 AI 提供商
-- **无遥测**：ZhangNote 不收集任何使用数据
-
----
-
-## 许可证
-
-本项目采用 **Apache License 2.0** 许可证 - 详见 [LICENSE](LICENSE) 文件。
-
----
-
-<div align="center">
-
-**为知识探索者用心打造**
-
-[报告问题](https://github.com/your-repo/issues) · [功能建议](https://github.com/your-repo/issues)
+[Report Bug](https://github.com/zhangyang-crazy-one/Zhang_Note/issues) · [Request Feature](https://github.com/zhangyang-crazy-one/Zhang_Note/issues)
 
 </div>
