@@ -14,6 +14,8 @@ class MCPManager {
     private static instance: MCPManager | null = null;
     private clients: Map<string, MCPClient> = new Map();
     private toolToServerMap: Map<string, string> = new Map();
+    private isInitialized = false;
+    private initializationPromise: Promise<void> | null = null;
 
     private constructor() {
         logger.info('MCPManager initialized');
@@ -30,9 +32,52 @@ class MCPManager {
     }
 
     /**
+     * 检查是否已初始化
+     */
+    isReady(): boolean {
+        return this.isInitialized && this.toolToServerMap.size > 0;
+    }
+
+    /**
+     * 等待初始化完成
+     */
+    async waitForInitialization(timeoutMs: number = 5000): Promise<boolean> {
+        if (this.isInitialized && this.toolToServerMap.size > 0) {
+            return true;
+        }
+
+        if (this.initializationPromise) {
+            try {
+                await Promise.race([
+                    this.initializationPromise,
+                    new Promise((_, reject) =>
+                        setTimeout(() => reject(new Error('Initialization timeout')), timeoutMs)
+                    )
+                ]);
+                return this.isInitialized && this.toolToServerMap.size > 0;
+            } catch (error) {
+                logger.warn('Waiting for MCP initialization timeout or failed', error);
+                return false;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * 加载配置并连接所有服务器
      */
     async loadConfig(configStr: string): Promise<void> {
+        // 如果已经在初始化中,等待完成
+        if (this.initializationPromise) {
+            return this.initializationPromise;
+        }
+
+        this.initializationPromise = this._loadConfigInternal(configStr);
+        return this.initializationPromise;
+    }
+
+    private async _loadConfigInternal(configStr: string): Promise<void> {
         try {
             const config: MCPConfig = JSON.parse(configStr);
 
@@ -64,6 +109,8 @@ class MCPManager {
                             this.toolToServerMap.set(tool.name, name);
                         }
 
+                        logger.info(`MCP server '${name}' connected with ${tools.length} tools`);
+
                         return { name, success: true };
                     } catch (error) {
                         logger.error(`Failed to connect to MCP server ${name}:`, error);
@@ -84,7 +131,8 @@ class MCPManager {
             logger.info('MCP servers connection completed', {
                 total: results.length,
                 success: successCount,
-                failed: failCount
+                failed: failCount,
+                totalTools: this.toolToServerMap.size
             });
 
             if (failCount > 0) {
@@ -94,8 +142,19 @@ class MCPManager {
                     .join('; ');
                 logger.warn('Some MCP servers failed to connect:', failedServers);
             }
+
+            // 标记为已初始化
+            this.isInitialized = true;
+
+            // 打印工具映射表用于调试
+            logger.debug('Tool to server mapping:',
+                Array.from(this.toolToServerMap.entries()).map(([tool, server]) => `${tool} -> ${server}`)
+            );
+
         } catch (error) {
             logger.error('Failed to load MCP config:', error);
+            this.isInitialized = false;
+            this.initializationPromise = null;
             throw new Error(`Failed to load MCP config: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
     }
@@ -120,10 +179,27 @@ class MCPManager {
      * 调用工具
      */
     async callTool(name: string, args: any): Promise<any> {
+        // 如果尚未初始化完成,等待一下
+        if (!this.isReady()) {
+            logger.warn(`Tool mapping not ready, waiting for initialization...`);
+            const ready = await this.waitForInitialization(3000);
+            if (!ready) {
+                const availableTools = Array.from(this.toolToServerMap.keys());
+                throw new Error(
+                    `MCP not ready. Tool '${name}' not found. Available tools: ${availableTools.length > 0 ? availableTools.join(', ') : 'none'}`
+                );
+            }
+        }
+
         const serverName = this.toolToServerMap.get(name);
 
         if (!serverName) {
-            throw new Error(`Tool not found: ${name}`);
+            const availableTools = Array.from(this.toolToServerMap.keys());
+            const suggestion = availableTools.length > 0
+                ? `Available tools: ${availableTools.join(', ')}`
+                : 'No tools available. Check MCP server configuration.';
+
+            throw new Error(`Tool not found: ${name}. ${suggestion}`);
         }
 
         const client = this.clients.get(serverName);

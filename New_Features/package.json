@@ -25,7 +25,8 @@
     "mermaid": "^11.12.1",
     "pdfjs-dist": "3.11.174",
     "mammoth": "1.8.0",
-    "papaparse": "5.4.1"
+    "papaparse": "5.4.1",
+    "diff": "5.2.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

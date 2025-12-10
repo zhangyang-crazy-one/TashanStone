@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState } from 'react';
 import mermaid from 'mermaid';
 import { Theme } from '../types';
@@ -57,9 +58,13 @@ export const MindMap: React.FC<MindMapProps> = ({ content, theme, language = 'en
         // Wait for fonts to be ready to ensure Mermaid calculates text width correctly
         await document.fonts.ready;
 
+        // Sanitize: Remove wikilink brackets that might have slipped through AI generation
+        // Mermaid mindmap syntax often breaks on [[ ]]
+        const sanitizedContent = content.replace(/\[\[([^\]]+)\]\]/g, '$1');
+
         const id = `mermaid-${Date.now()}`;
         // Attempt to render
-        const { svg: generatedSvg } = await mermaid.render(id, content);
+        const { svg: generatedSvg } = await mermaid.render(id, sanitizedContent);
         
         // Cleanup SVG attributes that restrict sizing
         const cleanSvg = generatedSvg

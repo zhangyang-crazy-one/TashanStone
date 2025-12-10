@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Columns,
   Eye,
@@ -28,7 +28,16 @@ import {
   Square,
   X,
   Maximize,
-  Minimize2
+  Minimize2,
+  Rows,
+  BarChart2,
+  GitCompare,
+  Map,
+  GitBranch,
+  HelpCircle,
+  Edit3,
+  ChevronDown,
+  Mic
 } from 'lucide-react';
 import { ViewMode, Theme, AIProvider } from '../types';
 import { translations, Language } from '../utils/translations';
@@ -48,6 +57,7 @@ interface ToolbarProps {
   onFormatItalic: () => void;
   onUndo?: () => void;
   onRedo?: () => void;
+  onVoiceTranscription?: () => void;
   isAIThinking: boolean;
   theme: Theme;
   toggleTheme: () => void;
@@ -58,6 +68,8 @@ interface ToolbarProps {
   onRename: (newName: string) => void;
   activeProvider: AIProvider;
   language?: Language;
+  splitMode?: 'none' | 'horizontal' | 'vertical';
+  onSplitModeChange?: (mode: 'none' | 'horizontal' | 'vertical') => void;
 }
 
 export const Toolbar: React.FC<ToolbarProps> = ({
@@ -75,6 +87,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onFormatItalic,
   onUndo,
   onRedo,
+  onVoiceTranscription,
   isAIThinking,
   theme,
   toggleTheme,
@@ -84,13 +97,18 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   fileName,
   onRename,
   activeProvider,
-  language = 'en'
+  language = 'en',
+  splitMode = 'none',
+  onSplitModeChange
 }) => {
   const t = translations[language];
 
   // Window control state (Electron only)
   const [isMaximized, setIsMaximized] = useState(false);
-  const [showGraphMenu, setShowGraphMenu] = useState(false);
+  const [showViewMenu, setShowViewMenu] = useState(false);
+  const [showAIMenu, setShowAIMenu] = useState(false);
+  const viewMenuRef = useRef<HTMLDivElement>(null);
+  const aiMenuRef = useRef<HTMLDivElement>(null);
   const isElectron = typeof window !== 'undefined' && window.electronAPI?.platform?.isElectron;
 
   useEffect(() => {
@@ -104,14 +122,21 @@ export const Toolbar: React.FC<ToolbarProps> = ({
     return cleanup;
   }, [isElectron]);
 
-  // Close graph menu when clicking outside
+  // Close menus when clicking outside
   useEffect(() => {
-    const handleClickOutside = () => setShowGraphMenu(false);
-    if (showGraphMenu) {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (viewMenuRef.current && !viewMenuRef.current.contains(event.target as Node)) {
+        setShowViewMenu(false);
+      }
+      if (aiMenuRef.current && !aiMenuRef.current.contains(event.target as Node)) {
+        setShowAIMenu(false);
+      }
+    };
+    if (showViewMenu || showAIMenu) {
       document.addEventListener('click', handleClickOutside);
       return () => document.removeEventListener('click', handleClickOutside);
     }
-  }, [showGraphMenu]);
+  }, [showViewMenu, showAIMenu]);
 
   const handleMinimize = () => window.electronAPI?.window.minimize();
   const handleMaximize = () => window.electronAPI?.window.maximize();
@@ -123,7 +148,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       <div className="flex items-center gap-3 min-w-0 flex-shrink-0">
         <button
           onClick={toggleSidebar}
-          className="p-2 rounded-lg hover:bg-paper-100 dark:hover:bg-cyber-800 text-slate-500 dark:text-slate-400 transition-colors flex-shrink-0"
+          className="p-2 rounded-lg hover:bg-paper-100 dark:hover:bg-cyber-800 text-slate-500 dark:text-slate-400 transition-colors flex-shrink-0 app-no-drag"
         >
           <Menu size={20} />
         </button>
@@ -137,18 +162,18 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             type="text"
             value={fileName}
             onChange={(e) => onRename(e.target.value)}
-            className="bg-transparent text-lg font-bold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-cyan-500 rounded px-1 min-w-[60px] max-w-[120px] truncate transition-colors"
+            className="bg-transparent text-lg font-bold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-cyan-500 rounded px-1 min-w-[60px] max-w-[120px] truncate transition-colors app-no-drag"
             placeholder={t.filename}
           />
           <span className="text-slate-400 text-sm font-mono hidden sm:inline flex-shrink-0">.md</span>
         </div>
       </div>
 
-      {/* 中间区域：工具按钮 - 弹性区域，可收缩 */}
-      <div className="flex items-center gap-2 sm:gap-4 app-no-drag flex-1 justify-center overflow-hidden min-w-0">
+      {/* 中间区域：工具按钮 - 紧凑设计，使用下拉菜单 */}
+      <div className="flex items-center gap-2 app-no-drag">
 
         {/* Undo/Redo Controls */}
-        <div className="flex bg-paper-100 dark:bg-cyber-800 rounded-lg p-1 border border-paper-200 dark:border-cyber-700 transition-colors hidden sm:flex flex-shrink-0">
+        <div className="flex bg-paper-100 dark:bg-cyber-800 rounded-lg p-1 border border-paper-200 dark:border-cyber-700 transition-colors hidden sm:flex">
           <button
             onClick={onUndo}
             className="p-2 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all hover:bg-white dark:hover:bg-cyber-700"
@@ -166,7 +191,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         </div>
 
         {/* Formatting Controls */}
-        <div className="flex bg-paper-100 dark:bg-cyber-800 rounded-lg p-1 border border-paper-200 dark:border-cyber-700 transition-colors hidden sm:flex flex-shrink-0">
+        <div className="flex bg-paper-100 dark:bg-cyber-800 rounded-lg p-1 border border-paper-200 dark:border-cyber-700 transition-colors hidden sm:flex">
           <button
             onClick={onFormatBold}
             className="p-2 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all hover:bg-white dark:hover:bg-cyber-700"
@@ -183,81 +208,185 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           </button>
         </div>
 
-        <div className="h-6 w-px bg-paper-200 dark:bg-cyber-700 mx-1 hidden sm:block flex-shrink-0"></div>
+        <div className="h-6 w-px bg-paper-200 dark:bg-cyber-700 mx-1 hidden sm:block"></div>
 
-        {/* Layout Controls */}
-        <div className="flex bg-paper-100 dark:bg-cyber-800 rounded-lg p-1 border border-paper-200 dark:border-cyber-700 transition-colors hidden md:flex flex-shrink-0">
+        {/* View Mode Dropdown */}
+        <div className="relative" ref={viewMenuRef}>
           <button
-            onClick={() => setViewMode(ViewMode.Editor)}
-            className={`p-2 rounded-md transition-all ${viewMode === ViewMode.Editor ? 'bg-white dark:bg-cyber-500 text-cyan-600 dark:text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
-            title={t.editor}
+            onClick={(e) => { e.stopPropagation(); setShowViewMenu(!showViewMenu); }}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-paper-100 dark:bg-cyber-800 border border-paper-200 dark:border-cyber-700 text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-cyber-700 transition-all whitespace-nowrap"
+            title={t.viewMode || 'View Mode'}
           >
-            <PenTool size={18} />
+            {viewMode === ViewMode.Editor && <Edit3 size={16} />}
+            {viewMode === ViewMode.Split && <Columns size={16} />}
+            {viewMode === ViewMode.Preview && <Eye size={16} />}
+            {viewMode === ViewMode.Graph && <Network size={16} />}
+            {viewMode === ViewMode.MindMap && <GitBranch size={16} />}
+            {viewMode === ViewMode.Quiz && <HelpCircle size={16} />}
+            {viewMode === ViewMode.Analytics && <BarChart2 size={16} />}
+            {viewMode === ViewMode.Diff && <GitCompare size={16} />}
+            {viewMode === ViewMode.Roadmap && <Map size={16} />}
+            <span className="hidden md:inline text-sm whitespace-nowrap">{t[viewMode.toLowerCase()] || viewMode}</span>
+            <ChevronDown size={14} />
           </button>
-          <button
-            onClick={() => setViewMode(ViewMode.Split)}
-            className={`p-2 rounded-md transition-all ${viewMode === ViewMode.Split ? 'bg-white dark:bg-cyber-500 text-cyan-600 dark:text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
-            title={t.split}
-          >
-            <Columns size={18} />
-          </button>
-          <button
-            onClick={() => setViewMode(ViewMode.Preview)}
-            className={`p-2 rounded-md transition-all ${viewMode === ViewMode.Preview ? 'bg-white dark:bg-cyber-500 text-cyan-600 dark:text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
-            title={t.preview}
-          >
-            <Eye size={18} />
-          </button>
-          <div className="relative">
-            <button
-              onClick={() => { onBuildGraph(true); }}
-              onContextMenu={(e) => { e.preventDefault(); setShowGraphMenu(!showGraphMenu); }}
-              className={`p-2 rounded-md transition-all ${viewMode === ViewMode.Graph ? 'bg-white dark:bg-cyber-500 text-cyan-600 dark:text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
-              title={`${t.graph} (点击: 当前文件 | 右键: 更多选项)`}
-            >
-              <Network size={18} />
-            </button>
-            {showGraphMenu && (
-              <div className="absolute top-full left-0 mt-1 bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-700 rounded-lg shadow-lg z-50 min-w-[160px] py-1">
-                <button
-                  onClick={() => { onBuildGraph(true); setShowGraphMenu(false); }}
-                  className="w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200"
-                >
-                  📄 当前文件
-                </button>
-                <button
-                  onClick={() => { onBuildGraph(false); setShowGraphMenu(false); }}
-                  className="w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200"
-                >
-                  📚 所有文件
-                </button>
+          {showViewMenu && (
+            <div className="absolute top-full left-0 mt-1 bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-700 rounded-lg shadow-xl z-50 min-w-[180px] py-1">
+              {/* Header with icon */}
+              <div className="px-3 py-2 border-b border-paper-200 dark:border-cyber-700 flex items-center gap-2">
+                <Eye size={14} className="text-slate-500" />
+                <span className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider">{t.viewMode || 'View Mode'}</span>
               </div>
-            )}
-          </div>
+              {/* Basic View Modes */}
+              <button
+                onClick={() => { setViewMode(ViewMode.Editor); setShowViewMenu(false); }}
+                className={`w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 flex items-center gap-2 ${viewMode === ViewMode.Editor ? 'text-cyan-600 dark:text-cyan-400 font-medium' : 'text-slate-700 dark:text-slate-200'}`}
+              >
+                <Edit3 size={14} className="text-cyan-500" /> {t.editor}
+              </button>
+              <button
+                onClick={() => { setViewMode(ViewMode.Split); setShowViewMenu(false); }}
+                className={`w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 flex items-center gap-2 ${viewMode === ViewMode.Split ? 'text-cyan-600 dark:text-cyan-400 font-medium' : 'text-slate-700 dark:text-slate-200'}`}
+              >
+                <Columns size={14} className="text-blue-500" /> {t.split}
+              </button>
+              <button
+                onClick={() => { setViewMode(ViewMode.Preview); setShowViewMenu(false); }}
+                className={`w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 flex items-center gap-2 ${viewMode === ViewMode.Preview ? 'text-cyan-600 dark:text-cyan-400 font-medium' : 'text-slate-700 dark:text-slate-200'}`}
+              >
+                <Eye size={14} className="text-purple-500" /> {t.preview}
+              </button>
+              <div className="my-1 h-px bg-paper-200 dark:bg-cyber-700"></div>
+              {/* Knowledge Graph Views */}
+              <button
+                onClick={() => { onBuildGraph(true); setShowViewMenu(false); }}
+                className={`w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 flex items-center gap-2 ${viewMode === ViewMode.Graph ? 'text-cyan-600 dark:text-cyan-400 font-medium' : 'text-slate-700 dark:text-slate-200'}`}
+              >
+                <Network size={14} className="text-emerald-500" /> {t.graph} ({language === 'zh' ? '当前' : 'Current'})
+              </button>
+              <button
+                onClick={() => { onBuildGraph(false); setShowViewMenu(false); }}
+                className="w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
+              >
+                <Library size={14} className="text-emerald-400" /> {t.graph} ({language === 'zh' ? '全部' : 'All'})
+              </button>
+              <div className="my-1 h-px bg-paper-200 dark:bg-cyber-700"></div>
+              {/* Analytics & Tools Views */}
+              <button
+                onClick={() => { setViewMode(ViewMode.Analytics); setShowViewMenu(false); }}
+                className={`w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 flex items-center gap-2 ${viewMode === ViewMode.Analytics ? 'text-cyan-600 dark:text-cyan-400 font-medium' : 'text-slate-700 dark:text-slate-200'}`}
+              >
+                <BarChart2 size={14} className="text-amber-500" /> {t.analytics}
+              </button>
+              <button
+                onClick={() => { setViewMode(ViewMode.Diff); setShowViewMenu(false); }}
+                className={`w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 flex items-center gap-2 ${viewMode === ViewMode.Diff ? 'text-cyan-600 dark:text-cyan-400 font-medium' : 'text-slate-700 dark:text-slate-200'}`}
+              >
+                <GitCompare size={14} className="text-orange-500" /> {t.diff}
+              </button>
+              <button
+                onClick={() => { setViewMode(ViewMode.Roadmap); setShowViewMenu(false); }}
+                className={`w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 flex items-center gap-2 ${viewMode === ViewMode.Roadmap ? 'text-cyan-600 dark:text-cyan-400 font-medium' : 'text-slate-700 dark:text-slate-200'}`}
+              >
+                <Map size={14} className="text-teal-500" /> {t.roadmap}
+              </button>
+            </div>
+          )}
         </div>
 
-        <div className="h-6 w-px bg-paper-200 dark:bg-cyber-700 mx-1 hidden md:block flex-shrink-0"></div>
-
-        {/* AI Action Group */}
-        <div className="flex items-center gap-1 flex-shrink-0">
-          <div className="hidden sm:flex rounded-lg border border-cyan-500/20 bg-cyan-50/50 dark:bg-cyan-900/10 p-0.5">
+        {/* Split Mode Controls */}
+        {onSplitModeChange && (
+          <div className="flex bg-paper-100 dark:bg-cyber-800 rounded-lg p-1 border border-paper-200 dark:border-cyber-700 transition-colors hidden lg:flex">
             <button
-              onClick={onAIPolish}
-              disabled={isAIThinking}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium text-cyan-700 dark:text-cyan-400 hover:bg-white dark:hover:bg-cyber-700/50 transition-all disabled:opacity-50"
-              title={`${t.polish} (${activeProvider})`}
+              onClick={() => onSplitModeChange('none')}
+              className={`p-2 rounded-md transition-all ${splitMode === 'none' ? 'bg-white dark:bg-cyber-500 text-cyan-600 dark:text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
+              title="Single View"
             >
-              <Sparkles size={14} className={isAIThinking ? 'animate-spin' : ''} />
-              <span>{t.polish}</span>
+              <Square size={16} />
             </button>
-            <div className="w-px h-4 bg-cyan-200 dark:bg-cyan-800 mx-1 self-center"></div>
+            <button
+              onClick={() => onSplitModeChange('horizontal')}
+              className={`p-2 rounded-md transition-all ${splitMode === 'horizontal' ? 'bg-white dark:bg-cyber-500 text-cyan-600 dark:text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
+              title="Split Horizontal"
+            >
+              <Columns size={16} />
+            </button>
+            <button
+              onClick={() => onSplitModeChange('vertical')}
+              className={`p-2 rounded-md transition-all ${splitMode === 'vertical' ? 'bg-white dark:bg-cyber-500 text-cyan-600 dark:text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
+              title="Split Vertical"
+            >
+              <Rows size={16} />
+            </button>
+          </div>
+        )}
 
-            <button onClick={onGenerateMindMap} disabled={isAIThinking} className="p-2 hover:bg-white dark:hover:bg-cyber-700/50 rounded-md text-cyan-700 dark:text-cyan-400 transition-all" title={t.mindMap}>
-               <BrainCircuit size={16} />
+        <div className="h-6 w-px bg-paper-200 dark:bg-cyber-700 mx-1 hidden md:block"></div>
+
+        {/* AI Action Dropdown */}
+        <div className="flex items-center gap-1">
+          <div className="relative" ref={aiMenuRef}>
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowAIMenu(!showAIMenu); }}
+              disabled={isAIThinking}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-paper-100 dark:bg-cyber-800 border border-paper-200 dark:border-cyber-700 text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-cyber-700 transition-all disabled:opacity-50 whitespace-nowrap"
+              title={t.aiOperations}
+            >
+              <Sparkles size={16} className={isAIThinking ? 'animate-spin text-cyan-500' : 'text-cyan-500'} />
+              <span className="hidden sm:inline text-sm font-medium whitespace-nowrap">{t.aiActions || 'AI'}</span>
+              <ChevronDown size={14} />
             </button>
-             <button onClick={onGenerateQuiz} disabled={isAIThinking} className="p-2 hover:bg-white dark:hover:bg-cyber-700/50 rounded-md text-cyan-700 dark:text-cyan-400 transition-all" title={t.quiz}>
-               <GraduationCap size={16} />
-            </button>
+            {showAIMenu && (
+              <div className="absolute top-full right-0 mt-1 bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-700 rounded-lg shadow-xl z-50 min-w-[180px] py-1">
+                {/* Header with icon */}
+                <div className="px-3 py-2 border-b border-paper-200 dark:border-cyber-700 flex items-center gap-2">
+                  <Sparkles size={14} className="text-cyan-500" />
+                  <span className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider">{t.aiOperations || 'AI Tools'}</span>
+                </div>
+                <button
+                  onClick={() => { onAIPolish(); setShowAIMenu(false); }}
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
+                >
+                  <Sparkles size={14} className="text-cyan-500" /> {t.polish}
+                </button>
+                <button
+                  onClick={() => { onAIExpand(); setShowAIMenu(false); }}
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
+                >
+                  <Maximize2 size={14} className="text-violet-500" /> {t.expand}
+                </button>
+                <div className="my-1 h-px bg-paper-200 dark:bg-cyber-700"></div>
+                <button
+                  onClick={() => { onGenerateMindMap(); setShowAIMenu(false); }}
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
+                >
+                  <BrainCircuit size={14} className="text-emerald-500" /> {t.mindMap}
+                </button>
+                <button
+                  onClick={() => { onGenerateQuiz(); setShowAIMenu(false); }}
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
+                >
+                  <GraduationCap size={14} className="text-amber-500" /> {t.quiz}
+                </button>
+                <button
+                  onClick={() => { onSynthesize(); setShowAIMenu(false); }}
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
+                >
+                  <Share2 size={14} className="text-indigo-500" /> {t.synthesize}
+                </button>
+                {/* Voice Transcription - Only show in Electron */}
+                {isElectron && onVoiceTranscription && (
+                  <>
+                    <div className="my-1 h-px bg-paper-200 dark:bg-cyber-700"></div>
+                    <button
+                      onClick={() => { onVoiceTranscription(); setShowAIMenu(false); }}
+                      className="w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
+                    >
+                      <Mic size={14} className="text-purple-500" /> {t.voiceTranscription}
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>

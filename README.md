@@ -20,8 +20,9 @@
 
 | 平台 Platform | 下载链接 Download |
 |:---:|:---:|
-| Windows x64 | [ZhangNote-Setup-1.0.0-x64.exe](https://github.com/zhangyang-crazy-one/Zhang_Note/releases/download/v1.0.0/ZhangNote-Setup-1.0.0-x64.exe) |
-| Linux x64 (Debian/Ubuntu/麒麟) | [zhangnote_1.0.0_amd64.deb](https://github.com/zhangyang-crazy-one/Zhang_Note/releases/download/v1.0.0/zhangnote_1.0.0_amd64.deb) |
+| Windows x64 | [ZhangNote-Setup-1.5.0-x64.exe](https://github.com/zhangyang-crazy-one/Zhang_Note/releases/download/v1.5.0/ZhangNote-Setup-1.5.0-x64.exe) |
+| Linux x64 (Debian/Ubuntu/麒麟) | [zhangnote_1.5.0_amd64.deb](https://github.com/zhangyang-crazy-one/Zhang_Note/releases/download/v1.5.0/zhangnote_1.5.0_amd64.deb) |
+| Linux AppImage | [ZhangNote-1.5.0.AppImage](https://github.com/zhangyang-crazy-one/Zhang_Note/releases/download/v1.5.0/ZhangNote-1.5.0.AppImage) |
 
 </div>
 
@@ -85,7 +86,8 @@ ZhangNote 是一款现代化的 AI 驱动 Markdown 编辑器，专为知识工�
 
 1. **下载安装**
    - Windows: 下载 `.exe` 安装包，双击安装
-   - Linux: 下载 `.deb` 包，运行 `sudo dpkg -i zhangnote_1.0.0_amd64.deb`
+   - Linux: 下载 `.deb` 包，运行 `sudo dpkg -i zhangnote_1.5.0_amd64.deb`
+   - 或下载 `.AppImage`，添加执行权限后直接运行
 
 2. **配置 AI**
    - 点击设置图标 → 选择 AI 提供商
@@ -162,7 +164,8 @@ ZhangNote is a modern AI-powered Markdown editor designed for knowledge workers,
 
 1. **Install**
    - Windows: Download and run the `.exe` installer
-   - Linux: Download `.deb` and run `sudo dpkg -i zhangnote_1.0.0_amd64.deb`
+   - Linux: Download `.deb` and run `sudo dpkg -i zhangnote_1.5.0_amd64.deb`
+   - Or download `.AppImage`, make it executable and run directly
 
 2. **Configure AI**
    - Click Settings → Select AI provider

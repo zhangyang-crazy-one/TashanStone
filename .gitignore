@@ -25,6 +25,8 @@ dist-ssr
 
 # Electron build output
 release/
+release-linux/
+App-Release/
 dist-electron/
 
 # Environment files
@@ -44,3 +46,13 @@ NUL
 
 # Temporary files
 false/
+test/
+*.znb
+*.wav
+*.mp3
+
+# Docker build files
+docker-compose.yml
+build-linux.sh
+BUILD_LINUX.md
+resources/

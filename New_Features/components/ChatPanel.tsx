@@ -1,7 +1,6 @@
 
-
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, User, Sparkles, Bot, X, Trash2, Archive, Maximize2, Minimize2, Mic } from 'lucide-react';
+import { Send, User, Sparkles, Bot, X, Trash2, Archive, Maximize2, Minimize2, Mic, Wand2, Loader2 } from 'lucide-react';
 import { ChatMessage, AIState } from '../types';
 import ReactMarkdown from 'react-markdown';
 import { translations, Language } from '../utils/translations';
@@ -14,6 +13,7 @@ interface ChatPanelProps {
   onSendMessage: (text: string) => void;
   onClearChat: () => void;
   onCompactChat?: () => void; // Optional for backward compatibility
+  onEnhancePrompt?: (text: string) => Promise<string>;
   aiState: AIState;
   language?: Language;
 }
@@ -25,11 +25,13 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   onSendMessage,
   onClearChat,
   onCompactChat,
+  onEnhancePrompt,
   aiState,
   language = 'en'
 }) => {
   const [input, setInput] = useState('');
   const [isCompact, setIsCompact] = useState(false);
+  const [isEnhancing, setIsEnhancing] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const t = translations[language];
 
@@ -58,9 +60,22 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || aiState.isThinking) return;
+    if (!input.trim() || aiState.isThinking || isEnhancing) return;
     onSendMessage(input);
     setInput('');
+  };
+
+  const handleEnhance = async () => {
+      if (!input.trim() || !onEnhancePrompt) return;
+      setIsEnhancing(true);
+      try {
+          const enhanced = await onEnhancePrompt(input);
+          setInput(enhanced);
+      } catch (e) {
+          console.error("Enhance failed", e);
+      } finally {
+          setIsEnhancing(false);
+      }
   };
 
   return (
@@ -176,31 +191,52 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         {/* Input Area */}
         <div className={`border-t border-paper-200 dark:border-cyber-700 bg-paper-50 dark:bg-cyber-900/50 shrink-0 ${isCompact ? 'p-2' : 'p-4'}`}>
           <form onSubmit={handleSubmit} className="relative flex gap-2">
-            {/* Voice Input Button */}
-            {isSupported && (
-              <button
-                type="button"
-                onClick={toggle}
-                className={`p-3 rounded-xl transition-all flex items-center justify-center shrink-0 ${isListening ? 'bg-red-500 text-white animate-pulse shadow-red-500/50 shadow-lg' : 'bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600 text-slate-500 hover:text-cyan-500'}`}
-                title="Voice Input"
-              >
-                <Mic size={18} />
-              </button>
-            )}
+            
+            <div className="flex flex-col gap-1">
+                {/* Voice Input Button */}
+                {isSupported && (
+                <button
+                    type="button"
+                    onClick={toggle}
+                    className={`p-3 rounded-xl transition-all flex items-center justify-center shrink-0 ${isListening ? 'bg-red-500 text-white animate-pulse shadow-red-500/50 shadow-lg' : 'bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600 text-slate-500 hover:text-cyan-500'}`}
+                    title="Voice Input"
+                >
+                    <Mic size={18} />
+                </button>
+                )}
+                
+                {/* Enhance Prompt Button */}
+                {onEnhancePrompt && (
+                    <button
+                        type="button"
+                        onClick={handleEnhance}
+                        disabled={!input.trim() || isEnhancing || aiState.isThinking}
+                        className={`p-3 rounded-xl transition-all flex items-center justify-center shrink-0 ${isEnhancing ? 'bg-violet-100 dark:bg-violet-900/30 text-violet-500' : 'bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600 text-slate-500 hover:text-violet-500 disabled:opacity-50'}`}
+                        title="Enhance Prompt with AI"
+                    >
+                        {isEnhancing ? <Loader2 size={18} className="animate-spin" /> : <Wand2 size={18} />}
+                    </button>
+                )}
+            </div>
 
             <div className="relative flex-1">
-              <input
-                type="text"
+              <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                disabled={aiState.isThinking}
-                placeholder={isListening ? "Listening..." : t.typeMessage}
-                className={`w-full pl-4 pr-16 rounded-xl bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-500 disabled:opacity-50 transition-all shadow-sm ${isCompact ? 'py-2 text-sm' : 'py-3'}`}
+                disabled={aiState.isThinking || isEnhancing}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSubmit(e);
+                    }
+                }}
+                placeholder={isListening ? "Listening..." : (isEnhancing ? "Enhancing your prompt..." : t.typeMessage)}
+                className={`w-full pl-4 pr-16 rounded-xl bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-500 disabled:opacity-50 transition-all shadow-sm resize-none custom-scrollbar ${isCompact ? 'py-2 text-sm h-10' : 'py-3 h-24'}`}
               />
               <button
                 type="submit"
-                disabled={!input.trim() || aiState.isThinking}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg bg-gradient-to-br from-cyan-500 to-violet-500 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg hover:shadow-cyan-500/25 transition-all"
+                disabled={!input.trim() || aiState.isThinking || isEnhancing}
+                className="absolute right-2 bottom-2 p-2 rounded-lg bg-gradient-to-br from-cyan-500 to-violet-500 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg hover:shadow-cyan-500/25 transition-all"
               >
                 <Send size={16} />
               </button>

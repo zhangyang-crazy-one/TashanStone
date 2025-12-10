@@ -6,6 +6,7 @@ import { chatRepository } from '../database/repositories/chatRepository.js';
 import { themeRepository } from '../database/repositories/themeRepository.js';
 import { mistakeRepository } from '../database/repositories/mistakeRepository.js';
 import { vectorRepository } from '../database/repositories/vectorRepository.js';
+import { authRepository } from '../database/repositories/authRepository.js';
 import { logger } from '../utils/logger.js';
 
 import type { MarkdownFile } from '../database/repositories/fileRepository.js';
@@ -484,6 +485,95 @@ export function registerDbHandlers(): void {
             return vectorRepository.getStats();
         } catch (error) {
             handleError('db:vectors:getStats', error);
+        }
+    });
+
+    // ===== Auth Handlers =====
+    /**
+     * 注册新用户
+     */
+    ipcMain.handle('db:auth:register', async (_, username: string, password: string) => {
+        try {
+            return authRepository.register(username, password);
+        } catch (error) {
+            handleError('db:auth:register', error);
+        }
+    });
+
+    /**
+     * 验证密码
+     */
+    ipcMain.handle('db:auth:verify', async (_, password: string) => {
+        try {
+            return authRepository.verify(password);
+        } catch (error) {
+            handleError('db:auth:verify', error);
+        }
+    });
+
+    /**
+     * 检查是否已注册
+     */
+    ipcMain.handle('db:auth:isRegistered', async () => {
+        try {
+            return authRepository.isRegistered();
+        } catch (error) {
+            handleError('db:auth:isRegistered', error);
+        }
+    });
+
+    /**
+     * 获取用户名
+     */
+    ipcMain.handle('db:auth:getUsername', async () => {
+        try {
+            return authRepository.getUsername();
+        } catch (error) {
+            handleError('db:auth:getUsername', error);
+        }
+    });
+
+    /**
+     * 修改密码
+     */
+    ipcMain.handle('db:auth:changePassword', async (_, oldPassword: string, newPassword: string) => {
+        try {
+            return authRepository.changePassword(oldPassword, newPassword);
+        } catch (error) {
+            handleError('db:auth:changePassword', error);
+        }
+    });
+
+    /**
+     * 重置密码 (危险操作)
+     */
+    ipcMain.handle('db:auth:resetPassword', async (_, newPassword: string) => {
+        try {
+            return authRepository.resetPassword(newPassword);
+        } catch (error) {
+            handleError('db:auth:resetPassword', error);
+        }
+    });
+
+    /**
+     * 登录 (验证密码的别名)
+     */
+    ipcMain.handle('db:auth:login', async (_, password: string) => {
+        try {
+            return authRepository.verify(password);
+        } catch (error) {
+            handleError('db:auth:login', error);
+        }
+    });
+
+    /**
+     * 工厂重置 (删除所有用户数据)
+     */
+    ipcMain.handle('db:auth:reset', async () => {
+        try {
+            return authRepository.reset();
+        } catch (error) {
+            handleError('db:auth:reset', error);
         }
     });
 

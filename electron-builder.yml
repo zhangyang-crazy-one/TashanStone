@@ -18,12 +18,25 @@ files:
 extraResources:
   - from: electron/database/schema.sql
     to: schema.sql
+  # Sherpa-ONNX ASR models (if downloaded)
+  - from: resources/sherpa-models
+    to: sherpa-models
+    filter:
+      - "**/*.onnx"
+      - "**/*.txt"
+      - "**/*.fst"
 
 asar: true
 asarUnpack:
   - "**/*.node"
   - "**/better-sqlite3/**"
   - "**/node_modules/better-sqlite3/**"
+  - "**/sherpa-onnx/**"
+  - "**/node_modules/sherpa-onnx/**"
+  - "**/@ffmpeg-installer/**"
+  - "**/node_modules/@ffmpeg-installer/**"
+  - "**/@ffprobe-installer/**"
+  - "**/node_modules/@ffprobe-installer/**"
 
 win:
   target:

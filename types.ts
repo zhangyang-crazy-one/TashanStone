@@ -1,4 +1,6 @@
-
+// ========================
+// Core Document Types
+// ========================
 
 export interface MarkdownFile {
   id: string;
@@ -8,7 +10,15 @@ export interface MarkdownFile {
   handle?: FileSystemFileHandle; // For local file persistence
   isLocal?: boolean;
   path?: string; // Relative path for folder imports (e.g. "docs/v1/intro.md")
+  // AI-Enhanced Metadata
+  summary?: string; // AI Generated Summary for search previews
+  importance?: number; // 0-10 Score automatically assessed by AI
+  keyConcepts?: string[]; // Auto-extracted key concepts
 }
+
+// ========================
+// View & Layout Types
+// ========================
 
 export enum ViewMode {
   Split = 'SPLIT',
@@ -16,8 +26,37 @@ export enum ViewMode {
   Preview = 'PREVIEW',
   Graph = 'GRAPH',
   Quiz = 'QUIZ',
-  MindMap = 'MINDMAP'
+  MindMap = 'MINDMAP',
+  NoteSpace = 'NOTE_SPACE',
+  Library = 'LIBRARY',
+  Analytics = 'ANALYTICS',
+  Diff = 'DIFF',
+  Roadmap = 'ROADMAP'
 }
+
+export interface EditorPane {
+  id: string;
+  fileId: string;
+  mode: 'editor' | 'preview';
+}
+
+// 3D Note Space Layout
+export interface NoteLayoutItem {
+  id: string; // matches file.id
+  x: number;
+  y: number;
+  z: number;
+  rotation: number; // Y-axis rotation in degrees
+  width: number;
+  height: number;
+  scale: number;
+  color?: string; // Optional background override
+  isPinned?: boolean;
+}
+
+// ========================
+// Theme System
+// ========================
 
 export type ThemeType = 'dark' | 'light';
 
@@ -73,6 +112,10 @@ export interface AppTheme {
   isCustom?: boolean;
 }
 
+// ========================
+// AI Configuration
+// ========================
+
 export interface AIState {
   isThinking: boolean;
   error: string | null;
@@ -80,6 +123,8 @@ export interface AIState {
 }
 
 export type AIProvider = 'gemini' | 'ollama' | 'openai';
+
+export type BackupFrequency = 'never' | 'daily' | 'weekly' | 'monthly';
 
 export interface AIConfig {
   provider: AIProvider;
@@ -94,17 +139,41 @@ export interface AIConfig {
   temperature: number;
   language: 'en' | 'zh'; // Added language support
   enableWebSearch?: boolean; // Added Web Search support for Gemini
+  enableStreaming?: boolean; // Enable streaming responses
   mcpTools?: string; // JSON string of custom tool definitions
   customPrompts?: {
     polish?: string;
     expand?: string;
+    enhance?: string; // New: Enhance User Prompt
+  };
+  backup?: {
+    frequency: BackupFrequency;
+    lastBackup: number;
+  };
+  security?: {
+    enableLoginProtection?: boolean; // Enable login screen protection
   };
 }
+
+// ========================
+// RAG & Chat System
+// ========================
 
 export interface RAGResultData {
   fileName: string;
   count: number;
   maxScore: number;
+}
+
+export interface ToolCall {
+  id: string;
+  name: string;
+  args: Record<string, any>;
+  result?: any;
+  status: 'pending' | 'running' | 'success' | 'error';
+  error?: string;
+  startTime?: number;
+  endTime?: number;
 }
 
 export interface ChatMessage {
@@ -113,74 +182,12 @@ export interface ChatMessage {
   content: string;
   timestamp: number;
   tool_call_id?: string;
+  toolCalls?: ToolCall[]; // Display tool call process in UI
   ragResults?: {
     totalChunks: number;
     queryTime: number;
     results: RAGResultData[];
   };
-}
-
-export interface GraphNode {
-  id: string;
-  label: string;
-  group?: number;
-  val?: number; 
-}
-
-export interface GraphLink {
-  source: string;
-  target: string;
-  relationship?: string;
-}
-
-export interface GraphData {
-  nodes: GraphNode[];
-  links: GraphLink[];
-}
-
-// Quiz System Types
-export interface QuizQuestion {
-  id: string;
-  type: 'single' | 'multiple' | 'text';
-  question: string;
-  options?: string[];
-  correctAnswer?: string | string[]; // For auto-grading if applicable
-  userAnswer?: string | string[];
-  explanation?: string;
-  isCorrect?: boolean;
-}
-
-export interface Quiz {
-  id: string;
-  title: string;
-  description: string;
-  questions: QuizQuestion[];
-  isGraded: boolean;
-  score?: number;
-}
-
-export interface MistakeRecord {
-  id: string;
-  question: string;
-  userAnswer: string;
-  correctAnswer: string;
-  explanation?: string;
-  timestamp: number;
-  quizTitle?: string;
-}
-
-export interface RAGStats {
-  totalFiles: number;
-  indexedFiles: number;
-  totalChunks: number;
-  isIndexing: boolean;
-}
-
-export interface AppShortcut {
-  id: string;
-  label: string;
-  keys: string; // e.g. "Ctrl+S", "Alt+Shift+P"
-  actionId: string;
 }
 
 // Vector Store Types (for RAG system)
@@ -203,4 +210,240 @@ export interface IndexMeta {
   indexedAt: number;
   embeddingModel?: string;
   embeddingProvider?: string;
+}
+
+// ========================
+// Knowledge Graph
+// ========================
+
+export interface GraphNode {
+  id: string;
+  label: string;
+  group?: number;
+  val?: number;
+  type?: 'file' | 'exam' | 'question'; // Added type for node distinction
+  score?: number; // 0-100 for exam mastery coloring
+}
+
+export interface GraphLink {
+  source: string;
+  target: string;
+  relationship?: string;
+}
+
+export interface GraphData {
+  nodes: GraphNode[];
+  links: GraphLink[];
+}
+
+// ========================
+// Quiz & Exam System
+// ========================
+
+export type QuestionType = 'single' | 'multiple' | 'text' | 'fill_blank';
+export type DifficultyLevel = 'easy' | 'medium' | 'hard';
+export type ExamMode = 'practice' | 'exam';
+
+export interface ExamConfig {
+  mode: ExamMode;
+  duration: number; // minutes, 0 for unlimited
+  passingScore: number; // percentage
+  showAnswers: 'immediate' | 'after_submit';
+}
+
+export interface GradingResult {
+  score: number; // 0-100
+  feedback: string;
+  keyPointsMatched: string[];
+  keyPointsMissed: string[];
+  suggestion?: string;
+}
+
+export interface QuizQuestion {
+  id: string;
+  type: QuestionType;
+  question: string;
+  options?: string[];
+  correctAnswer?: string | string[]; // For auto-grading if applicable
+  userAnswer?: string | string[];
+  explanation?: string;
+  isCorrect?: boolean;
+
+  // Intelligent Grading Result
+  gradingResult?: GradingResult;
+
+  // New Metadata fields
+  difficulty?: DifficultyLevel;
+  tags?: string[];
+  knowledgePoints?: string[];
+  sourceFileId?: string;
+  created?: number;
+}
+
+export interface Quiz {
+  id: string;
+  title: string;
+  description: string;
+  questions: QuizQuestion[];
+  isGraded: boolean;
+  score?: number; // Percentage
+
+  // Exam Specifics
+  config?: ExamConfig;
+  startTime?: number;
+  endTime?: number;
+  status?: 'not_started' | 'in_progress' | 'completed';
+  sourceFileId?: string; // Link back to note
+}
+
+export interface MistakeRecord {
+  id: string;
+  question: string;
+  userAnswer: string;
+  correctAnswer: string;
+  explanation?: string;
+  timestamp: number;
+  quizTitle?: string;
+}
+
+// ========================
+// Analytics & Study Tracking
+// ========================
+
+export interface ExamResult {
+  id: string;
+  quizTitle: string;
+  date: number; // timestamp
+  score: number; // percentage
+  totalQuestions: number;
+  correctCount: number;
+  duration: number; // seconds
+  tags: string[]; // Aggregated tags from questions
+  sourceFileId?: string; // Added to link back for graph
+}
+
+export interface KnowledgePointStat {
+  tag: string;
+  totalQuestions: number;
+  correctQuestions: number;
+  accuracy: number; // 0-100
+}
+
+// Spaced Repetition Types
+export interface ReviewTask {
+  id: string;
+  scheduledDate: number; // Timestamp
+  completedDate?: number; // Timestamp or undefined
+  status: 'pending' | 'completed' | 'overdue' | 'future';
+  intervalLabel: string; // e.g., "5 mins", "1 day"
+}
+
+export interface StudyPlan {
+  id: string;
+  title: string;
+  sourceType: 'file' | 'mistake';
+  sourceId: string; // ID of the file or MistakeRecord
+  createdDate: number;
+  tasks: ReviewTask[];
+  progress: number; // 0-100
+  tags?: string[];
+}
+
+// ========================
+// Search & Library
+// ========================
+
+export interface Snippet {
+  id: string;
+  name: string;
+  content: string;
+  category: 'code' | 'text' | 'template';
+}
+
+export interface SearchResult {
+  fileId: string;
+  fileName: string;
+  path: string;
+  score: number;
+  matches: {
+    type: 'title' | 'content' | 'tag';
+    text: string;
+    indices?: [number, number]; // Start/End index of match
+  }[];
+  lastModified: number;
+  tags: string[];
+}
+
+// ========================
+// Utilities & System
+// ========================
+
+export interface RAGStats {
+  totalFiles: number;
+  indexedFiles: number;
+  totalChunks: number;
+  isIndexing: boolean;
+}
+
+export interface AppShortcut {
+  id: string;
+  label: string;
+  keys: string; // e.g. "Ctrl+S", "Alt+Shift+P"
+  actionId: string;
+}
+
+// ========================
+// Speech Recognition (Web Speech API)
+// ========================
+
+export interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+  onresult: (event: SpeechRecognitionEvent) => void;
+  onerror: (event: SpeechRecognitionErrorEvent) => void;
+  onend: () => void;
+}
+
+export interface SpeechRecognitionEvent {
+  resultIndex: number;
+  results: SpeechRecognitionResultList;
+}
+
+export interface SpeechRecognitionResultList {
+  length: number;
+  item(index: number): SpeechRecognitionResult;
+  [index: number]: SpeechRecognitionResult;
+}
+
+export interface SpeechRecognitionResult {
+  isFinal: boolean;
+  length: number;
+  item(index: number): SpeechRecognitionAlternative;
+  [index: number]: SpeechRecognitionAlternative;
+}
+
+export interface SpeechRecognitionAlternative {
+  transcript: string;
+  confidence: number;
+}
+
+export interface SpeechRecognitionErrorEvent extends Event {
+  error: string;
+  message: string;
+}
+
+// ========================
+// Global Window Extensions
+// ========================
+
+declare global {
+  interface Window {
+    SpeechRecognition: { new (): SpeechRecognition };
+    webkitSpeechRecognition: { new (): SpeechRecognition };
+    jspdf: any;
+  }
 }

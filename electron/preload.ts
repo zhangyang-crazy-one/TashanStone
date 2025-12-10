@@ -54,6 +54,11 @@ interface MistakeRecord {
     createdAt: string;
 }
 
+interface AuthResult {
+    success: boolean;
+    error?: string;
+}
+
 interface FileFilter {
     name: string;
     extensions: string[];
@@ -195,6 +200,26 @@ try {
                 ipcRenderer.invoke('db:vectors:clear'),
             getStats: (): Promise<{ totalFiles: number; totalChunks: number }> =>
                 ipcRenderer.invoke('db:vectors:getStats')
+        },
+
+        // Auth
+        auth: {
+            register: (username: string, password: string): Promise<AuthResult> =>
+                ipcRenderer.invoke('db:auth:register', username, password),
+            verify: (password: string): Promise<boolean> =>
+                ipcRenderer.invoke('db:auth:verify', password),
+            login: (password: string): Promise<boolean> =>
+                ipcRenderer.invoke('db:auth:login', password),
+            isRegistered: (): Promise<boolean> =>
+                ipcRenderer.invoke('db:auth:isRegistered'),
+            getUsername: (): Promise<string | null> =>
+                ipcRenderer.invoke('db:auth:getUsername'),
+            changePassword: (oldPassword: string, newPassword: string): Promise<AuthResult> =>
+                ipcRenderer.invoke('db:auth:changePassword', oldPassword, newPassword),
+            resetPassword: (newPassword: string): Promise<AuthResult> =>
+                ipcRenderer.invoke('db:auth:resetPassword', newPassword),
+            reset: (): Promise<AuthResult> =>
+                ipcRenderer.invoke('db:auth:reset')
         }
     },
 
@@ -217,7 +242,16 @@ try {
     // AI proxy for CORS-free requests
     ai: {
         fetch: (url: string, options: RequestInit): Promise<FetchResult> =>
-            ipcRenderer.invoke('ai:fetch', url, options)
+            ipcRenderer.invoke('ai:fetch', url, options),
+        // Streaming fetch - returns streamId, then listen for chunks via onStreamChunk
+        streamFetch: (url: string, options: RequestInit): Promise<{ streamId: string; status: number; headers: Record<string, string> }> =>
+            ipcRenderer.invoke('ai:streamFetch', url, options),
+        // Listen for stream chunks
+        onStreamChunk: (callback: (data: { streamId: string; chunk?: string; done: boolean; error?: string }) => void): (() => void) => {
+            const handler = (_event: any, data: { streamId: string; chunk?: string; done: boolean; error?: string }) => callback(data);
+            ipcRenderer.on('ai:streamChunk', handler);
+            return () => ipcRenderer.removeListener('ai:streamChunk', handler);
+        }
     },
 
     // Data sync operations
@@ -226,6 +260,18 @@ try {
             ipcRenderer.invoke('sync:exportData'),
         importData: (jsonData: DatabaseExport): Promise<{ success: boolean; imported: Record<string, number>; errors: string[] }> =>
             ipcRenderer.invoke('sync:importData', jsonData)
+    },
+
+    // Backup operations (encrypted)
+    backup: {
+        export: (password: string): Promise<{ success: boolean; path?: string; size?: number; error?: string; canceled?: boolean }> =>
+            ipcRenderer.invoke('backup:export', password),
+        selectFile: (): Promise<{ success: boolean; filePath?: string; fileName?: string; fileSize?: number; modifiedAt?: number; error?: string; canceled?: boolean }> =>
+            ipcRenderer.invoke('backup:selectFile'),
+        import: (password: string, filePath?: string): Promise<{ success: boolean; timestamp?: number; itemsRestored?: Record<string, number>; error?: string; canceled?: boolean }> =>
+            ipcRenderer.invoke('backup:import', password, filePath),
+        getInfo: (filePath: string): Promise<{ success: boolean; version?: number; fileSize?: number; modifiedAt?: number; encrypted?: boolean; error?: string }> =>
+            ipcRenderer.invoke('backup:getInfo', filePath)
     },
 
     // MCP operations
@@ -240,6 +286,47 @@ try {
             ipcRenderer.invoke('mcp:getStatuses'),
         disconnectAll: (): Promise<{ success: boolean; error?: string }> =>
             ipcRenderer.invoke('mcp:disconnectAll')
+    },
+
+    // Whisper speech recognition (legacy Python-based)
+    whisper: {
+        isAvailable: (): Promise<boolean> =>
+            ipcRenderer.invoke('whisper:isAvailable'),
+        getRecommendedMethod: (): Promise<'webspeech' | 'whisper'> =>
+            ipcRenderer.invoke('whisper:getRecommendedMethod'),
+        transcribe: (audioBuffer: ArrayBuffer, language?: string): Promise<{ success: boolean; text?: string; language?: string; error?: string }> =>
+            ipcRenderer.invoke('whisper:transcribe', audioBuffer, language)
+    },
+
+    // Sherpa-ONNX speech recognition (native, no Python required)
+    sherpa: {
+        isAvailable: (): Promise<boolean> =>
+            ipcRenderer.invoke('sherpa:isAvailable'),
+        getRecommendedMethod: (): Promise<'sherpa' | 'webspeech'> =>
+            ipcRenderer.invoke('sherpa:getRecommendedMethod'),
+        initialize: (config?: { modelDir?: string; language?: string; sampleRate?: number }): Promise<{ success: boolean; error?: string }> =>
+            ipcRenderer.invoke('sherpa:initialize', config),
+        isModelAvailable: (): Promise<boolean> =>
+            ipcRenderer.invoke('sherpa:isModelAvailable'),
+        getModelDownloadInfo: (): Promise<{ url: string; name: string; size: string }> =>
+            ipcRenderer.invoke('sherpa:getModelDownloadInfo'),
+        startSession: (sessionId: string): Promise<{ success: boolean; error?: string }> =>
+            ipcRenderer.invoke('sherpa:startSession', sessionId),
+        feedAudio: (sessionId: string, audioData: ArrayBuffer, sampleRate?: number): Promise<{ success: boolean; text?: string; isPartial?: boolean; error?: string }> =>
+            ipcRenderer.invoke('sherpa:feedAudio', sessionId, audioData, sampleRate),
+        endSession: (sessionId: string): Promise<{ success: boolean; text?: string; error?: string }> =>
+            ipcRenderer.invoke('sherpa:endSession', sessionId),
+        transcribe: (audioBuffer: ArrayBuffer, language?: string): Promise<{ success: boolean; text?: string; language?: string; error?: string }> =>
+            ipcRenderer.invoke('sherpa:transcribe', audioBuffer, language),
+        // New APIs for voice transcription feature
+        selectAudioFile: (): Promise<{ success: boolean; filePath?: string; error?: string }> =>
+            ipcRenderer.invoke('sherpa:selectAudioFile'),
+        getAudioInfo: (filePath: string): Promise<{ success: boolean; duration?: number; sampleRate?: number; format?: string; error?: string }> =>
+            ipcRenderer.invoke('sherpa:getAudioInfo', filePath),
+        transcribeFile: (filePath: string, options?: { enableNoiseReduction?: boolean; language?: string }): Promise<{ success: boolean; text?: string; duration?: number; error?: string }> =>
+            ipcRenderer.invoke('sherpa:transcribeFile', filePath, options),
+        isFFmpegAvailable: (): Promise<boolean> =>
+            ipcRenderer.invoke('sherpa:isFFmpegAvailable')
     },
 
     // Menu event listeners
@@ -324,6 +411,16 @@ declare global {
                     clear: () => Promise<void>;
                     getStats: () => Promise<{ totalFiles: number; totalChunks: number }>;
                 };
+                auth: {
+                    register: (username: string, password: string) => Promise<AuthResult>;
+                    verify: (password: string) => Promise<boolean>;
+                    login: (password: string) => Promise<boolean>;
+                    isRegistered: () => Promise<boolean>;
+                    getUsername: () => Promise<string | null>;
+                    changePassword: (oldPassword: string, newPassword: string) => Promise<AuthResult>;
+                    resetPassword: (newPassword: string) => Promise<AuthResult>;
+                    reset: () => Promise<AuthResult>;
+                };
             };
             fs: {
                 openDirectory: () => Promise<{ path: string; files: MarkdownFile[] } | null>;
@@ -335,10 +432,18 @@ declare global {
             };
             ai: {
                 fetch: (url: string, options: RequestInit) => Promise<FetchResult>;
+                streamFetch: (url: string, options: RequestInit) => Promise<{ streamId: string; status: number; headers: Record<string, string> }>;
+                onStreamChunk: (callback: (data: { streamId: string; chunk?: string; done: boolean; error?: string }) => void) => () => void;
             };
             sync: {
                 exportData: () => Promise<DatabaseExport>;
                 importData: (jsonData: DatabaseExport) => Promise<{ success: boolean; imported: Record<string, number>; errors: string[] }>;
+            };
+            backup: {
+                export: (password: string) => Promise<{ success: boolean; path?: string; size?: number; error?: string; canceled?: boolean }>;
+                selectFile: () => Promise<{ success: boolean; filePath?: string; fileName?: string; fileSize?: number; modifiedAt?: number; error?: string; canceled?: boolean }>;
+                import: (password: string, filePath?: string) => Promise<{ success: boolean; timestamp?: number; itemsRestored?: Record<string, number>; error?: string; canceled?: boolean }>;
+                getInfo: (filePath: string) => Promise<{ success: boolean; version?: number; fileSize?: number; modifiedAt?: number; encrypted?: boolean; error?: string }>;
             };
             mcp: {
                 loadConfig: (configStr: string) => Promise<{ success: boolean; error?: string }>;
@@ -346,6 +451,26 @@ declare global {
                 callTool: (name: string, args: any) => Promise<{ success: boolean; result?: any; error?: string }>;
                 getStatuses: () => Promise<MCPServerStatus[]>;
                 disconnectAll: () => Promise<{ success: boolean; error?: string }>;
+            };
+            whisper: {
+                isAvailable: () => Promise<boolean>;
+                getRecommendedMethod: () => Promise<'webspeech' | 'whisper'>;
+                transcribe: (audioBuffer: ArrayBuffer, language?: string) => Promise<{ success: boolean; text?: string; language?: string; error?: string }>;
+            };
+            sherpa: {
+                isAvailable: () => Promise<boolean>;
+                getRecommendedMethod: () => Promise<'sherpa' | 'webspeech'>;
+                initialize: (config?: { modelDir?: string; language?: string; sampleRate?: number }) => Promise<{ success: boolean; error?: string }>;
+                isModelAvailable: () => Promise<boolean>;
+                getModelDownloadInfo: () => Promise<{ url: string; name: string; size: string }>;
+                startSession: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
+                feedAudio: (sessionId: string, audioData: ArrayBuffer, sampleRate?: number) => Promise<{ success: boolean; text?: string; isPartial?: boolean; error?: string }>;
+                endSession: (sessionId: string) => Promise<{ success: boolean; text?: string; error?: string }>;
+                transcribe: (audioBuffer: ArrayBuffer, language?: string) => Promise<{ success: boolean; text?: string; language?: string; error?: string }>;
+                selectAudioFile: () => Promise<{ success: boolean; filePath?: string; error?: string }>;
+                getAudioInfo: (filePath: string) => Promise<{ success: boolean; duration?: number; sampleRate?: number; format?: string; error?: string }>;
+                transcribeFile: (filePath: string, options?: { enableNoiseReduction?: boolean; language?: string }) => Promise<{ success: boolean; text?: string; duration?: number; error?: string }>;
+                isFFmpegAvailable: () => Promise<boolean>;
             };
             onMenuEvent: (channel: string, callback: () => void) => () => void;
         };

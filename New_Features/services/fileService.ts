@@ -345,18 +345,41 @@ export const parseCsvToQuiz = (file: File): Promise<Quiz | null> => {
 export const parseJsonToQuiz = async (file: File): Promise<Quiz | null> => {
   try {
     const text = await file.text();
-    const json = JSON.parse(text);
-    
-    // Heuristic: Check if it looks like a quiz
+    let jsonString = text;
+
+    // 1. Intelligent JSON Extraction
+    // Check if the content is wrapped in a markdown code block (common for exported files)
+    const codeBlockRegex = /```json\s*([\s\S]*?)\s*```/;
+    const match = text.match(codeBlockRegex);
+    if (match && match[1]) {
+        jsonString = match[1];
+    } else {
+        // Fallback: Try to find the outermost object structure if not in a code block
+        const firstOpen = text.indexOf('{');
+        const lastClose = text.lastIndexOf('}');
+        if (firstOpen !== -1 && lastClose !== -1 && lastClose > firstOpen) {
+            jsonString = text.substring(firstOpen, lastClose + 1);
+        }
+    }
+
+    let json: any;
+    try {
+        json = JSON.parse(jsonString);
+    } catch (e) {
+        console.error("JSON parse failed. File might be plain text or invalid format.", e);
+        return null;
+    }
+
+    // 2. Structure Identification
     let questionsData: any[] = [];
     let title = file.name.replace(/\.[^/.]+$/, "");
-    let description = "Imported from JSON";
+    let description = "Imported from file";
 
-    // Case 1: Root is array of questions
+    // Case A: Root is array
     if (Array.isArray(json)) {
         questionsData = json;
     } 
-    // Case 2: Root is object with questions property
+    // Case B: Root is object with 'questions' array (Standard Format)
     else if (json && typeof json === 'object') {
         if (Array.isArray(json.questions)) {
             questionsData = json.questions;
@@ -367,26 +390,32 @@ export const parseJsonToQuiz = async (file: File): Promise<Quiz | null> => {
 
     if (questionsData.length === 0) return null;
 
-    // Validate and Map
+    // 3. Strict Field Mapping & Validation
     const validQuestions: QuizQuestion[] = [];
     
     questionsData.forEach((q, idx) => {
-        if (!q.question) return; // minimal requirement
+        // Essential field: Question Text
+        if (!q.question || typeof q.question !== 'string') return;
 
-        validQuestions.push({
-            id: q.id || `json-${idx}-${Date.now()}`,
+        const questionObj: QuizQuestion = {
+            id: q.id || `imported-q-${Date.now()}-${idx}`,
             type: q.type || (Array.isArray(q.options) && q.options.length > 0 ? 'single' : 'text'),
             question: q.question,
             options: Array.isArray(q.options) ? q.options : undefined,
             correctAnswer: q.correctAnswer,
-            explanation: q.explanation
-        });
+            explanation: q.explanation,
+            tags: Array.isArray(q.tags) ? q.tags : [],
+            knowledgePoints: Array.isArray(q.knowledgePoints) ? q.knowledgePoints : [],
+            difficulty: q.difficulty // Optional
+        };
+        
+        validQuestions.push(questionObj);
     });
 
     if (validQuestions.length === 0) return null;
 
     return {
-        id: `quiz-json-${Date.now()}`,
+        id: `quiz-imported-${Date.now()}`,
         title,
         description,
         questions: validQuestions,

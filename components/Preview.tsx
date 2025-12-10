@@ -147,22 +147,26 @@ const MermaidRenderer = ({ code, isDark }: { code: string, isDark: boolean }) =>
 /**
  * EnhancedCodeBlock: Renders code with Header, Copy button, and Wrap toggle
  */
-const EnhancedCodeBlock = ({ children, className, inline, ...props }: any) => {
+const EnhancedCodeBlock = ({ children, className, inline, node, ...props }: any) => {
   const [copied, setCopied] = useState(false);
   const [wrap, setWrap] = useState(false);
-  
+
   // Detect Language
   const match = /language-(\w+)/.exec(className || '');
   const language = match ? match[1] : 'text';
-  
+
   // Detect if Mermaid
   const isMermaid = language === 'mermaid';
   const isDark = document.documentElement.classList.contains('dark');
 
-  // Handle Inline Code
-  if (inline) {
+  // Better inline detection: if inline prop is true, or if there's no language class
+  // and the code is simple text (not wrapped in pre by our override)
+  const isInline = inline === true || (inline !== false && !className);
+
+  // Handle Inline Code - return <code> element (valid inside <p>)
+  if (isInline) {
     return (
-      <code className={`${className} bg-paper-200 dark:bg-cyber-800 px-1.5 py-0.5 rounded text-sm text-cyan-700 dark:text-cyan-400 font-mono`} {...props}>
+      <code className={`${className || ''} bg-paper-200 dark:bg-cyber-800 px-1.5 py-0.5 rounded text-sm text-cyan-700 dark:text-cyan-400 font-mono`} {...props}>
         {children}
       </code>
     );

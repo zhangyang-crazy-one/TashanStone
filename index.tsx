@@ -2,7 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './src/index.css';
 import './src/atom-one-dark.css';
-import './src/katex.min.css';
+import 'katex/dist/katex.min.css';
 // Chinese fonts
 import '@fontsource/noto-sans-sc/400.css';
 import '@fontsource/noto-sans-sc/700.css';

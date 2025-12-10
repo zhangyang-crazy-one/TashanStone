@@ -1,13 +1,13 @@
 
 
 import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
-import { 
-  FileText, Plus, Trash2, FolderOpen, Search, X, FolderInput, 
-  FileType, List, AlignLeft, ChevronRight, GraduationCap, 
+import {
+  FileText, Plus, Trash2, FolderOpen, Search, X, FolderInput,
+  FileType, List, AlignLeft, ChevronRight, GraduationCap,
   Folder, FileCode, FileImage, FileJson, FileSpreadsheet, File as FileIcon,
-  Lock, Upload, Database, Loader2, RefreshCw
+  Lock, Upload, Database, Loader2, RefreshCw, Code2, Edit3
 } from 'lucide-react';
-import { MarkdownFile, RAGStats } from '../types';
+import { MarkdownFile, RAGStats, Snippet } from '../types';
 import { translations, Language } from '../utils/translations';
 
 interface SidebarProps {
@@ -26,6 +26,10 @@ interface SidebarProps {
   language?: Language;
   ragStats?: RAGStats;
   onRefreshIndex?: () => void;
+  snippets?: Snippet[];
+  onCreateSnippet?: (snippet: Omit<Snippet, 'id'>) => void;
+  onDeleteSnippet?: (id: string) => void;
+  onInsertSnippet?: (content: string) => void;
 }
 
 interface OutlineItem {
@@ -57,6 +61,18 @@ const DISPLAY_EXTENSIONS = ['.md', '.markdown', '.csv', '.pdf', '.docx', '.doc',
 
 // Config: Extensions that can be Operated On (Selected/Edited)
 const OPERABLE_EXTENSIONS = ['.md', '.markdown', '.csv', '.txt'];
+
+// Default preset templates
+const DEFAULT_SNIPPETS: Snippet[] = [
+  { id: 'tbl', name: 'Table', category: 'template', content: '| Header 1 | Header 2 |\n| -------- | -------- |\n| Cell 1   | Cell 2   |\n' },
+  { id: 'math', name: 'Math Block', category: 'code', content: '$$\n  \\int_0^\\infty x^2 dx\n$$\n' },
+  { id: 'mermaid', name: 'Mermaid Diagram', category: 'code', content: '```mermaid\ngraph TD;\n    A-->B;\n    A-->C;\n```\n' },
+  { id: 'todo', name: 'Task List', category: 'template', content: '- [ ] Task 1\n- [ ] Task 2\n- [ ] Task 3\n' },
+  { id: 'js', name: 'JS Code Block', category: 'code', content: '```javascript\nconsole.log("Hello, World!");\n```\n' },
+  { id: 'callout', name: 'Callout', category: 'template', content: '> [!NOTE]\n> This is a note callout\n' },
+  { id: 'link', name: 'Link Reference', category: 'text', content: '[Link Text](https://example.com "Title")\n' },
+  { id: 'img', name: 'Image', category: 'template', content: '![Alt Text](image-url.png "Image Title")\n' },
+];
 
 const isExtensionInList = (filename: string, list: string[]) => {
     if (!filename) return false;
@@ -215,16 +231,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onImportQuiz,
   language = 'en',
   ragStats,
-  onRefreshIndex
+  onRefreshIndex,
+  snippets = [],
+  onCreateSnippet,
+  onDeleteSnippet,
+  onInsertSnippet
 }) => {
-  const [activeTab, setActiveTab] = useState<'files' | 'outline'>('files');
+  const [activeTab, setActiveTab] = useState<'files' | 'snippets' | 'outline'>('files');
   const [outline, setOutline] = useState<OutlineItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  
+
   // Drag and Drop State
   const [dragOverNodeId, setDragOverNodeId] = useState<string | null>(null);
   const [isRootDropTarget, setIsRootDropTarget] = useState(false);
-  
+
   // Creation Modal State
   const [creationModal, setCreationModal] = useState<{
     isOpen: boolean;
@@ -232,6 +252,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
     parentPath: string;
     value: string;
   }>({ isOpen: false, type: 'file', parentPath: '', value: '' });
+
+  // Snippet Creation Modal State
+  const [snippetModal, setSnippetModal] = useState<{
+    isOpen: boolean;
+    name: string;
+    content: string;
+    category: 'code' | 'text' | 'template';
+  }>({ isOpen: false, name: '', content: '', category: 'code' });
 
   const creationInputRef = useRef<HTMLInputElement>(null);
 
@@ -573,15 +601,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="h-14 flex items-center px-2 border-b border-paper-200 dark:border-cyber-700 shrink-0 gap-1 pt-2">
             <button
               onClick={() => setActiveTab('files')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-t-lg text-sm font-medium transition-colors border-b-2 ${activeTab === 'files' ? 'border-cyan-500 text-cyan-700 dark:text-cyan-400 bg-white/50 dark:bg-cyber-900/50' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-t-lg text-xs font-medium transition-colors border-b-2 ${activeTab === 'files' ? 'border-cyan-500 text-cyan-700 dark:text-cyan-400 bg-white/50 dark:bg-cyber-900/50' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
             >
-              <FolderOpen size={15} /> {t.explorer}
+              <FolderOpen size={14} /> {t.explorer}
+            </button>
+            <button
+              onClick={() => setActiveTab('snippets')}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-t-lg text-xs font-medium transition-colors border-b-2 ${activeTab === 'snippets' ? 'border-amber-500 text-amber-700 dark:text-amber-400 bg-white/50 dark:bg-cyber-900/50' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+            >
+              <Code2 size={14} /> {t.snippets}
             </button>
             <button
               onClick={() => setActiveTab('outline')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-t-lg text-sm font-medium transition-colors border-b-2 ${activeTab === 'outline' ? 'border-violet-500 text-violet-700 dark:text-violet-400 bg-white/50 dark:bg-cyber-900/50' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-t-lg text-xs font-medium transition-colors border-b-2 ${activeTab === 'outline' ? 'border-violet-500 text-violet-700 dark:text-violet-400 bg-white/50 dark:bg-cyber-900/50' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
             >
-              <List size={15} /> Outline
+              <List size={14} /> Outline
             </button>
         </div>
 
@@ -673,6 +707,40 @@ export const Sidebar: React.FC<SidebarProps> = ({
                        {isRootDropTarget ? "Drop to Root Directory" : ""}
                    </div>
                </div>
+            </>
+          )}
+
+          {/* SNIPPETS TAB */}
+          {activeTab === 'snippets' && (
+            <>
+              {/* Header */}
+              <div className="mb-3">
+                <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">{t.templates || 'Templates'}</h3>
+                <p className="text-[10px] text-slate-400 dark:text-slate-500">{t.clickToInsert || 'Click to insert into editor'}</p>
+              </div>
+
+              <div className="space-y-1.5">
+                {DEFAULT_SNIPPETS.map(snippet => (
+                  <div
+                    key={snippet.id}
+                    onClick={() => onInsertSnippet?.(snippet.content)}
+                    className="group flex items-center gap-2 px-3 py-2 rounded-lg border border-paper-200 dark:border-cyber-700 bg-white dark:bg-cyber-900/50 hover:border-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/10 transition-all cursor-pointer"
+                  >
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono shrink-0 ${
+                      snippet.category === 'code' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' :
+                      snippet.category === 'text' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' :
+                      'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400'
+                    }`}>
+                      {snippet.category === 'code' ? t.codeCategory || 'code' :
+                       snippet.category === 'text' ? t.textCategory || 'text' :
+                       t.templateCategory || 'template'}
+                    </span>
+                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300 truncate">
+                      {t[`snippet_${snippet.id}`] || snippet.name}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </>
           )}
 

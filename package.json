@@ -1,7 +1,7 @@
 {
   "name": "zhangnote",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.5.0",
   "description": "ZhangNote - AI-powered Markdown Editor",
   "author": {
     "name": "ZhangNote Team",
@@ -25,17 +25,23 @@
     "dist:linux-arm64": "npm run build:electron && electron-builder --linux --arm64",
     "dist:kylin": "npm run build:electron && electron-builder --linux deb --x64 --arm64",
     "dist:all": "npm run build:electron && electron-builder --win --linux",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "electron-builder install-app-deps",
+    "download:sherpa-model": "node scripts/download-sherpa-model.cjs"
   },
   "dependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "@ffprobe-installer/ffprobe": "^2.1.2",
     "@fontsource/ma-shan-zheng": "^5.2.8",
     "@fontsource/noto-sans-sc": "^5.2.8",
     "@fontsource/noto-serif-sc": "^5.2.8",
     "@google/genai": "^1.30.0",
+    "@types/diff": "^7.0.2",
     "@types/papaparse": "^5.5.0",
     "better-sqlite3": "^11.6.0",
     "clsx": "^2.1.0",
     "d3": "^7.9.0",
+    "diff": "^8.0.2",
+    "fluent-ffmpeg": "^2.1.3",
     "lucide-react": "^0.555.0",
     "mammoth": "^1.11.0",
     "mermaid": "^11.12.1",
@@ -49,6 +55,8 @@
     "rehype-raw": "^7.0.0",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
+    "sherpa-onnx": "^1.12.19",
+    "sherpa-onnx-node": "^1.12.19",
     "tailwind-merge": "^2.2.0"
   },
   "devDependencies": {
@@ -57,6 +65,7 @@
     "@tailwindcss/typography": "^0.5.19",
     "@types/better-sqlite3": "^7.6.12",
     "@types/d3": "^7.4.3",
+    "@types/fluent-ffmpeg": "^2.1.28",
     "@types/node": "^22.19.1",
     "@vitejs/plugin-react": "^5.0.0",
     "autoprefixer": "^10.4.22",

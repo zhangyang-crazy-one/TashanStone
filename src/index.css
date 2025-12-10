@@ -37,6 +37,39 @@ button, input, select, textarea, a, [role="button"] {
   background: rgb(var(--primary-500));
 }
 
+/* Custom scrollbar classes */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(var(--primary-500) / 0.5);
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--primary-500));
+}
+
+.custom-scrollbar-horizontal {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.custom-scrollbar-horizontal::-webkit-scrollbar {
+  height: 4px;
+}
+
+.custom-scrollbar-horizontal::-webkit-scrollbar-thumb {
+  background: rgba(var(--primary-500) / 0.3);
+  border-radius: 2px;
+}
+
+.custom-scrollbar-horizontal::-webkit-scrollbar-thumb:hover {
+  background: rgba(var(--primary-500) / 0.6);
+}
+
 /* Glass panel effect */
 .glass-panel {
   background: rgba(var(--bg-panel) / 0.7);
@@ -380,5 +413,34 @@ button, input, select, textarea, a, [role="button"] {
   to {
     opacity: 1;
     transform: translateX(0);
+  }
+}
+
+/* ConfirmDialog animations */
+.animate-fade-in {
+  animation: dialog-fade-in 0.2s ease-out;
+}
+
+.animate-scale-in {
+  animation: dialog-scale-in 0.2s ease-out;
+}
+
+@keyframes dialog-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dialog-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
   }
 }

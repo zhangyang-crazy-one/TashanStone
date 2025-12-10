@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { AIConfig, MarkdownFile, GraphData, Quiz, ChatMessage } from "../types";
+import { AIConfig, MarkdownFile, GraphData, Quiz, ChatMessage, QuizQuestion, GradingResult } from "../types";
 
 // --- Types for Local Usage ---
 interface Tool {
@@ -136,31 +136,37 @@ const convertToolsToOpenAI = (tools: Tool): any[] | undefined => {
 // --- Helper: Configuration Resolver ---
 const resolveOpenAIConfig = (config: AIConfig) => {
     let baseUrl = config.baseUrl;
-    let apiKey = config.apiKey;
+    const apiKey = config.apiKey;
     let model = config.model;
 
-    if (config.provider === 'openai') {
-        // Only set default if not provided, allowing user to override for proxies
-        if (!baseUrl || baseUrl.trim() === '') {
+    // Default URLs if missing
+    if (!baseUrl || baseUrl.trim() === '') {
+        if (config.provider === 'openai') {
             baseUrl = 'https://api.openai.com/v1';
+        } else if (config.provider === 'ollama') {
+            baseUrl = 'http://localhost:11434/v1';
         }
-        if (!model) model = 'gpt-4o';
-    } else if (config.provider === 'ollama') {
-        if (!baseUrl || baseUrl.trim() === '') {
-            baseUrl = 'http://localhost:11434';
-        }
-        // Normalize: Ensure we point to the v1 compatible endpoint for Ollama
-        if (!baseUrl.includes('/v1')) {
-            // Remove trailing slash if present then append /v1
-            baseUrl = `${baseUrl.replace(/\/$/, '')}/v1`;
-        }
-        if (!model) model = 'llama3';
     }
 
-    // Ensure no trailing slash for clean concatenation later
-    baseUrl = baseUrl ? baseUrl.replace(/\/$/, '') : '';
+    // Default Models if missing
+    if (!model) {
+        if (config.provider === 'openai') model = 'gpt-4o';
+        else if (config.provider === 'ollama') model = 'llama3';
+    }
 
-    return { baseUrl, apiKey, model };
+    // URL Normalization
+    if (baseUrl) {
+        // Remove trailing slash
+        baseUrl = baseUrl.replace(/\/+$/, '');
+        
+        // Auto-fix for Ollama: If user entered "http://localhost:11434" without /v1, append it
+        // This ensures compatibility with standard OpenAI client libraries
+        if (config.provider === 'ollama' && !baseUrl.endsWith('/v1')) {
+            baseUrl = `${baseUrl}/v1`;
+        }
+    }
+
+    return { baseUrl: baseUrl || '', apiKey, model };
 };
 
 // --- Helper: Embedding ---
@@ -178,10 +184,11 @@ export const getEmbedding = async (text: string, config: AIConfig): Promise<numb
             return result.embeddings?.[0]?.values || [];
         } 
         
-        // OpenAI / Ollama Logic
+        // OpenAI / Ollama Logic (Unified)
         const { baseUrl, apiKey } = resolveOpenAIConfig(config);
-        let model = config.embeddingModel;
         
+        // Determine model name
+        let model = config.embeddingModel;
         if (!model) {
             model = config.provider === 'openai' ? 'text-embedding-3-small' : 'nomic-embed-text';
         }
@@ -189,6 +196,8 @@ export const getEmbedding = async (text: string, config: AIConfig): Promise<numb
         const headers: any = { 'Content-Type': 'application/json' };
         if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
 
+        // OpenAI-compatible embedding endpoint is /embeddings
+        // resolveOpenAIConfig ensures baseUrl ends in /v1 for Ollama/OpenAI
         const response = await fetch(`${baseUrl}/embeddings`, {
             method: 'POST',
             headers,
@@ -198,7 +207,11 @@ export const getEmbedding = async (text: string, config: AIConfig): Promise<numb
             })
         });
 
-        if (!response.ok) return [];
+        if (!response.ok) {
+            console.warn(`Embedding failed (${response.status}):`, await response.text());
+            return [];
+        }
+        
         const data = await response.json();
         return data.data?.[0]?.embedding || [];
 
@@ -281,13 +294,6 @@ const callOpenAICompatible = async (
 ): Promise<string> => {
     const { baseUrl, apiKey, model } = resolveOpenAIConfig(config);
 
-    const headers: any = {
-        'Content-Type': 'application/json',
-    };
-    if (apiKey) {
-        headers['Authorization'] = `Bearer ${apiKey}`;
-    }
-
     // Prepare Tools
     const tools = toolCallback ? convertToolsToOpenAI(FILESYSTEM_TOOLS) : undefined;
 
@@ -313,12 +319,33 @@ const callOpenAICompatible = async (
             body.tool_choice = "auto";
         }
 
-        try {
-            const response = await fetch(`${baseUrl}/chat/completions`, {
+        // Helper to execute fetch with optional auth retry
+        const executeFetch = async (includeAuth: boolean) => {
+            const headers: any = {
+                'Content-Type': 'application/json',
+            };
+            if (includeAuth && apiKey) {
+                headers['Authorization'] = `Bearer ${apiKey}`;
+            }
+
+            return fetch(`${baseUrl}/chat/completions`, {
                 method: 'POST',
                 headers,
                 body: JSON.stringify(body)
             });
+        };
+
+        try {
+            let response = await executeFetch(true);
+
+            // Retry Logic:
+            // If we get a 401 Unauthorized AND we are using Ollama AND we sent an API Key,
+            // it's very likely the user has a leftover key from another provider that is being rejected.
+            // Retry without the key.
+            if (response.status === 401 && config.provider === 'ollama' && apiKey) {
+                console.warn("Ollama returned 401 with API Key. Retrying request without Authorization header...");
+                response = await executeFetch(false);
+            }
 
             if (!response.ok) {
                 const text = await response.text();
@@ -457,6 +484,132 @@ export const expandContent = async (content: string, config: AIConfig): Promise<
     return generateAIResponse(prompt, config, config.customPrompts?.expand || "You are a creative writer.", true);
 };
 
+export const enhanceUserPrompt = async (
+    currentInput: string, 
+    history: ChatMessage[], 
+    config: AIConfig,
+    ragContext: string
+): Promise<string> => {
+    const systemPrompt = config.customPrompts?.enhance || "You are an expert prompt engineer. Rewrite the user's draft prompt to be more precise, effective, and context-aware. Use the provided conversation history and knowledge base context to resolve ambiguities. Return ONLY the enhanced prompt string without quotes or explanations.";
+    
+    // Summarize history briefly to save tokens if needed, or pass last few messages
+    const recentHistory = history.slice(-3).map(m => `${m.role}: ${m.content}`).join('\n');
+
+    const metaPrompt = `
+    [Goal]
+    Refine the user's input based on context.
+
+    [Conversation History]
+    ${recentHistory}
+
+    [Knowledge Base Context]
+    ${ragContext}
+
+    [User's Draft Input]
+    ${currentInput}
+    `;
+
+    return generateAIResponse(metaPrompt, config, systemPrompt, true);
+};
+
+export const generateSummary = async (content: string, config: AIConfig): Promise<string> => {
+    const prompt = `Generate a concise 2-3 sentence summary of the following content. Focus on key concepts and main ideas.\n\n${content.substring(0, 3000)}`;
+    return generateAIResponse(prompt, config, "You are a knowledge organizer.", true);
+};
+
+export const suggestTags = async (content: string, config: AIConfig): Promise<string[]> => {
+    const prompt = `Analyze the following content and suggest 3-5 relevant hierarchical tags (e.g. #topic/subtopic). 
+    Return ONLY a JSON array of strings. Example: ["#project/ui", "#dev/react"]
+    
+    Content:
+    ${content.substring(0, 1000)}...`;
+
+    const res = await generateAIResponse(prompt, config, "You are a taxonomy expert.", true);
+    try {
+        const jsonStr = res.replace(/```json/g, '').replace(/```/g, '').trim();
+        const parsed = JSON.parse(jsonStr);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+        return [];
+    }
+};
+
+export const suggestCategory = async (content: string, config: AIConfig): Promise<string> => {
+    const prompt = `Analyze this content and suggest a single, short logical folder path (e.g. "Work/Projects" or "Personal/Journal"). Do not start with slash. Return ONLY the path string.
+    
+    Content:
+    ${content.substring(0, 1000)}...`;
+
+    return await generateAIResponse(prompt, config, "You are a librarian.", true);
+};
+
+export const assessImportance = async (content: string, config: AIConfig): Promise<{ score: number, keyConcepts: string[] }> => {
+    const prompt = `
+    Analyze this text. 
+    1. Score importance from 1-10 based on information density and uniqueness (1=Draft/Scratchpad, 10=Critical/Core Knowledge).
+    2. Extract top 3 key concepts. 
+    
+    Return JSON: { "score": number, "concepts": string[] }.
+    
+    Content:
+    ${content.substring(0, 2000)}...
+    `;
+
+    const res = await generateAIResponse(prompt, config, "You are a critical thinker.", true);
+    try {
+        const jsonStr = res.replace(/```json/g, '').replace(/```/g, '').trim();
+        const data = JSON.parse(jsonStr);
+        return { 
+            score: typeof data.score === 'number' ? Math.min(10, Math.max(1, data.score)) : 5, 
+            keyConcepts: Array.isArray(data.concepts) ? data.concepts : [] 
+        };
+    } catch (e) {
+        return { score: 0, keyConcepts: [] };
+    }
+};
+
+export const extractEntitiesAndRelationships = async (content: string, config: AIConfig): Promise<GraphData> => {
+    if (!content.trim()) return { nodes: [], links: [] };
+
+    const prompt = `
+    Analyze the provided text and perform entity-relationship abstraction.
+    Identify key entities (concepts, people, places, organizations) and their semantic relationships.
+    
+    Return a JSON object with this exact structure:
+    {
+      "nodes": [
+        { "id": "Entity Name", "label": "Entity Name", "group": 5, "val": 2 } 
+      ],
+      "links": [
+        { "source": "Entity Name 1", "target": "Entity Name 2", "relationship": "verb or phrase" }
+      ]
+    }
+    
+    Rules:
+    1. Entities should be concise (1-3 words).
+    2. 'group' should be 5 for these extracted entities to distinguish them visually.
+    3. 'val' represents importance (1-10).
+    4. Return ONLY valid JSON. Do not use Markdown code blocks.
+    
+    Text to analyze:
+    ${content.substring(0, 4000)}
+    `;
+
+    const res = await generateAIResponse(prompt, config, "You are a knowledge graph engineer.", true);
+    try {
+        const jsonStr = res.replace(/```json/g, '').replace(/```/g, '').trim();
+        const data = JSON.parse(jsonStr);
+        // Validate structure basics
+        if (Array.isArray(data.nodes) && Array.isArray(data.links)) {
+            return data;
+        }
+        return { nodes: [], links: [] };
+    } catch (e) {
+        console.error("Failed to parse extracted graph", e);
+        return { nodes: [], links: [] };
+    }
+};
+
 export const generateKnowledgeGraph = async (files: MarkdownFile[], config: AIConfig): Promise<GraphData> => {
     const context = files.slice(0, 5).map(f => `File: ${f.name}\n${f.content.substring(0, 500)}...`).join('\n\n');
     const prompt = `Analyze these files and generate a knowledge graph JSON.
@@ -473,37 +626,124 @@ export const generateKnowledgeGraph = async (files: MarkdownFile[], config: AICo
 };
 
 export const generateMindMap = async (content: string, config: AIConfig): Promise<string> => {
-    const prompt = `Create a Mermaid.js MindMap from this content. Return ONLY the mermaid code. Start with 'mindmap'.\n\n${content}`;
+    const prompt = `Create a Mermaid.js MindMap from this content. Return ONLY the mermaid code. Start with 'mindmap'.
+    
+    IMPORTANT SYNTAX RULES:
+    1. Do NOT use [[ ]] or [ ] in node text. It crashes the parser.
+    2. Replace wikilinks like [[Page Name]] with just "Page Name".
+    3. Keep text concise. 
+    
+    ${content}`;
     const res = await generateAIResponse(prompt, config, "You are a diagram expert.", true);
     return res.replace(/```mermaid/g, '').replace(/```/g, '').trim();
 };
 
 export const generateQuiz = async (content: string, config: AIConfig): Promise<Quiz> => {
-    const prompt = `Generate a quiz from this content in JSON format.
+    const prompt = `Generate a diverse quiz from this content in JSON format.
+    Include Multiple Choice, Fill-in-the-blank, and Short Answer questions if suitable content exists.
+    
     Schema:
     {
       "title": "Quiz Title",
       "description": "Short description",
       "questions": [
          {
-           "id": "q1",
-           "type": "single",
-           "question": "What is...?",
-           "options": ["A", "B", "C", "D"],
-           "correctAnswer": "A",
-           "explanation": "Because..."
+           "type": "single" | "multiple" | "text" | "fill_blank",
+           "question": "Question text. For 'fill_blank', use {{blank}} to denote the missing part.",
+           "options": ["A", "B", "C", "D"], // Only for single/multiple
+           "correctAnswer": "Answer string",
+           "explanation": "Why this is correct",
+           "difficulty": "easy" | "medium" | "hard",
+           "tags": ["tag1", "tag2"],
+           "knowledgePoints": ["KP1", "KP2"]
          }
       ]
     }
-    Return ONLY JSON.`;
+    
+    Rules:
+    1. For 'fill_blank', the question should look like: "The capital of France is {{blank}}." and correctAnswer is "Paris".
+    2. Tags should be short and relevant.
+    3. Determine difficulty based on complexity.
+    
+    Return ONLY valid JSON.`;
     
     const res = await generateAIResponse(prompt, config, "You are a teacher.", true);
     try {
         const jsonStr = res.replace(/```json/g, '').replace(/```/g, '').trim();
         const data = JSON.parse(jsonStr);
+        
+        // Post-process to ensure IDs
+        if (data.questions) {
+            data.questions = data.questions.map((q: any, i: number) => ({
+                ...q,
+                id: `gen-q-${Date.now()}-${i}`,
+                created: Date.now()
+            }));
+        }
+
         return { ...data, id: `quiz-${Date.now()}`, isGraded: false };
     } catch (e) {
+        console.error("Quiz Parse Error", e);
         throw new Error("Failed to parse quiz JSON");
+    }
+};
+
+export const generateStructuredExam = async (
+    topics: string, 
+    count: number, 
+    difficultyDist: string, 
+    files: MarkdownFile[], 
+    config: AIConfig
+): Promise<Quiz> => {
+    const context = files.slice(0, 3).map(f => f.content.substring(0, 1000)).join('\n\n'); // Sample content
+    
+    const prompt = `Generate a structured exam based on these requirements:
+    Topics: ${topics}
+    Total Questions: ${count}
+    Difficulty Distribution: ${difficultyDist}
+    
+    Context Source (Reference Style):
+    ${context}
+    
+    Schema:
+    {
+      "title": "Exam Title",
+      "description": "Exam Description",
+      "questions": [
+         {
+           "type": "single" | "multiple" | "text" | "fill_blank",
+           "question": "Question text",
+           "options": ["Option A", "Option B", "Option C", "Option D"],
+           "correctAnswer": "Answer",
+           "explanation": "Detailed explanation",
+           "difficulty": "easy" | "medium" | "hard",
+           "tags": ["Topic Tag"],
+           "knowledgePoints": ["Key Concept"]
+         }
+      ]
+    }
+    
+    Ensure questions are well-balanced and strictly follow the requested count and difficulty distribution.
+    Return ONLY valid JSON.`;
+
+    const res = await generateAIResponse(prompt, config, "You are an expert exam setter.", true);
+    
+    try {
+        const jsonStr = res.replace(/```json/g, '').replace(/```/g, '').trim();
+        const data = JSON.parse(jsonStr);
+        
+        if (data.questions) {
+            data.questions = data.questions.map((q: any, i: number) => ({
+                ...q,
+                id: `exam-q-${Date.now()}-${i}`,
+                created: Date.now()
+            }));
+        }
+
+        return { ...data, id: `exam-${Date.now()}`, isGraded: false };
+    } catch (e) {
+        console.error("Exam Gen Error", e);
+        throw new Error("Failed to generate exam structure");
     }
 };
 
@@ -528,6 +768,61 @@ export const gradeQuizQuestion = async (question: string, userAnswer: string, co
     }
 };
 
+export const gradeSubjectiveAnswer = async (
+    question: string, 
+    userAnswer: string, 
+    referenceAnswer: string,
+    context: string, 
+    config: AIConfig
+): Promise<GradingResult> => {
+    const prompt = `
+    You are an expert exam grader. Evaluate the User Answer based on the Question and Reference Answer (or Context).
+    
+    Grading Criteria:
+    1. Semantic Similarity (50%): Does the answer convey the correct meaning?
+    2. Key Information (30%): Are key terms or concepts present?
+    3. Clarity & Completeness (20%): Is it well-explained?
+
+    Context / Reference Material:
+    ${context.substring(0, 1000)}
+
+    Question: ${question}
+    Reference Answer (if any): ${referenceAnswer}
+    User Answer: ${userAnswer}
+
+    Return a JSON object:
+    {
+        "score": number, // 0 to 100
+        "feedback": "Concise justification for the score.",
+        "keyPointsMatched": ["List of key concepts the user got right"],
+        "keyPointsMissed": ["List of key concepts missing or incorrect"],
+        "suggestion": "Optional tip for improvement"
+    }
+    `;
+
+    const res = await generateAIResponse(prompt, config, "You are a strict but fair academic grader.", true);
+    
+    try {
+        const jsonStr = res.replace(/```json/g, '').replace(/```/g, '').trim();
+        const result = JSON.parse(jsonStr);
+        return {
+            score: typeof result.score === 'number' ? Math.min(100, Math.max(0, result.score)) : 0,
+            feedback: result.feedback || "No feedback provided.",
+            keyPointsMatched: Array.isArray(result.keyPointsMatched) ? result.keyPointsMatched : [],
+            keyPointsMissed: Array.isArray(result.keyPointsMissed) ? result.keyPointsMissed : [],
+            suggestion: result.suggestion
+        };
+    } catch (e) {
+        console.error("Grading Parse Error", e);
+        return {
+            score: 0,
+            feedback: "Error parsing AI grading result.",
+            keyPointsMatched: [],
+            keyPointsMissed: []
+        };
+    }
+};
+
 export const generateQuizExplanation = async (question: string, correct: string, user: string, context: string, config: AIConfig): Promise<string> => {
     const prompt = `Explain why the answer is ${correct} and why ${user} might be wrong/right.
     Question: ${question}
@@ -535,43 +830,60 @@ export const generateQuizExplanation = async (question: string, correct: string,
     return generateAIResponse(prompt, config, "You are a tutor.", true);
 };
 
-export const compactConversation = async (messages: ChatMessage[], config: AIConfig): Promise<ChatMessage[]> => {
-    if (messages.length <= 4) return messages;
-    
-    const textToSummarize = messages.slice(0, -2).map(m => `${m.role}: ${m.content}`).join('\n');
-    const prompt = `Summarize this conversation history into a concise context paragraph.`;
-    const summary = await generateAIResponse(prompt, config, "You are a summarizer.", true);
-    
-    const systemMsg: ChatMessage = { 
-        id: 'summary-' + Date.now(), 
-        role: 'system', 
-        content: `Previous Context: ${summary}`, 
-        timestamp: Date.now() 
-    };
-    
-    return [systemMsg, ...messages.slice(-2)];
-};
-
 export const synthesizeKnowledgeBase = async (files: MarkdownFile[], config: AIConfig): Promise<string> => {
-    const context = files.slice(0, 5).map(f => `File: ${f.name}\n${f.content.substring(0, 500)}...`).join('\n\n');
-    const prompt = `Analyze these files and synthesize the key information into a cohesive summary.\n\n${context}`;
-    return generateAIResponse(prompt, config, "You are a research analyst.", true);
+    const summaries = files.slice(0, 10).map(f => `File: ${f.name}\n${f.content.substring(0, 200)}...`).join('\n\n');
+    const prompt = `Synthesize a comprehensive summary of the following knowledge base fragments. Identify overarching themes and connections.\n\n${summaries}`;
+    return generateAIResponse(prompt, config, "You are a research synthesist.", true);
 };
 
-// --- Virtual MCP Client for Settings ---
 export class VirtualMCPClient {
-    constructor(private configStr: string) {}
-    
-    getTools() {
+    private config: any;
+    constructor(configStr: string) {
         try {
-            const config = JSON.parse(this.configStr);
-            if (config.mcpServers && Object.keys(config.mcpServers).length > 0) {
-                 return [
-                     { name: 'mcp_read_resource', description: 'Read a resource from the MCP server.', inputSchema: { properties: { uri: { type: 'string' } } } },
-                     { name: 'mcp_list_resources', description: 'List available resources.', inputSchema: { properties: {} } }
-                 ];
-            }
+            this.config = JSON.parse(configStr);
+        } catch (e) {
+            this.config = {};
+        }
+    }
+
+    getTools(): any[] {
+        if (this.config && this.config.mcpServers) {
+            // Return dummy tools for validation display in UI
             return [];
-        } catch { return []; }
+        }
+        return [];
     }
 }
+
+export const compactConversation = async (messages: ChatMessage[], config: AIConfig): Promise<ChatMessage[]> => {
+    if (messages.length <= 4) return messages;
+
+    const systemMsg = messages.find(m => m.role === 'system');
+    const recent = messages.slice(-2);
+    const toSummarize = messages.filter(m => m !== systemMsg && !recent.includes(m));
+
+    if (toSummarize.length === 0) return messages;
+
+    const conversationText = toSummarize.map(m => `${m.role}: ${m.content}`).join('\n');
+    const prompt = `Summarize the key points of this conversation history to retain context for future turns. Return only the summary text.\n\n${conversationText}`;
+
+    try {
+        const summary = await generateAIResponse(prompt, config, "You are a helpful assistant.", true);
+        
+        const summaryMsg: ChatMessage = {
+            id: `summary-${Date.now()}`,
+            role: 'system',
+            content: `[Previous Context Summary]: ${summary}`,
+            timestamp: Date.now()
+        };
+
+        return [
+            ...(systemMsg ? [systemMsg] : []),
+            summaryMsg,
+            ...recent
+        ];
+    } catch (e) {
+        console.error("Compaction failed", e);
+        return messages;
+    }
+};

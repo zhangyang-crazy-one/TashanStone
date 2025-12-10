@@ -86,3 +86,121 @@ export async function platformFetchJson<T>(url: string, options: RequestInit = {
 
     return response.json();
 }
+
+/**
+ * Platform-aware streaming fetch for AI responses
+ * Returns an AsyncGenerator that yields response chunks in real-time
+ * In Electron: Uses IPC events for true streaming
+ * In Browser: Uses native ReadableStream
+ */
+export async function* platformStreamFetch(url: string, options: RequestInit = {}): AsyncGenerator<string, void, unknown> {
+    const platform = getPlatform();
+
+    if (platform.isElectron && window.electronAPI?.ai?.streamFetch) {
+        // Use Electron's IPC-based streaming
+        try {
+            const { streamId, status } = await window.electronAPI.ai.streamFetch(url, options);
+
+            if (status === 0) {
+                throw new Error('Network error: Failed to connect to AI service');
+            }
+
+            if (status >= 400) {
+                throw new Error(`HTTP error! status: ${status}`);
+            }
+
+            // Create a promise-based queue for stream chunks
+            const chunkQueue: Array<{ chunk?: string; done: boolean; error?: string }> = [];
+            let resolveNext: ((value: { chunk?: string; done: boolean; error?: string } | null) => void) | null = null;
+            let streamEnded = false;
+
+            // Set up the stream chunk listener
+            const cleanup = window.electronAPI.ai.onStreamChunk((data) => {
+                // Only process chunks for this stream
+                if (data.streamId !== streamId) return;
+
+                if (resolveNext) {
+                    // Someone is waiting for data
+                    resolveNext(data);
+                    resolveNext = null;
+                } else {
+                    // Queue the chunk
+                    chunkQueue.push(data);
+                }
+
+                if (data.done || data.error) {
+                    streamEnded = true;
+                }
+            });
+
+            try {
+                // Yield chunks as they arrive
+                while (true) {
+                    let data: { chunk?: string; done: boolean; error?: string } | null;
+
+                    if (chunkQueue.length > 0) {
+                        data = chunkQueue.shift()!;
+                    } else if (streamEnded) {
+                        break;
+                    } else {
+                        // Wait for next chunk
+                        data = await new Promise<{ chunk?: string; done: boolean; error?: string } | null>(
+                            (resolve) => {
+                                resolveNext = resolve;
+                                // Safety timeout of 60 seconds
+                                setTimeout(() => {
+                                    if (resolveNext === resolve) {
+                                        resolve({ done: true, error: 'Stream timeout' });
+                                    }
+                                }, 60000);
+                            }
+                        );
+                    }
+
+                    if (!data) break;
+
+                    if (data.error) {
+                        throw new Error(data.error);
+                    }
+
+                    if (data.chunk) {
+                        yield data.chunk;
+                    }
+
+                    if (data.done) {
+                        break;
+                    }
+                }
+            } finally {
+                cleanup();
+            }
+        } catch (error) {
+            throw error;
+        }
+    } else {
+        // Browser mode: Use native fetch with ReadableStream
+        const finalUrl = rewriteUrlForProxy(url);
+        const response = await fetch(finalUrl, options);
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        if (!response.body) {
+            throw new Error('No response body');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                yield decoder.decode(value, { stream: true });
+            }
+        } finally {
+            reader.releaseLock();
+        }
+    }
+}

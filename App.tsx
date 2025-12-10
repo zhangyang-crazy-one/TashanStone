@@ -10,8 +10,16 @@ import { AISettingsModal } from './components/AISettingsModal';
 import { KnowledgeGraph } from './components/KnowledgeGraph';
 import { QuizPanel } from './components/QuizPanel';
 import { MindMap } from './components/MindMap';
-import { ViewMode, AIState, MarkdownFile, AIConfig, ChatMessage, GraphData, AppTheme, Quiz, RAGStats, AppShortcut, RAGResultData } from './types';
-import { polishContent, expandContent, generateAIResponse, generateKnowledgeGraph, synthesizeKnowledgeBase, generateQuiz, generateMindMap, extractQuizFromRawContent, compactConversation } from './services/aiService';
+import { LoginScreen } from './components/LoginScreen';
+import { EditorTabs } from './components/EditorTabs';
+import { SplitEditor } from './components/SplitEditor';
+import { DiffView } from './components/DiffView';
+import { AnalyticsDashboard } from './components/AnalyticsDashboard';
+import { LearningRoadmap } from './components/LearningRoadmap';
+import { ConfirmDialog } from './components/ConfirmDialog';
+import { VoiceTranscriptionModal } from './components/VoiceTranscriptionModal';
+import { ViewMode, AIState, MarkdownFile, AIConfig, ChatMessage, GraphData, AppTheme, Quiz, RAGStats, AppShortcut, RAGResultData, EditorPane, Snippet, StudyPlan, ExamResult, KnowledgePointStat } from './types';
+import { polishContent, expandContent, generateAIResponse, generateAIResponseStream, generateKnowledgeGraph, synthesizeKnowledgeBase, generateQuiz, generateMindMap, extractQuizFromRawContent, compactConversation } from './services/aiService';
 import { applyTheme, getAllThemes, getSavedThemeId, saveCustomTheme, deleteCustomTheme, DEFAULT_THEMES, getLastUsedThemeIdForMode } from './services/themeService';
 import { readDirectory, saveFileToDisk, processPdfFile, extractTextFromFile, parseCsvToQuiz, isExtensionSupported } from './services/fileService';
 import { VectorStore } from './services/ragService';
@@ -62,6 +70,11 @@ interface FileHistory {
 }
 
 const App: React.FC = () => {
+  // --- Authentication State ---
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [currentUsername, setCurrentUsername] = useState<string>('');
+
   // --- Theme State ---
   const [themes, setThemes] = useState<AppTheme[]>(() => {
     const t = getAllThemes();
@@ -76,6 +89,8 @@ const App: React.FC = () => {
       applyTheme(currentTheme);
     }
   }, [activeThemeId, themes]);
+
+  // NOTE: Authentication check moved after aiConfig declaration (around line 200+)
 
   const handleThemeChange = (id: string) => {
     const theme = themes.find(t => t.id === id);
@@ -141,8 +156,8 @@ const App: React.FC = () => {
       const saved = localStorage.getItem('neon-ai-config');
       if (saved) {
         const parsed = JSON.parse(saved);
-        return { 
-          ...DEFAULT_AI_CONFIG, 
+        return {
+          ...DEFAULT_AI_CONFIG,
           ...parsed,
           customPrompts: { ...DEFAULT_AI_CONFIG.customPrompts, ...parsed.customPrompts }
         };
@@ -150,6 +165,41 @@ const App: React.FC = () => {
       return DEFAULT_AI_CONFIG;
     } catch (e) { return DEFAULT_AI_CONFIG; }
   });
+
+  // --- Authentication Check (depends on aiConfig) ---
+  useEffect(() => {
+    const checkAuth = async () => {
+      // Check if login protection is enabled
+      const loginProtectionEnabled = aiConfig.security?.enableLoginProtection ?? false;
+
+      // Only check auth in Electron mode AND if login protection is enabled
+      if (window.electronAPI?.db?.auth && loginProtectionEnabled) {
+        try {
+          const registered = await window.electronAPI.db.auth.isRegistered();
+          if (!registered) {
+            // First-time use, needs registration
+            setIsCheckingAuth(false);
+            setIsAuthenticated(false);
+          } else {
+            // Already registered, needs login
+            const username = await window.electronAPI.db.auth.getUsername();
+            setCurrentUsername(username);
+            setIsCheckingAuth(false);
+            setIsAuthenticated(false); // User must enter password
+          }
+        } catch (error) {
+          console.error('Auth check failed:', error);
+          setIsCheckingAuth(false);
+          setIsAuthenticated(true); // Fail open for better UX
+        }
+      } else {
+        // Web mode or login protection disabled, skip authentication
+        setIsCheckingAuth(false);
+        setIsAuthenticated(true);
+      }
+    };
+    checkAuth();
+  }, [aiConfig.security?.enableLoginProtection]); // Re-run when login protection setting changes
 
   const [shortcuts, setShortcuts] = useState<AppShortcut[]>(() => {
     try {
@@ -167,6 +217,40 @@ const App: React.FC = () => {
   const [quizContext, setQuizContext] = useState<string>(''); // Stores raw text for quiz generation context
   const [mindMapContent, setMindMapContent] = useState<string>('');
 
+  // Diff View State
+  const [diffOriginal, setDiffOriginal] = useState<string>('');
+  const [diffModified, setDiffModified] = useState<string>('');
+
+  // Analytics State
+  const [examHistory, setExamHistory] = useState<ExamResult[]>(() => {
+    try {
+      const saved = localStorage.getItem('neon-exam-history');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+
+  const [knowledgeStats, setKnowledgeStats] = useState<KnowledgePointStat[]>([]);
+
+  // Learning Roadmap State
+  const [studyPlans, setStudyPlans] = useState<StudyPlan[]>(() => {
+    try {
+      const saved = localStorage.getItem('neon-study-plans');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+
+  // Snippets State
+  const [snippets, setSnippets] = useState<Snippet[]>(() => {
+    try {
+      const saved = localStorage.getItem('neon-snippets');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+
+  // Streaming State
+  const [isStreaming, setIsStreaming] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
   // Chat History (Persistent)
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => {
     try {
@@ -180,8 +264,51 @@ const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isVoiceTranscriptionOpen, setIsVoiceTranscriptionOpen] = useState(false);
   const [aiState, setAiState] = useState<AIState>({ isThinking: false, error: null, message: null });
   const [ragStats, setRagStats] = useState<RAGStats>({ totalFiles: 0, indexedFiles: 0, totalChunks: 0, isIndexing: false });
+
+  // Multi-File Editor State
+  const [openPanes, setOpenPanes] = useState<EditorPane[]>(() => {
+    try {
+      const saved = localStorage.getItem('neon-editor-panes');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+  const [activePaneId, setActivePaneId] = useState<string | null>(() => {
+    try {
+      const saved = localStorage.getItem('neon-active-pane');
+      return saved || null;
+    } catch (e) {
+      return null;
+    }
+  });
+  const [splitMode, setSplitMode] = useState<'none' | 'horizontal' | 'vertical'>(() => {
+    try {
+      const saved = localStorage.getItem('neon-split-mode');
+      return (saved as 'none' | 'horizontal' | 'vertical') || 'none';
+    } catch (e) {
+      return 'none';
+    }
+  });
+
+  // Confirm Dialog State
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    type?: 'danger' | 'warning' | 'info';
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
 
   // Refs
   const filesRef = useRef(files);
@@ -219,10 +346,36 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('neon-chat-history', JSON.stringify(chatMessages));
   }, [chatMessages]);
-  
+
   useEffect(() => {
     localStorage.setItem('neon-ai-config', JSON.stringify(aiConfig));
   }, [aiConfig]);
+
+  // Persist new states
+  useEffect(() => {
+    localStorage.setItem('neon-exam-history', JSON.stringify(examHistory));
+  }, [examHistory]);
+
+  useEffect(() => {
+    localStorage.setItem('neon-study-plans', JSON.stringify(studyPlans));
+  }, [studyPlans]);
+
+  useEffect(() => {
+    localStorage.setItem('neon-snippets', JSON.stringify(snippets));
+  }, [snippets]);
+
+  // Persist Multi-File Editor State
+  useEffect(() => {
+    localStorage.setItem('neon-editor-panes', JSON.stringify(openPanes));
+  }, [openPanes]);
+
+  useEffect(() => {
+    localStorage.setItem('neon-active-pane', activePaneId || '');
+  }, [activePaneId]);
+
+  useEffect(() => {
+    localStorage.setItem('neon-split-mode', splitMode);
+  }, [splitMode]);
 
   // Initialize VectorStore and MCP on startup
   useEffect(() => {
@@ -288,7 +441,33 @@ const App: React.FC = () => {
     setAiState({ isThinking: false, error: isError ? message : null, message: isError ? null : message });
     setTimeout(() => setAiState(prev => ({ ...prev, message: null, error: null })), 4000);
   }, []);
-  
+
+  const showConfirmDialog = useCallback((
+    title: string,
+    message: string,
+    onConfirm: () => void,
+    type: 'danger' | 'warning' | 'info' = 'warning',
+    confirmText?: string,
+    cancelText?: string
+  ) => {
+    setConfirmDialog({
+      isOpen: true,
+      title,
+      message,
+      confirmText,
+      cancelText,
+      type,
+      onConfirm: () => {
+        onConfirm();
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+      }
+    });
+  }, []);
+
+  const closeConfirmDialog = useCallback(() => {
+    setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+  }, []);
+
   // Memoized Node Click Handler to prevent Graph re-renders
   const handleNodeClick = useCallback((id: string) => {
       showToast(`Selected: ${id}`);
@@ -385,9 +564,21 @@ const App: React.FC = () => {
 
   const handleDeleteFile = (id: string) => {
     if (files.length <= 1) return;
-    const newFiles = files.filter(f => f.id !== id);
-    setFiles(newFiles);
-    if (activeFileId === id) setActiveFileId(newFiles[0].id);
+    const fileToDelete = files.find(f => f.id === id);
+    const fileName = fileToDelete?.name || 'this file';
+
+    showConfirmDialog(
+      t.deleteFileTitle,
+      `${t.deleteFileMessage.replace('this file', fileName)}`,
+      () => {
+        const newFiles = files.filter(f => f.id !== id);
+        setFiles(newFiles);
+        if (activeFileId === id) setActiveFileId(newFiles[0].id);
+      },
+      'danger',
+      t.delete,
+      t.cancel
+    );
   };
 
   const updateActiveFile = (content: string, skipHistory = false) => {
@@ -475,26 +666,89 @@ const App: React.FC = () => {
          const oldPath = f.path || f.name;
          const pathParts = oldPath.replace(/\\/g, '/').split('/');
          const oldNameWithExt = pathParts[pathParts.length - 1];
-         
+
          const lastDotIndex = oldNameWithExt.lastIndexOf('.');
          const ext = lastDotIndex !== -1 ? oldNameWithExt.substring(lastDotIndex) : '';
-         
+
          let finalName = newName;
          if (ext && !finalName.toLowerCase().endsWith(ext.toLowerCase())) {
              if (finalName.indexOf('.') === -1) {
                  finalName += ext;
              }
          }
-         
+
          pathParts[pathParts.length - 1] = finalName;
          const newPath = pathParts.join('/');
-         
+
          const nameForDisplay = finalName.includes('.') ? finalName.substring(0, finalName.lastIndexOf('.')) : finalName;
-         
+
          return { ...f, name: nameForDisplay, path: newPath };
       }
       return f;
     }));
+  };
+
+  // --- Multi-File Editor Handlers ---
+
+  const openFileInPane = (fileId: string) => {
+    // 检查是否已打开
+    const existing = openPanes.find(p => p.fileId === fileId);
+    if (existing) {
+      setActivePaneId(existing.id);
+      setActiveFileId(fileId); // 同步更新 activeFileId
+      return;
+    }
+
+    const newPane: EditorPane = {
+      id: crypto.randomUUID(),
+      fileId,
+      mode: 'editor'
+    };
+    setOpenPanes([...openPanes, newPane]);
+    setActivePaneId(newPane.id);
+    setActiveFileId(fileId); // 同步更新 activeFileId
+  };
+
+  const closePane = (paneId: string) => {
+    const newPanes = openPanes.filter(p => p.id !== paneId);
+    setOpenPanes(newPanes);
+
+    if (activePaneId === paneId) {
+      // 如果关闭的是活动面板，切换到下一个面板
+      if (newPanes.length > 0) {
+        const closedIndex = openPanes.findIndex(p => p.id === paneId);
+        const nextIndex = Math.min(closedIndex, newPanes.length - 1);
+        const nextPane = newPanes[nextIndex];
+        setActivePaneId(nextPane.id);
+        setActiveFileId(nextPane.fileId); // 同步更新 activeFileId
+      } else {
+        setActivePaneId(null);
+      }
+    }
+  };
+
+  const togglePaneMode = (paneId: string) => {
+    setOpenPanes(openPanes.map(p =>
+      p.id === paneId
+        ? { ...p, mode: p.mode === 'editor' ? 'preview' : 'editor' }
+        : p
+    ));
+  };
+
+  const selectPane = (paneId: string) => {
+    setActivePaneId(paneId);
+    // 同步更新 activeFileId
+    const pane = openPanes.find(p => p.id === paneId);
+    if (pane) {
+      setActiveFileId(pane.fileId);
+    }
+  };
+
+  const handlePaneContentChange = (fileId: string, content: string) => {
+    const updated = files.map(f =>
+      f.id === fileId ? { ...f, content, lastModified: Date.now() } : f
+    );
+    setFiles(updated);
   };
 
   // --- New Features ---
@@ -693,11 +947,32 @@ const App: React.FC = () => {
     }
   };
 
+  // Helper: 获取当前活动面板的文件内容
+  const getActivePaneContent = (): string => {
+    // 1. 尝试使用 activePaneId 获取当前面板对应的文件
+    if (activePaneId) {
+      const activePane = openPanes.find(p => p.id === activePaneId);
+      if (activePane) {
+        const file = files.find(f => f.id === activePane.fileId);
+        if (file) return file.content;
+      }
+    }
+    // 2. 回退到 activeFile
+    return activeFile?.content || '';
+  };
+
   const handleGenerateMindMap = async () => {
-    if (!activeFile || !activeFile.content.trim()) return;
+    // 使用活动面板的文件内容
+    const currentContent = getActivePaneContent();
+
+    if (!currentContent.trim()) {
+      showToast(t.polishEmptyError || "Please add content before generating mind map", true);
+      return;
+    }
+
     setAiState({ isThinking: true, message: "Dreaming up Mind Map...", error: null });
     try {
-      const mermaidCode = await generateMindMap(activeFile.content, aiConfig);
+      const mermaidCode = await generateMindMap(currentContent, aiConfig);
       setMindMapContent(mermaidCode);
       setViewMode(ViewMode.MindMap);
     } catch (e: any) {
@@ -708,15 +983,31 @@ const App: React.FC = () => {
   };
 
   const handleGenerateQuiz = async () => {
-    if (!activeFile || !activeFile.content.trim()) return;
+    // 使用活动面板的文件内容
+    const currentContent = getActivePaneContent();
+
+    if (!currentContent.trim()) {
+      showToast(t.polishEmptyError || "Please add content before generating quiz", true);
+      return;
+    }
+
     setAiState({ isThinking: true, message: "Creating Quiz...", error: null });
     try {
-      const quiz = await generateQuiz(activeFile.content, aiConfig);
-      setQuizContext(activeFile.content); 
+      const quiz = await generateQuiz(currentContent, aiConfig);
+
+      // 验证生成的 quiz 是否有效
+      if (!quiz || !quiz.questions || quiz.questions.length === 0) {
+        throw new Error("Failed to generate quiz questions. The AI response was empty or invalid.");
+      }
+
+      setQuizContext(currentContent);
       setCurrentQuiz(quiz);
       setViewMode(ViewMode.Quiz);
+      showToast(`Quiz generated with ${quiz.questions.length} questions!`, false);
     } catch (e: any) {
-      showToast(e.message, true);
+      console.error('[Quiz Generation Error]', e);
+      showToast(`Quiz generation failed: ${e.message}`, true);
+      // 不切换视图，保持在当前界面
     } finally {
       setAiState(prev => ({ ...prev, isThinking: false, message: null }));
     }
@@ -725,18 +1016,18 @@ const App: React.FC = () => {
   const handleTextFormat = (startTag: string, endTag: string) => {
       const textarea = editorRef.current;
       if (!textarea) return;
-      
+
       const start = textarea.selectionStart;
       const end = textarea.selectionEnd;
       const content = activeFile.content;
-      
+
       const selectedText = content.substring(start, end);
       const newText = `${startTag}${selectedText}${endTag}`;
-      
+
       const newContent = content.substring(0, start) + newText + content.substring(end);
-      
+
       updateActiveFile(newContent);
-      
+
       setTimeout(() => {
           if (editorRef.current) {
               editorRef.current.focus();
@@ -744,119 +1035,171 @@ const App: React.FC = () => {
           }
       }, 0);
   };
-  
+
+  // --- Phase 8 Handler Functions ---
+
+  // DiffView handlers
+  const handleApplyDiff = (text: string) => {
+    updateActiveFile(text);
+    setViewMode(ViewMode.Editor);
+    showToast('Changes applied');
+  };
+
+  const handleCancelDiff = () => {
+    setViewMode(ViewMode.Editor);
+  };
+
+  // StudyPlan handlers
+  const handleCompleteTask = (planId: string, taskId: string) => {
+    setStudyPlans(prev => prev.map(plan => {
+      if (plan.id !== planId) return plan;
+      const updatedTasks = plan.tasks.map(task => {
+        if (task.id !== taskId) return task;
+        return { ...task, status: 'completed' as const, completedDate: Date.now() };
+      });
+      const completedCount = updatedTasks.filter(t => t.status === 'completed').length;
+      const progress = Math.round((completedCount / updatedTasks.length) * 100);
+      return { ...plan, tasks: updatedTasks, progress };
+    }));
+  };
+
+  const getIntervalMs = (label: string): number => {
+    const map: Record<string, number> = {
+      '5 mins': 5 * 60 * 1000,
+      '30 mins': 30 * 60 * 1000,
+      '12 hours': 12 * 60 * 60 * 1000,
+      '1 day': 24 * 60 * 60 * 1000,
+      '2 days': 2 * 24 * 60 * 60 * 1000,
+      '4 days': 4 * 24 * 60 * 60 * 1000,
+      '7 days': 7 * 24 * 60 * 60 * 1000,
+    };
+    return map[label] || 0;
+  };
+
+  const handleCreatePlan = (sourceType: 'file' | 'mistake', sourceId: string, title: string) => {
+    const intervals = ['5 mins', '30 mins', '12 hours', '1 day', '2 days', '4 days', '7 days'];
+    const now = Date.now();
+    const tasks = intervals.map((label, i) => ({
+      id: crypto.randomUUID(),
+      scheduledDate: now + getIntervalMs(label),
+      status: i === 0 ? ('pending' as const) : ('future' as const),
+      intervalLabel: label
+    }));
+
+    const newPlan: StudyPlan = {
+      id: crypto.randomUUID(),
+      title,
+      sourceType,
+      sourceId,
+      createdDate: now,
+      tasks,
+      progress: 0
+    };
+    setStudyPlans(prev => [...prev, newPlan]);
+  };
+
+  const handleDeletePlan = (planId: string) => {
+    setStudyPlans(prev => prev.filter(p => p.id !== planId));
+  };
+
+  // Snippet handlers
+  const handleCreateSnippet = (snippet: Omit<Snippet, 'id'>) => {
+    const newSnippet: Snippet = { ...snippet, id: crypto.randomUUID() };
+    setSnippets(prev => [...prev, newSnippet]);
+    showToast('Snippet created');
+  };
+
+  const handleDeleteSnippet = (id: string) => {
+    setSnippets(prev => prev.filter(s => s.id !== id));
+    showToast('Snippet deleted');
+  };
+
+  const handleInsertSnippet = (content: string) => {
+    if (!activeFile) return;
+    const newContent = activeFile.content + '\n\n' + content;
+    updateActiveFile(newContent);
+    showToast('Snippet inserted');
+  };
+
+  // Streaming control handler
+  const handleStopStreaming = () => {
+    abortControllerRef.current?.abort();
+    setIsStreaming(false);
+    setAiState(prev => ({ ...prev, isThinking: false }));
+  };
+
   // -- AI Actions Wrappers for Shortcuts --
   const performPolish = async () => {
+     // 使用活动面板的文件内容
+     const currentContent = getActivePaneContent();
+
+     // 验证内容非空
+     if (!currentContent.trim()) {
+        showToast(t.polishEmptyError || "Please add content before polishing", true);
+        return;
+     }
+
      try {
-        saveSnapshot(); 
+        saveSnapshot();
         setAiState({ isThinking: true, message: "Polishing...", error: null });
-        const res = await polishContent(activeFile.content, aiConfig);
-        updateActiveFile(res);
-        showToast("Polished!");
+        const res = await polishContent(currentContent, aiConfig);
+        // Show DiffView instead of directly applying changes
+        setDiffOriginal(currentContent);
+        setDiffModified(res);
+        setViewMode(ViewMode.Diff);
+        showToast("Polish complete - review changes");
      } catch(e:any) { showToast(e.message, true); }
      finally { setAiState(p => ({...p, isThinking: false, message: null})); }
   };
-  
+
   const performGraph = async (useActiveFileOnly: boolean = false) => {
       try {
         setAiState({ isThinking: true, message: "Analyzing Graph...", error: null });
-        // If useActiveFileOnly and there's an active file, use only that file
-        const filesToAnalyze = (useActiveFileOnly && activeFile) ? [activeFile] : files;
+
+        // 使用活动面板的文件内容
+        const currentContent = getActivePaneContent();
+
+        let filesToAnalyze: MarkdownFile[];
+        if (useActiveFileOnly && activeFile) {
+          filesToAnalyze = [{ ...activeFile, content: currentContent }];
+        } else {
+          // 对于多文件分析，更新当前活动文件的内容
+          if (currentContent && activeFile) {
+            filesToAnalyze = files.map(f =>
+              f.id === activeFile.id ? { ...f, content: currentContent } : f
+            );
+          } else {
+            filesToAnalyze = files;
+          }
+        }
+
         const data = await generateKnowledgeGraph(filesToAnalyze, aiConfig);
         setGraphData(data);
         setViewMode(ViewMode.Graph);
      } catch(e:any) { showToast(e.message, true); }
      finally { setAiState(p => ({...p, isThinking: false, message: null})); }
   };
-  
+
   const performSynthesize = async () => {
      try {
         setAiState({ isThinking: true, message: "Synthesizing Knowledge Base...", error: null });
-        const summary = await synthesizeKnowledgeBase(files, aiConfig);
+
+        // 使用活动面板的文件内容更新当前活动文件
+        const currentContent = getActivePaneContent();
+        let filesToSynthesize = files;
+        if (currentContent && activeFile) {
+          filesToSynthesize = files.map(f =>
+            f.id === activeFile.id ? { ...f, content: currentContent } : f
+          );
+        }
+
+        const summary = await synthesizeKnowledgeBase(filesToSynthesize, aiConfig);
         const newFile: MarkdownFile = { id: generateId(), name: 'Master-Summary', content: summary, lastModified: Date.now(), path: 'Master-Summary.md' };
         setFiles([...files, newFile]);
         setActiveFileId(newFile.id);
         setViewMode(ViewMode.Preview);
      } catch(e:any) { showToast(e.message, true); }
      finally { setAiState(p => ({...p, isThinking: false, message: null})); }
-  };
-
-  const executeAiTool = async (toolName: string, args: any) => {
-    // Handle search_knowledge_base tool
-    if (toolName === 'search_knowledge_base') {
-      try {
-        // Check if there are files that need indexing
-        if (await vectorStore.hasFilesToIndex(filesRef.current)) {
-          setAiState({ isThinking: true, message: "Indexing Knowledge Base...", error: null });
-          await handleIndexKnowledgeBase();
-        }
-
-        const ragResponse = await vectorStore.searchWithResults(
-          args.query,
-          aiConfig,
-          args.maxResults || 10
-        );
-
-        // Return structured result to AI
-        return {
-          success: true,
-          totalChunks: ragResponse.results.length,
-          queryTime: ragResponse.queryTime,
-          context: ragResponse.context,
-          sources: ragResponse.results.map(r => ({
-            fileName: r.chunk.metadata.fileName,
-            score: r.score,
-            excerpt: r.chunk.text.substring(0, 200) + '...'
-          }))
-        };
-      } catch (error: any) {
-        return {
-          success: false,
-          error: error.message
-        };
-      }
-    }
-
-    if (toolName === 'create_file') {
-      const newFile: MarkdownFile = {
-        id: generateId(),
-        name: args.filename.replace('.md', ''),
-        content: args.content,
-        lastModified: Date.now(),
-        path: args.filename
-      };
-      setFiles(prev => [...prev, newFile]);
-      return { success: true, message: `Created file ${args.filename}` };
-    }
-    if (toolName === 'update_file') {
-      let found = false;
-      const updated = files.map(f => {
-        if (f.name === args.filename.replace('.md', '') || f.name === args.filename) {
-          found = true;
-          return { ...f, content: args.content, lastModified: Date.now() };
-        }
-        return f;
-      });
-      if (found) {
-        setFiles(updated);
-        return { success: true, message: `Updated file ${args.filename}` };
-      }
-      return { success: false, message: "File not found" };
-    }
-    if (toolName === 'delete_file') {
-       const filtered = files.filter(f => f.name !== args.filename.replace('.md', '') && f.name !== args.filename);
-       if (filtered.length < files.length) {
-         setFiles(filtered);
-         return { success: true, message: `Deleted ${args.filename}` };
-       }
-       return { success: false, message: "File not found" };
-    }
-
-    console.log(`[MCP Injection] External Tool Called: ${toolName}`, args);
-    return {
-      success: true,
-      message: `[System] Tool '${toolName}' call captured (MCP Injection Mode). Args: ${JSON.stringify(args)}`
-    };
   };
 
   const handleChatMessage = async (text: string) => {
@@ -869,48 +1212,338 @@ const App: React.FC = () => {
     };
     setChatMessages(prev => [...prev, userMsg]);
 
-    setAiState({ isThinking: true, message: "Thinking...", error: null });
+    // 2. Create placeholder AI message
+    const aiMessageId = generateId();
+    const aiMsg: ChatMessage = {
+      id: aiMessageId,
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now()
+    };
+    setChatMessages(prev => [...prev, aiMsg]);
 
     try {
-      // 2. Build conversation history (filter out RAG result cards)
+      // 3. Build conversation history (filter out RAG result cards)
       const historyForAI = chatMessages
         .filter(m => !m.ragResults)
         .slice(-20);  // Limit to last 20 messages to control token usage
 
-      // 3. Call AI (RAG search now happens via tool calling if AI needs it)
-      const response = await generateAIResponse(
-        text,
-        aiConfig,
-        "You are ZhangNote AI. You can edit files using tools. If asked about user's notes, use the search_knowledge_base tool to retrieve relevant context from the knowledge base.",
-        false,
-        [],
-        executeAiTool,
-        undefined,  // No pre-retrieved context, AI will use tool to search
-        historyForAI
-      );
+      // ===== 统一工具执行器 (内置优先, MCP 其次) =====
+      const executeToolUnified = async (toolName: string, args: any): Promise<{ success: boolean; result: any; formatted: string }> => {
+        console.log('[Tool] Executing:', toolName, args);
 
-      // 4. Add AI response
-      const botMsg: ChatMessage = {
-        id: generateId(),
-        role: 'assistant',
-        content: response,
-        timestamp: Date.now()
+        // ===== 内置工具优先 =====
+        // 1. search_knowledge_base - RAG 搜索
+        if (toolName === 'search_knowledge_base') {
+          try {
+            if (await vectorStore.hasFilesToIndex(filesRef.current)) {
+              await handleIndexKnowledgeBase();
+            }
+            const ragResponse = await vectorStore.searchWithResults(
+              args.query,
+              aiConfig,
+              args.maxResults || 10
+            );
+            const result = {
+              success: true,
+              totalChunks: ragResponse.results.length,
+              context: ragResponse.context,
+              sources: ragResponse.results.map(r => ({
+                fileName: r.chunk.metadata.fileName,
+                score: r.score,
+                excerpt: r.chunk.text.substring(0, 200) + '...'
+              }))
+            };
+            return { success: true, result, formatted: JSON.stringify(result, null, 2) };
+          } catch (error: any) {
+            return { success: false, result: { error: error.message }, formatted: JSON.stringify({ success: false, error: error.message }) };
+          }
+        }
+
+        // 2. create_file - 创建应用内文件
+        if (toolName === 'create_file') {
+          const newFile: MarkdownFile = {
+            id: generateId(),
+            name: args.filename.replace('.md', ''),
+            content: args.content,
+            lastModified: Date.now(),
+            path: args.filename
+          };
+          setFiles(prev => [...prev, newFile]);
+          const result = { success: true, message: `Created file: ${args.filename}` };
+          return { success: true, result, formatted: JSON.stringify(result) };
+        }
+
+        // 3. update_file - 更新应用内文件
+        if (toolName === 'update_file') {
+          let found = false;
+          setFiles(prev => prev.map(f => {
+            if (f.name === args.filename.replace('.md', '') || f.name === args.filename) {
+              found = true;
+              return { ...f, content: args.content, lastModified: Date.now() };
+            }
+            return f;
+          }));
+          if (found) {
+            const result = { success: true, message: `Updated file: ${args.filename}` };
+            return { success: true, result, formatted: JSON.stringify(result) };
+          }
+          return { success: false, result: { error: 'File not found' }, formatted: JSON.stringify({ success: false, error: 'File not found' }) };
+        }
+
+        // 4. delete_file - 删除应用内文件
+        if (toolName === 'delete_file') {
+          let deleted = false;
+          setFiles(prev => {
+            const filtered = prev.filter(f => {
+              const match = f.name === args.filename.replace('.md', '') || f.name === args.filename;
+              if (match) deleted = true;
+              return !match;
+            });
+            return filtered;
+          });
+          if (deleted) {
+            const result = { success: true, message: `Deleted file: ${args.filename}` };
+            return { success: true, result, formatted: JSON.stringify(result) };
+          }
+          return { success: false, result: { error: 'File not found' }, formatted: JSON.stringify({ success: false, error: 'File not found' }) };
+        }
+
+        // ===== 外部 MCP 工具 =====
+        try {
+          const mcpResult = await window.electronAPI?.mcp?.callTool(toolName, args);
+          if (mcpResult?.success) {
+            return { success: true, result: mcpResult.result, formatted: JSON.stringify(mcpResult.result, null, 2) };
+          } else {
+            return { success: false, result: { error: mcpResult?.error || 'Unknown error' }, formatted: `Error: ${mcpResult?.error || 'Unknown error'}` };
+          }
+        } catch (error: any) {
+          return { success: false, result: { error: error.message }, formatted: `Error: ${error.message}` };
+        }
       };
-      setChatMessages(prev => [...prev, botMsg]);
+
+      // 4. Check if streaming is enabled
+      if (aiConfig.enableStreaming) {
+        // ===== 流式模式：使用渐进式解析 =====
+        setIsStreaming(true);
+        setAiState({ isThinking: false, message: null, error: null });
+        abortControllerRef.current = new AbortController();
+
+        let fullContent = '';
+        let conversationHistory = [...historyForAI];
+        let currentPrompt = text;
+        const maxToolRounds = 10;
+        let toolRound = 0;
+
+        try {
+          while (toolRound < maxToolRounds) {
+            toolRound++;
+            console.log(`[Stream] Tool round ${toolRound}/${maxToolRounds}`);
+
+            const stream = generateAIResponseStream(
+              currentPrompt,
+              aiConfig,
+              `You are ZhangNote AI assistant. You can use tools to help users.
+
+## Built-in Tools (应用内工具 - 最高优先级)
+- **create_file**: Create a new file in the app (filename, content)
+- **update_file**: Update an existing file (filename, content)
+- **delete_file**: Delete a file (filename)
+- **search_knowledge_base**: Search user's notes (query)
+
+## Tool Call Format
+When you need to use a tool, output EXACTLY:
+\`\`\`tool_call
+{"tool": "tool_name", "arguments": {"param": "value"}}
+\`\`\`
+
+IMPORTANT:
+- Use create_file/update_file for app files, NOT external MCP tools
+- Output COMPLETE JSON in tool_call block
+- After tool result, continue your response`,
+              [],
+              undefined,
+              conversationHistory
+            );
+
+            let roundContent = '';
+            let pendingToolCall = '';
+            let inToolBlock = false;
+            let toolBlockStart = -1;
+
+            for await (const chunk of stream) {
+              roundContent += chunk;
+
+              // 渐进式检测 tool_call 块
+              const toolBlockMatch = roundContent.match(/```tool_call\s*\n/);
+              if (toolBlockMatch && !inToolBlock) {
+                inToolBlock = true;
+                toolBlockStart = toolBlockMatch.index! + toolBlockMatch[0].length;
+              }
+
+              // 更新显示（过滤掉不完整的 tool_call 块）
+              let displayContent = fullContent + roundContent;
+              if (inToolBlock) {
+                // 检查是否有完整的 tool_call 块
+                const completeMatch = roundContent.match(/```tool_call\s*\n([\s\S]*?)```/);
+                if (!completeMatch) {
+                  // 隐藏不完整的 tool_call 块，显示执行提示
+                  const beforeBlock = roundContent.substring(0, roundContent.indexOf('```tool_call'));
+                  displayContent = fullContent + beforeBlock + '\n\n🔧 *Preparing tool call...*';
+                }
+              }
+
+              setChatMessages(prev => prev.map(msg =>
+                msg.id === aiMessageId
+                  ? { ...msg, content: displayContent }
+                  : msg
+              ));
+            }
+
+            // 流结束后检查完整的 tool_call
+            const toolCallMatch = roundContent.match(/```tool_call\s*\n([\s\S]*?)```/);
+
+            if (toolCallMatch) {
+              try {
+                // 尝试解析 JSON
+                let jsonStr = toolCallMatch[1].trim();
+
+                // 修复常见的 JSON 问题
+                jsonStr = jsonStr.replace(/,\s*}/, '}').replace(/,\s*]/, ']');
+
+                const toolCall = JSON.parse(jsonStr);
+                const toolName = toolCall.tool || toolCall.name;
+                const toolArgs = toolCall.arguments || toolCall.args || {};
+
+                if (!toolName) {
+                  throw new Error('Missing tool name');
+                }
+
+                // 显示执行状态
+                const beforeTool = roundContent.substring(0, roundContent.indexOf('```tool_call'));
+                setChatMessages(prev => prev.map(msg =>
+                  msg.id === aiMessageId
+                    ? { ...msg, content: fullContent + beforeTool + `\n\n🔧 **Executing: ${toolName}**...\n` }
+                    : msg
+                ));
+
+                // 执行工具
+                const toolResult = await executeToolUnified(toolName, toolArgs);
+
+                // 更新内容
+                const afterToolContent = beforeTool +
+                  `\n\n🔧 **Tool: ${toolName}**\n\`\`\`json\n${toolResult.formatted}\n\`\`\`\n`;
+
+                fullContent += afterToolContent;
+
+                setChatMessages(prev => prev.map(msg =>
+                  msg.id === aiMessageId
+                    ? { ...msg, content: fullContent }
+                    : msg
+                ));
+
+                // 更新对话历史继续下一轮
+                conversationHistory = [
+                  ...conversationHistory,
+                  { id: generateId(), role: 'assistant' as const, content: roundContent, timestamp: Date.now() },
+                  { id: generateId(), role: 'user' as const, content: `Tool "${toolName}" result:\n${toolResult.formatted}\n\nContinue with the next step or provide your final answer.`, timestamp: Date.now() }
+                ];
+                currentPrompt = `Tool "${toolName}" result:\n${toolResult.formatted}\n\nContinue with the next step or provide your final answer.`;
+
+              } catch (parseError) {
+                console.error('[Stream] Tool call parse error:', parseError, toolCallMatch[1]);
+                // 解析失败，显示原始内容并停止循环
+                fullContent += roundContent;
+                break;
+              }
+            } else {
+              // 没有工具调用，正常结束
+              fullContent += roundContent;
+              break;
+            }
+          }
+
+          // 最终更新
+          setChatMessages(prev => prev.map(msg =>
+            msg.id === aiMessageId
+              ? { ...msg, content: fullContent }
+              : msg
+          ));
+
+        } finally {
+          setIsStreaming(false);
+          abortControllerRef.current = null;
+        }
+
+      } else {
+        // ===== 非流式模式：使用原生 Function Calling + 实时UI反馈 =====
+        // 注意：不再设置 aiState.isThinking，因为已经有占位消息
+        // 这避免了双重 "思考中" 显示
+
+        // 累积工具调用内容用于显示
+        let toolCallsContent = '';
+
+        // 带UI反馈的工具调用回调
+        const nativeToolCallback = async (name: string, args: any) => {
+          // 1. 显示正在执行的工具
+          toolCallsContent += `\n\n🔧 **Executing: ${name}**...\n`;
+          setChatMessages(prev => prev.map(msg =>
+            msg.id === aiMessageId
+              ? { ...msg, content: toolCallsContent }
+              : msg
+          ));
+
+          // 2. 执行工具
+          const result = await executeToolUnified(name, args);
+
+          // 3. 更新显示工具结果
+          toolCallsContent = toolCallsContent.replace(
+            `🔧 **Executing: ${name}**...`,
+            `🔧 **Tool: ${name}**\n\`\`\`json\n${result.formatted}\n\`\`\``
+          );
+          setChatMessages(prev => prev.map(msg =>
+            msg.id === aiMessageId
+              ? { ...msg, content: toolCallsContent }
+              : msg
+          ));
+
+          return result.result;
+        };
+
+        const response = await generateAIResponse(
+          text,
+          aiConfig,
+          "You are ZhangNote AI assistant. Use the provided tools to help users with their notes.",
+          false,
+          [],
+          nativeToolCallback,
+          undefined,
+          historyForAI
+        );
+
+        // 合并工具调用显示和最终回复
+        const finalContent = toolCallsContent
+          ? toolCallsContent + '\n\n---\n\n' + response
+          : response;
+
+        // 更新消息
+        setChatMessages(prev => prev.map(msg =>
+          msg.id === aiMessageId
+            ? { ...msg, content: finalContent }
+            : msg
+        ));
+      }
 
     } catch (err: any) {
       console.error("Chat error:", err);
       setAiState({ isThinking: false, message: null, error: err.message });
 
-      const errorMsg: ChatMessage = {
-        id: generateId(),
-        role: 'assistant',
-        content: `**Error**: ${err.message}`,
-        timestamp: Date.now()
-      };
-      setChatMessages(prev => [...prev, errorMsg]);
-    } finally {
-      setAiState({ isThinking: false, message: null, error: null });
+      // Update AI message with error
+      setChatMessages(prev => prev.map(msg =>
+        msg.id === aiMessageId
+          ? { ...msg, content: `**Error**: ${err.message}` }
+          : msg
+      ));
     }
   };
 
@@ -1007,13 +1640,36 @@ const App: React.FC = () => {
 
   const currentThemeObj = themes.find(t => t.id === activeThemeId) || themes[0];
 
+  // Loading Screen
+  if (isCheckingAuth) {
+    return (
+      <div className="flex w-full h-screen bg-[rgb(var(--bg-main))] text-[rgb(var(--text-primary))] items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block w-16 h-16 border-4 border-[rgb(var(--primary-500))] border-t-transparent rounded-full animate-spin mb-4"></div>
+          <p className="text-lg font-medium">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Login Screen
+  if (!isAuthenticated) {
+    return (
+      <LoginScreen
+        onLogin={() => setIsAuthenticated(true)}
+        showConfirmDialog={showConfirmDialog}
+      />
+    );
+  }
+
+  // Main Application
   return (
     <div className="flex w-full h-screen bg-paper-50 dark:bg-cyber-900 text-slate-800 dark:text-slate-200 overflow-hidden transition-colors duration-300">
-      
-      <Sidebar 
+
+      <Sidebar
         files={files}
         activeFileId={activeFileId}
-        onSelectFile={setActiveFileId}
+        onSelectFile={openFileInPane}
         onCreateItem={handleCreateItem}
         onDeleteFile={handleDeleteFile}
         onMoveItem={handleMoveItem}
@@ -1026,6 +1682,10 @@ const App: React.FC = () => {
         language={lang}
         ragStats={ragStats}
         onRefreshIndex={() => handleIndexKnowledgeBase()}
+        snippets={snippets}
+        onCreateSnippet={handleCreateSnippet}
+        onDeleteSnippet={handleDeleteSnippet}
+        onInsertSnippet={handleInsertSnippet}
       />
 
       <div className="flex-1 flex flex-col h-full overflow-hidden relative">
@@ -1036,10 +1696,19 @@ const App: React.FC = () => {
           onExport={handleExport}
           onAIPolish={performPolish}
           onAIExpand={async () => {
+              // 使用活动面板的文件内容
+              const currentContent = getActivePaneContent();
+
+              // 验证内容非空
+              if (!currentContent.trim()) {
+                 showToast(t.polishEmptyError || "Please add content before expanding", true);
+                 return;
+              }
+
               try {
-                saveSnapshot(); 
+                saveSnapshot();
                 setAiState({ isThinking: true, message: "Expanding...", error: null });
-                const res = await expandContent(activeFile.content, aiConfig);
+                const res = await expandContent(currentContent, aiConfig);
                 updateActiveFile(res);
                 showToast("Expanded!");
              } catch(e:any) { showToast(e.message, true); }
@@ -1063,9 +1732,23 @@ const App: React.FC = () => {
           onRename={renameActiveFile}
           activeProvider={aiConfig.provider}
           language={lang}
+          splitMode={splitMode}
+          onSplitModeChange={setSplitMode}
+          onVoiceTranscription={() => setIsVoiceTranscriptionOpen(true)}
         />
 
-        <div className="flex-1 flex overflow-hidden relative">
+        {/* Editor Tabs */}
+        <EditorTabs
+          panes={openPanes}
+          activePane={activePaneId}
+          files={files}
+          onSelectPane={selectPane}
+          onClosePane={closePane}
+          onToggleMode={togglePaneMode}
+          language={lang}
+        />
+
+        <div className="flex-1 flex flex-col overflow-hidden relative">
           
           {viewMode === ViewMode.Graph && (
             <KnowledgeGraph 
@@ -1088,34 +1771,57 @@ const App: React.FC = () => {
           )}
 
           {viewMode === ViewMode.MindMap && (
-            <MindMap 
+            <MindMap
               key={activeThemeId}
-              content={mindMapContent} 
-              theme={currentThemeObj?.type || 'dark'} 
-              language={lang} 
+              content={mindMapContent}
+              theme={currentThemeObj?.type || 'dark'}
+              language={lang}
             />
           )}
 
-          {(viewMode === ViewMode.Editor || viewMode === ViewMode.Split) && (
-             <div className={`${viewMode === ViewMode.Split ? 'w-1/2' : 'w-full'} h-full border-r border-paper-200 dark:border-cyber-700`}>
-                <Editor 
-                  ref={editorRef} 
-                  content={activeFile?.content || ''} 
-                  onChange={updateActiveFile}
-                  onUndo={handleUndo}
-                  onRedo={handleRedo}
-                />
-             </div>
-          )}
-          
-          {(viewMode === ViewMode.Preview || viewMode === ViewMode.Split) && (
-             <div className={`${viewMode === ViewMode.Split ? 'w-1/2' : 'w-full'} h-full overflow-hidden`}>
-                <Preview content={activeFile?.content || ''} />
-             </div>
+          {viewMode === ViewMode.Diff && (
+            <DiffView
+              originalText={diffOriginal}
+              modifiedText={diffModified}
+              onApply={handleApplyDiff}
+              onCancel={handleCancelDiff}
+              language={lang}
+            />
           )}
 
-          <ChatPanel 
-            isOpen={isChatOpen} 
+          {viewMode === ViewMode.Analytics && (
+            <AnalyticsDashboard
+              examResults={examHistory}
+              knowledgeStats={knowledgeStats}
+              totalStudyTime={0}
+              language={lang}
+            />
+          )}
+
+          {viewMode === ViewMode.Roadmap && (
+            <LearningRoadmap
+              studyPlans={studyPlans}
+              onCompleteTask={handleCompleteTask}
+              onCreatePlan={handleCreatePlan}
+              onDeletePlan={handleDeletePlan}
+              language={lang}
+              showConfirmDialog={showConfirmDialog}
+            />
+          )}
+
+          {(viewMode === ViewMode.Editor || viewMode === ViewMode.Split || viewMode === ViewMode.Preview) && (
+            <SplitEditor
+              panes={openPanes}
+              activePane={activePaneId}
+              files={files}
+              onContentChange={handlePaneContentChange}
+              splitMode={splitMode}
+              language={lang}
+            />
+          )}
+
+          <ChatPanel
+            isOpen={isChatOpen}
             onClose={() => setIsChatOpen(false)}
             messages={chatMessages}
             onSendMessage={handleChatMessage}
@@ -1123,6 +1829,9 @@ const App: React.FC = () => {
             onCompactChat={handleCompactChat}
             aiState={aiState}
             language={lang}
+            isStreaming={isStreaming}
+            onStopStreaming={handleStopStreaming}
+            showToast={showToast}
           />
 
           {(aiState.message || aiState.error) && (
@@ -1163,6 +1872,65 @@ const App: React.FC = () => {
         shortcuts={shortcuts}
         onUpdateShortcut={handleUpdateShortcut}
         onResetShortcuts={handleResetShortcuts}
+        showToast={showToast}
+        onDataImported={() => {
+          // Close modal first, then reload to apply imported data
+          setIsSettingsOpen(false);
+          setTimeout(() => {
+            window.location.reload();
+          }, 300);
+        }}
+        showConfirmDialog={showConfirmDialog}
+      />
+
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmText={confirmDialog.confirmText}
+        cancelText={confirmDialog.cancelText}
+        type={confirmDialog.type}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={closeConfirmDialog}
+      />
+
+      <VoiceTranscriptionModal
+        isOpen={isVoiceTranscriptionOpen}
+        onClose={() => setIsVoiceTranscriptionOpen(false)}
+        files={files}
+        onSaveToFile={(fileId, content, mode) => {
+          const targetFile = files.find(f => f.id === fileId);
+          if (targetFile) {
+            const newContent = mode === 'append'
+              ? targetFile.content + '\n\n' + content
+              : content;
+            const updatedFile = { ...targetFile, content: newContent, lastModified: Date.now() };
+            setFiles(prev => prev.map(f => f.id === fileId ? updatedFile : f));
+            // If this is the active file, update it
+            if (activeFileId === fileId) {
+              setActiveFileId(fileId); // Trigger re-render
+            }
+            showToast(translations[lang].transcription.savedToFile, false);
+          }
+        }}
+        onCreateNewFile={(content) => {
+          // Generate unique filename with full timestamp (date + time) to avoid conflicts
+          const now = new Date();
+          const timestamp = now.toISOString()
+            .replace(/[-:]/g, '')
+            .replace('T', '_')
+            .slice(0, 15); // Format: YYYYMMDD_HHmmss
+          const newFile: MarkdownFile = {
+            id: generateId(),
+            name: `Transcription_${timestamp}.md`,
+            content,
+            lastModified: Date.now()
+          };
+          setFiles(prev => [...prev, newFile]);
+          setActiveFileId(newFile.id);
+          showToast(translations[lang].transcription.savedToFile, false);
+        }}
+        language={lang}
       />
     </div>
   );

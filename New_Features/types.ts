@@ -8,6 +8,9 @@ export interface MarkdownFile {
   handle?: FileSystemFileHandle; // For local file persistence
   isLocal?: boolean;
   path?: string; // Relative path for folder imports (e.g. "docs/v1/intro.md")
+  summary?: string; // AI Generated Summary for search previews
+  importance?: number; // 0-10 Score automatically assessed by AI
+  keyConcepts?: string[]; // Auto-extracted key concepts
 }
 
 export enum ViewMode {
@@ -17,11 +20,20 @@ export enum ViewMode {
   Graph = 'GRAPH',
   Quiz = 'QUIZ',
   MindMap = 'MINDMAP',
-  NoteSpace = 'NOTE_SPACE'
+  NoteSpace = 'NOTE_SPACE',
+  Library = 'LIBRARY',
+  Analytics = 'ANALYTICS',
+  Diff = 'DIFF',
+  Roadmap = 'ROADMAP'
 }
 
 export type ThemeType = 'dark' | 'light';
-export type PaneType = 'primary' | 'secondary';
+
+export interface EditorPane {
+  id: string;
+  fileId: string;
+  mode: 'editor' | 'preview';
+}
 
 // Helper type for compatibility with old code
 export type Theme = ThemeType; 
@@ -70,6 +82,8 @@ export interface AIState {
 
 export type AIProvider = 'gemini' | 'ollama' | 'openai';
 
+export type BackupFrequency = 'never' | 'daily' | 'weekly' | 'monthly';
+
 export interface AIConfig {
   provider: AIProvider;
   model: string;
@@ -84,6 +98,11 @@ export interface AIConfig {
   customPrompts?: {
     polish?: string;
     expand?: string;
+    enhance?: string; // New: Enhance User Prompt
+  };
+  backup?: {
+    frequency: BackupFrequency;
+    lastBackup: number;
   };
 }
 
@@ -99,7 +118,9 @@ export interface GraphNode {
   id: string;
   label: string;
   group?: number;
-  val?: number; 
+  val?: number;
+  type?: 'file' | 'exam' | 'question'; // Added type for node distinction
+  score?: number; // 0-100 for exam mastery coloring
 }
 
 export interface GraphLink {
@@ -128,15 +149,44 @@ export interface NoteLayoutItem {
 }
 
 // Quiz System Types
+export type QuestionType = 'single' | 'multiple' | 'text' | 'fill_blank';
+export type DifficultyLevel = 'easy' | 'medium' | 'hard';
+export type ExamMode = 'practice' | 'exam';
+
+export interface ExamConfig {
+  mode: ExamMode;
+  duration: number; // minutes, 0 for unlimited
+  passingScore: number; // percentage
+  showAnswers: 'immediate' | 'after_submit';
+}
+
+export interface GradingResult {
+  score: number; // 0-100
+  feedback: string;
+  keyPointsMatched: string[];
+  keyPointsMissed: string[];
+  suggestion?: string;
+}
+
 export interface QuizQuestion {
   id: string;
-  type: 'single' | 'multiple' | 'text';
+  type: QuestionType;
   question: string;
   options?: string[];
   correctAnswer?: string | string[]; // For auto-grading if applicable
   userAnswer?: string | string[];
   explanation?: string;
   isCorrect?: boolean;
+  
+  // Intelligent Grading Result
+  gradingResult?: GradingResult;
+
+  // New Metadata fields
+  difficulty?: DifficultyLevel;
+  tags?: string[];
+  knowledgePoints?: string[];
+  sourceFileId?: string;
+  created?: number;
 }
 
 export interface Quiz {
@@ -145,7 +195,14 @@ export interface Quiz {
   description: string;
   questions: QuizQuestion[];
   isGraded: boolean;
-  score?: number;
+  score?: number; // Percentage
+  
+  // Exam Specifics
+  config?: ExamConfig;
+  startTime?: number;
+  endTime?: number;
+  status?: 'not_started' | 'in_progress' | 'completed';
+  sourceFileId?: string; // Link back to note
 }
 
 export interface MistakeRecord {
@@ -156,6 +213,26 @@ export interface MistakeRecord {
   explanation?: string;
   timestamp: number;
   quizTitle?: string;
+}
+
+// Analytics Types
+export interface ExamResult {
+  id: string;
+  quizTitle: string;
+  date: number; // timestamp
+  score: number; // percentage
+  totalQuestions: number;
+  correctCount: number;
+  duration: number; // seconds
+  tags: string[]; // Aggregated tags from questions
+  sourceFileId?: string; // Added to link back for graph
+}
+
+export interface KnowledgePointStat {
+  tag: string;
+  totalQuestions: number;
+  correctQuestions: number;
+  accuracy: number; // 0-100
 }
 
 export interface RAGStats {
@@ -170,6 +247,48 @@ export interface AppShortcut {
   label: string;
   keys: string; // e.g. "Ctrl+S", "Alt+Shift+P"
   actionId: string;
+}
+
+export interface Snippet {
+  id: string;
+  name: string;
+  content: string;
+  category: 'code' | 'text' | 'template';
+}
+
+export interface SearchResult {
+  fileId: string;
+  fileName: string;
+  path: string;
+  score: number;
+  matches: {
+    type: 'title' | 'content' | 'tag';
+    text: string;
+    indices?: [number, number]; // Start/End index of match
+  }[];
+  lastModified: number;
+  tags: string[];
+}
+
+// --- Spaced Repetition Types ---
+
+export interface ReviewTask {
+  id: string;
+  scheduledDate: number; // Timestamp
+  completedDate?: number; // Timestamp or undefined
+  status: 'pending' | 'completed' | 'overdue' | 'future';
+  intervalLabel: string; // e.g., "5 mins", "1 day"
+}
+
+export interface StudyPlan {
+  id: string;
+  title: string;
+  sourceType: 'file' | 'mistake';
+  sourceId: string; // ID of the file or MistakeRecord
+  createdDate: number;
+  tasks: ReviewTask[];
+  progress: number; // 0-100
+  tags?: string[];
 }
 
 // --- Web Speech API Types ---
@@ -222,5 +341,6 @@ declare global {
     webkitSpeechRecognition: {
       new (): SpeechRecognition;
     };
+    jspdf: any;
   }
 }

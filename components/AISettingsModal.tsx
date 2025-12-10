@@ -1,10 +1,11 @@
 
 
-import React, { useState, useRef, useMemo } from 'react';
-import { X, Save, Server, Cpu, Key, Globe, Palette, Upload, Trash2, Check, Download, Plus, Languages, MessageSquare, ChevronDown, Wrench, AlertTriangle, Play, Terminal, Code2, Box, Keyboard, Command } from 'lucide-react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
+import { X, Save, Server, Cpu, Key, Globe, Palette, Upload, Trash2, Check, Download, Plus, Languages, MessageSquare, ChevronDown, Wrench, AlertTriangle, Play, Terminal, Code2, Box, Keyboard, Command, Shield, Eye, EyeOff } from 'lucide-react';
 import { AIConfig, AppTheme, AppShortcut } from '../types';
 import { translations, Language } from '../utils/translations';
 import { generateAIResponse, VirtualMCPClient } from '../services/aiService';
+import { mcpService } from '../src/services/mcpService';
 
 interface AISettingsModalProps {
   isOpen: boolean;
@@ -20,9 +21,19 @@ interface AISettingsModalProps {
   shortcuts?: AppShortcut[];
   onUpdateShortcut?: (id: string, keys: string) => void;
   onResetShortcuts?: () => void;
+  showToast?: (message: string, isError?: boolean) => void;
+  onDataImported?: () => void; // Callback after successful backup import
+  showConfirmDialog?: (
+    title: string,
+    message: string,
+    onConfirm: () => void,
+    type?: 'danger' | 'warning' | 'info',
+    confirmText?: string,
+    cancelText?: string
+  ) => void;
 }
 
-type Tab = 'ai' | 'appearance' | 'prompts' | 'mcp' | 'keyboard';
+type Tab = 'ai' | 'appearance' | 'prompts' | 'mcp' | 'keyboard' | 'security';
 
 const RECOMMENDED_MODELS: Record<string, {id: string, name: string}[]> = {
   gemini: [
@@ -74,11 +85,14 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
   language = 'en',
   shortcuts = [],
   onUpdateShortcut,
-  onResetShortcuts
+  onResetShortcuts,
+  showToast,
+  onDataImported,
+  showConfirmDialog
 }) => {
   const [activeTab, setActiveTab] = useState<Tab>('ai');
   const [tempConfig, setTempConfig] = useState<AIConfig>(config);
-  
+
   // Test State
   const [testTool, setTestTool] = useState<string | null>(null); // Name of tool being tested
   const [testPrompt, setTestPrompt] = useState<string>('');
@@ -88,36 +102,62 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
   // Keyboard Recording State
   const [recordingId, setRecordingId] = useState<string | null>(null);
 
+  // Backup State
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false);
+  const [passwordAction, setPasswordAction] = useState<'export' | 'import' | null>(null);
+  const [backupPassword, setBackupPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [isProcessingBackup, setIsProcessingBackup] = useState(false);
+  const [backupError, setBackupError] = useState<string | null>(null);
+  const [selectedBackupFile, setSelectedBackupFile] = useState<{ filePath: string; fileName: string; fileSize: number } | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+
+  // State for real MCP tools from Electron
+  const [realMcpTools, setRealMcpTools] = useState<Array<{name: string; description: string}>>([]);
+  const [isLoadingMcpTools, setIsLoadingMcpTools] = useState(false);
+
   React.useEffect(() => {
     if (isOpen) setTempConfig(config);
   }, [isOpen, config]);
 
-  // Derived state for MCP parsing
-  const { parsedTools, activeServers, parseError } = useMemo(() => {
+  // Load real MCP tools from Electron when modal opens
+  useEffect(() => {
+    const loadRealTools = async () => {
+      if (!isOpen) return;
+
+      if (mcpService.isAvailable()) {
+        setIsLoadingMcpTools(true);
+        try {
+          const tools = await mcpService.getTools();
+          setRealMcpTools(tools.map(t => ({ name: t.name, description: t.description })));
+        } catch (error) {
+          console.error('Failed to load MCP tools:', error);
+        } finally {
+          setIsLoadingMcpTools(false);
+        }
+      }
+    };
+
+    loadRealTools();
+  }, [isOpen]);
+
+  // Derived state for MCP parsing (config servers only, not actual tools)
+  const { activeServers, parseError } = useMemo(() => {
     if (!tempConfig.mcpTools || tempConfig.mcpTools.trim() === '[]') {
-      return { parsedTools: [], activeServers: [], parseError: null };
+      return { activeServers: [], parseError: null };
     }
     try {
-      // Use the Virtual Client to analyze the config without actually launching
-      const client = new VirtualMCPClient(tempConfig.mcpTools);
-      // We simulate a connection to get list of potential tools
-      // This is a synchronous check for UI purposes
-      const tools = client.getTools(); // This assumes client is constructed with defaults if possible
-      
       const json = JSON.parse(tempConfig.mcpTools);
       const servers = json.mcpServers ? Object.keys(json.mcpServers) : [];
-
-      return { 
-          parsedTools: tools.map(t => t), // Use VirtualClient's discovered tools
-          activeServers: servers,
-          parseError: null
-      };
+      return { activeServers: servers, parseError: null };
     } catch (e: any) {
-      return { parsedTools: [], activeServers: [], parseError: e.message };
+      return { activeServers: [], parseError: e.message };
     }
   }, [tempConfig.mcpTools]);
+
+  // Use real tools if available, otherwise empty
+  const parsedTools = realMcpTools;
 
   if (!isOpen) return null;
 
@@ -141,7 +181,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
         const json = JSON.parse(content);
         
         if (!json.name || !json.type || !json.colors) {
-          alert('Invalid Theme: Missing name, type ("light"|"dark"), or colors object.');
+          showToast?.('Invalid Theme: Missing name, type ("light"|"dark"), or colors object.', true);
           return;
         }
 
@@ -152,7 +192,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
         };
         onImportTheme(newTheme);
       } catch (err) {
-        alert('Failed to parse JSON file. Please ensure it is valid JSON.');
+        showToast?.('Failed to parse JSON file. Please ensure it is valid JSON.', true);
       }
     };
     reader.readAsText(file);
@@ -211,17 +251,112 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
     if (e.metaKey) parts.push('Cmd'); // macOS
     if (e.altKey) parts.push('Alt');
     if (e.shiftKey) parts.push('Shift');
-    
+
     // Clean key name (e.g. " " -> "Space", capitalized single letters)
     let key = e.key;
     if (key === ' ') key = 'Space';
     if (key.length === 1) key = key.toUpperCase();
-    
+
     parts.push(key);
-    
+
     const combo = parts.join('+');
     if (onUpdateShortcut) onUpdateShortcut(shortcutId, combo);
     setRecordingId(null);
+  };
+
+  // Backup Handlers
+  const handleExportBackup = () => {
+    setPasswordAction('export');
+    setBackupPassword('');
+    setBackupError(null);
+    setShowPasswordDialog(true);
+  };
+
+  const handleImportBackup = async () => {
+    // Step 1: First select file
+    if (!window.electronAPI?.backup?.selectFile) {
+      setBackupError('Backup feature is only available in Electron mode');
+      return;
+    }
+
+    try {
+      const result = await window.electronAPI.backup.selectFile();
+      if (result.canceled || !result.success) {
+        return; // User canceled or error
+      }
+
+      // Store file info and show password dialog
+      setSelectedBackupFile({
+        filePath: result.filePath!,
+        fileName: result.fileName!,
+        fileSize: result.fileSize!
+      });
+      setPasswordAction('import');
+      setBackupPassword('');
+      setBackupError(null);
+      setShowPasswordDialog(true);
+    } catch (error: any) {
+      showToast?.(error.message || 'Failed to select file', true);
+    }
+  };
+
+  const handlePasswordConfirm = async () => {
+    if (!backupPassword.trim()) {
+      setBackupError(t.backup.enterPassword);
+      return;
+    }
+
+    setIsProcessingBackup(true);
+    setBackupError(null);
+
+    try {
+      if (window.electronAPI?.backup) {
+        if (passwordAction === 'export') {
+          const result = await window.electronAPI.backup.export(backupPassword);
+          if (result.success) {
+            // Update last backup time
+            setTempConfig({
+              ...tempConfig,
+              backup: {
+                ...tempConfig.backup,
+                frequency: tempConfig.backup?.frequency || 'never',
+                lastBackup: Date.now()
+              }
+            });
+            setShowPasswordDialog(false);
+            showToast?.(t.backup.exportSuccess, false);
+          } else {
+            setBackupError(result.error || 'Export failed');
+          }
+        } else if (passwordAction === 'import') {
+          // Use pre-selected file path if available
+          const result = await window.electronAPI.backup.import(backupPassword, selectedBackupFile?.filePath);
+          if (result.success) {
+            setShowPasswordDialog(false);
+            setSelectedBackupFile(null);
+            showToast?.(t.backup.importSuccess, false);
+            // Call the callback to reload data instead of page refresh
+            if (onDataImported) {
+              onDataImported();
+            }
+          } else {
+            setBackupError(result.error || t.backup.invalidPassword);
+          }
+        }
+      } else {
+        setBackupError('Backup feature is only available in Electron mode');
+      }
+    } catch (error: any) {
+      setBackupError(error.message || 'An error occurred');
+    } finally {
+      setIsProcessingBackup(false);
+    }
+  };
+
+  const formatLastBackupDate = (timestamp?: number): string => {
+    if (!timestamp) return t.backup.neverBackedUp;
+    const date = new Date(timestamp);
+    return date.toLocaleString(currentUiLang === 'zh' ? 'zh-CN' : 'en-US');
   };
 
   const currentModels = RECOMMENDED_MODELS[tempConfig.provider] || [];
@@ -263,6 +398,13 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
              >
                 <Wrench size={18} />
                 MCP / Tools
+             </button>
+             <button
+              onClick={() => setActiveTab('security')}
+              className={`text-sm font-bold flex items-center gap-2 pb-1 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'security' ? 'text-amber-600 dark:text-amber-400 border-amber-500' : 'text-slate-500 border-transparent hover:text-slate-700 dark:hover:text-slate-300'}`}
+             >
+                <Shield size={18} />
+                {t.backup.title || "Backup"}
              </button>
              <button
               onClick={() => setActiveTab('appearance')}
@@ -357,6 +499,27 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                     </p>
                 </div>
               )}
+
+              {/* Streaming Response Toggle */}
+              <div className="space-y-2 p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-100 dark:border-purple-800">
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="enableStreaming"
+                    checked={!!tempConfig.enableStreaming}
+                    onChange={(e) => setTempConfig({...tempConfig, enableStreaming: e.target.checked})}
+                    className="w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-500 cursor-pointer"
+                  />
+                  <label htmlFor="enableStreaming" className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2 cursor-pointer">
+                    <MessageSquare size={16} className="text-purple-500" />
+                    {t.enableStreaming || "Enable Streaming Response"}
+                  </label>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 ml-7">
+                  {t.streamingHint || "Show AI response as it's being generated in real-time."} <br/>
+                  <span className="text-amber-500 font-medium">⚠️ {t.streamingRecommend || "Recommended: Disable streaming for better tool calling stability and real-time UI feedback."}</span>
+                </p>
+              </div>
 
               {/* Chat Model Selection */}
               <div className="space-y-2">
@@ -640,14 +803,14 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                         <Code2 size={14} /> Insert Template
                       </button>
                    </div>
-                   
+
                    <div className="flex-1 relative">
                        <label className="absolute top-0 right-0 p-2 text-[10px] font-mono text-slate-400 bg-paper-100 dark:bg-cyber-900/50 rounded-bl-lg border-l border-b border-paper-200 dark:border-cyber-700">JSON</label>
                        <textarea
                           value={tempConfig.mcpTools || '[]'}
-                          onChange={(e) => setTempConfig({ 
-                             ...tempConfig, 
-                             mcpTools: e.target.value 
+                          onChange={(e) => setTempConfig({
+                             ...tempConfig,
+                             mcpTools: e.target.value
                           })}
                           className={`w-full h-full min-h-[300px] px-4 py-3 rounded-lg bg-white dark:bg-cyber-800 border text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-xs font-mono resize-none leading-relaxed custom-scrollbar ${parseError ? 'border-red-400 dark:border-red-600' : 'border-paper-200 dark:border-cyber-600'}`}
                           placeholder={`{\n  "mcpServers": {\n    "chrome-devtools": {\n      "command": "npx",\n      "args": ["-y", "chrome-devtools-mcp@latest"]\n    }\n  }\n}`}
@@ -679,10 +842,15 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                    )}
 
                    <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                       <Box size={16} /> Discovered Tools ({parsedTools.length})
+                       <Box size={16} /> Discovered Tools ({isLoadingMcpTools ? '...' : parsedTools.length})
                    </h3>
 
-                   {parsedTools.length === 0 ? (
+                   {isLoadingMcpTools ? (
+                       <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-paper-200 dark:border-cyber-700 rounded-xl p-8 text-center">
+                           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500 mb-2"></div>
+                           <p className="text-xs text-slate-400">Loading MCP tools...</p>
+                       </div>
+                   ) : parsedTools.length === 0 ? (
                        <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-paper-200 dark:border-cyber-700 rounded-xl p-8 text-center">
                            <Code2 className="text-slate-300 dark:text-slate-600 mb-2" size={32} />
                            <p className="text-xs text-slate-400">No tools found.<br/>Configure servers on the left.</p>
@@ -746,16 +914,16 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                                </h4>
                                <button onClick={() => setTestTool(null)} className="text-slate-400 hover:text-slate-600"><X size={14} /></button>
                            </div>
-                           
+
                            <div className="flex gap-2 mb-2">
-                               <input 
-                                  type="text" 
+                               <input
+                                  type="text"
                                   value={testPrompt}
                                   onChange={(e) => setTestPrompt(e.target.value)}
                                   className="flex-1 px-2 py-1.5 rounded bg-white dark:bg-cyber-900 border border-paper-300 dark:border-cyber-600 text-xs text-slate-800 dark:text-slate-200"
                                   placeholder="Enter prompt to trigger tool..."
                                />
-                               <button 
+                               <button
                                   onClick={runToolTest}
                                   disabled={isTesting}
                                   className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded text-xs font-bold disabled:opacity-50"
@@ -779,6 +947,143 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                    )}
                 </div>
              </div>
+          )}
+
+          {/* Security / Backup Tab */}
+          {activeTab === 'security' && (
+            <div className="space-y-6 max-w-2xl mx-auto">
+              <div className="bg-[rgb(var(--bg-panel))] p-4 rounded-xl border border-[rgb(var(--border-main))] shadow-sm">
+                <h3 className="text-base font-bold text-[rgb(var(--text-primary))] mb-2 flex items-center gap-2 font-[var(--font-header)]">
+                  <Shield size={20} className="text-amber-500" />
+                  {currentUiLang === 'zh' ? '安全与备份' : 'Security & Backup'}
+                </h3>
+                <p className="text-sm text-[rgb(var(--text-secondary))] font-[var(--font-primary)]">
+                  {currentUiLang === 'zh' ? '管理应用安全和数据备份设置' : 'Manage app security and data backup settings'}
+                </p>
+              </div>
+
+              {/* Login Protection (Electron only) */}
+              {window.electronAPI && (
+                <div className="bg-[rgb(var(--bg-panel))] p-5 rounded-xl border border-[rgb(var(--border-main))] space-y-4">
+                  <div>
+                    <h4 className="text-sm font-bold text-[rgb(var(--text-primary))] mb-3 font-[var(--font-header)]">
+                      {currentUiLang === 'zh' ? '登录保护' : 'Login Protection'}
+                    </h4>
+                    <div className="flex items-center justify-between p-4 bg-[rgb(var(--bg-element))] rounded-lg border border-[rgb(var(--border-main))]">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Shield size={16} className="text-[rgb(var(--primary-500))]" />
+                          <span className="text-sm font-medium text-[rgb(var(--text-primary))] font-[var(--font-primary)]">
+                            {currentUiLang === 'zh' ? '启用登录保护' : 'Enable Login Protection'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-[rgb(var(--text-secondary))] font-[var(--font-primary)]">
+                          {currentUiLang === 'zh'
+                            ? '启用后,应用启动时需要输入密码。仅在Electron桌面应用中可用。'
+                            : 'Require password on app startup. Only available in Electron desktop app.'}
+                        </p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer ml-4">
+                        <input
+                          type="checkbox"
+                          checked={!!tempConfig.security?.enableLoginProtection}
+                          onChange={(e) => setTempConfig({
+                            ...tempConfig,
+                            security: {
+                              ...tempConfig.security,
+                              enableLoginProtection: e.target.checked
+                            }
+                          })}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-[rgb(var(--neutral-300))] peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[rgba(var(--primary-500)/0.3)] rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-[rgb(var(--border-main))] after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[rgb(var(--primary-500))]"></div>
+                      </label>
+                    </div>
+                    <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                      <p className="text-xs text-blue-700 dark:text-blue-300 font-[var(--font-primary)]">
+                        <strong>{currentUiLang === 'zh' ? '注意' : 'Note'}:</strong> {currentUiLang === 'zh'
+                          ? '首次启用时,系统会要求您创建用户名和密码。请妥善保管您的密码,遗失后无法找回。'
+                          : 'On first enable, you will be prompted to create a username and password. Keep your password safe - it cannot be recovered if lost.'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Backup Frequency */}
+              <div className="bg-[rgb(var(--bg-panel))] p-5 rounded-xl border border-[rgb(var(--border-main))] space-y-4">
+                <div>
+                  <label className="block text-sm font-bold text-[rgb(var(--text-primary))] mb-3 font-[var(--font-header)]">
+                    {t.backup.frequency}
+                  </label>
+                  <div className="grid grid-cols-4 gap-3">
+                    {(['never', 'daily', 'weekly', 'monthly'] as const).map((freq) => (
+                      <button
+                        key={freq}
+                        type="button"
+                        onClick={() => setTempConfig({
+                          ...tempConfig,
+                          backup: {
+                            ...tempConfig.backup,
+                            frequency: freq,
+                            lastBackup: tempConfig.backup?.lastBackup || 0
+                          }
+                        })}
+                        className={`py-2.5 px-3 rounded-lg border transition-all text-sm font-medium font-[var(--font-primary)] ${
+                          (tempConfig.backup?.frequency || 'never') === freq
+                            ? 'bg-[rgba(var(--primary-500)/0.1)] border-[rgb(var(--primary-500))] text-[rgb(var(--primary-500))] ring-1 ring-[rgb(var(--primary-500))]'
+                            : 'bg-[rgb(var(--bg-element))] border-[rgb(var(--border-main))] text-[rgb(var(--text-primary))] hover:border-[rgb(var(--primary-500))]'
+                        }`}
+                      >
+                        {t.backup[freq]}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-[rgb(var(--text-secondary))] mt-3 flex items-center gap-2 font-[var(--font-primary)]">
+                    <span className="font-semibold">{t.backup.lastBackup}:</span>
+                    <span>{formatLastBackupDate(tempConfig.backup?.lastBackup)}</span>
+                  </p>
+                </div>
+              </div>
+
+              {/* Manual Backup Actions */}
+              <div className="bg-[rgb(var(--bg-panel))] p-5 rounded-xl border border-[rgb(var(--border-main))] space-y-4">
+                <h4 className="text-sm font-bold text-[rgb(var(--text-primary))] font-[var(--font-header)]">
+                  {currentUiLang === 'zh' ? '手动备份操作' : 'Manual Backup Operations'}
+                </h4>
+                <div className="flex gap-4">
+                  <button
+                    onClick={handleExportBackup}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-[rgb(var(--primary-500))] to-[rgb(var(--primary-600))] hover:opacity-90 text-white rounded-lg shadow-md transition-all hover:shadow-[rgba(var(--primary-500)/0.25)] font-medium font-[var(--font-primary)]"
+                  >
+                    <Download size={18} />
+                    {t.backup.export}
+                  </button>
+                  <button
+                    onClick={handleImportBackup}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-[rgb(var(--secondary-500))] to-[rgb(var(--primary-500))] hover:opacity-90 text-white rounded-lg shadow-md transition-all hover:shadow-[rgba(var(--secondary-500)/0.25)] font-medium font-[var(--font-primary)]"
+                  >
+                    <Upload size={18} />
+                    {t.backup.import}
+                  </button>
+                </div>
+              </div>
+
+              {/* Warning Notice */}
+              <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle size={20} className="text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-semibold text-yellow-800 dark:text-yellow-200 mb-1 font-[var(--font-header)]">
+                      {currentUiLang === 'zh' ? '重要提示' : 'Important Notice'}
+                    </p>
+                    <p className="text-sm text-yellow-700 dark:text-yellow-300 font-[var(--font-primary)]">
+                      {t.backup.importWarning}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
           )}
 
           {/* Appearance Tab */}
@@ -837,10 +1142,22 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                       </div>
 
                       {theme.isCustom && (
-                        <button 
+                        <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (confirm(`Delete theme "${theme.name}"?`)) onDeleteTheme(theme.id);
+                            if (showConfirmDialog) {
+                              showConfirmDialog(
+                                t.deleteTheme,
+                                `Delete theme "${theme.name}"?`,
+                                () => onDeleteTheme(theme.id),
+                                'danger',
+                                'Delete',
+                                'Cancel'
+                              );
+                            } else {
+                              // Fallback to native confirm if showConfirmDialog not provided
+                              if (confirm(`Delete theme "${theme.name}"?`)) onDeleteTheme(theme.id);
+                            }
                           }}
                           className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
                           title={t.deleteTheme}
@@ -857,7 +1174,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
         </div>
 
         {/* Footer */}
-        {activeTab === 'ai' || activeTab === 'prompts' || activeTab === 'mcp' || activeTab === 'keyboard' ? (
+        {activeTab === 'ai' || activeTab === 'prompts' || activeTab === 'mcp' || activeTab === 'keyboard' || activeTab === 'security' ? (
           <div className="p-4 border-t border-paper-200 dark:border-cyber-700 flex justify-end gap-3 bg-paper-50 dark:bg-cyber-800/50 flex-shrink-0">
              <button onClick={onClose} className="px-4 py-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-paper-200 dark:hover:bg-cyber-700">{t.cancel}</button>
              <button onClick={handleSubmit} className="flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-cyan-500 to-violet-500 text-white rounded-lg shadow-lg hover:shadow-cyan-500/25">
@@ -870,6 +1187,102 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
           </div>
         )}
       </div>
+
+      {/* Password Dialog Modal */}
+      {showPasswordDialog && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="w-full max-w-md bg-[rgb(var(--bg-main))] rounded-xl shadow-2xl border border-[rgb(var(--border-main))] overflow-hidden transform transition-all scale-100">
+            {/* Dialog Header */}
+            <div className="p-5 border-b border-[rgb(var(--border-main))] bg-gradient-to-r from-[rgb(var(--primary-500))] to-[rgb(var(--secondary-500))]">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2 font-[var(--font-header)]">
+                <Shield size={20} />
+                {passwordAction === 'export' ? t.backup.export : t.backup.import}
+              </h3>
+              <p className="text-sm text-white/90 mt-1 font-[var(--font-primary)]">
+                {t.backup.enterPassword}
+              </p>
+            </div>
+
+            {/* Dialog Content */}
+            <div className="p-6 space-y-4">
+              {/* Show selected file info for import */}
+              {passwordAction === 'import' && selectedBackupFile && (
+                <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                  <p className="text-sm font-medium text-blue-800 dark:text-blue-200 mb-1 font-[var(--font-header)]">
+                    {currentUiLang === 'zh' ? '已选择文件' : 'Selected File'}
+                  </p>
+                  <p className="text-sm text-blue-700 dark:text-blue-300 font-mono truncate">
+                    {selectedBackupFile.fileName}
+                  </p>
+                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-1 font-[var(--font-primary)]">
+                    {(selectedBackupFile.fileSize / 1024).toFixed(1)} KB
+                  </p>
+                </div>
+              )}
+
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={backupPassword}
+                  onChange={(e) => setBackupPassword(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !isProcessingBackup) handlePasswordConfirm();
+                    if (e.key === 'Escape') setShowPasswordDialog(false);
+                  }}
+                  className="w-full px-4 py-3 pr-12 rounded-lg bg-[rgb(var(--bg-element))] border border-[rgb(var(--border-main))] text-[rgb(var(--text-primary))] focus:outline-none focus:ring-2 focus:ring-amber-500 font-[var(--font-primary)]"
+                  placeholder={currentUiLang === 'zh' ? '输入密码...' : 'Enter password...'}
+                  autoFocus
+                />
+                <button
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-[rgb(var(--text-secondary))] hover:text-[rgb(var(--text-primary))] transition-colors"
+                  type="button"
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+
+              <p className="text-xs text-[rgb(var(--text-secondary))] font-[var(--font-primary)]">
+                {t.backup.passwordHint}
+              </p>
+
+              {backupError && (
+                <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                  <p className="text-sm text-red-700 dark:text-red-300 flex items-center gap-2 font-[var(--font-primary)]">
+                    <AlertTriangle size={16} />
+                    {backupError}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Dialog Footer */}
+            <div className="p-4 border-t border-[rgb(var(--border-main))] flex justify-end gap-3 bg-[rgb(var(--bg-panel))]">
+              <button
+                onClick={() => { setShowPasswordDialog(false); setSelectedBackupFile(null); }}
+                disabled={isProcessingBackup}
+                className="px-4 py-2 rounded-lg text-[rgb(var(--text-primary))] hover:bg-[rgb(var(--bg-element))] disabled:opacity-50 transition-colors font-[var(--font-primary)]"
+              >
+                {t.cancel}
+              </button>
+              <button
+                onClick={handlePasswordConfirm}
+                disabled={isProcessingBackup || !backupPassword.trim()}
+                className="px-6 py-2 bg-gradient-to-r from-[rgb(var(--primary-500))] to-[rgb(var(--secondary-500))] hover:opacity-90 text-white rounded-lg shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed font-medium font-[var(--font-primary)]"
+              >
+                {isProcessingBackup ? (
+                  <span className="flex items-center gap-2">
+                    <span className="animate-spin">⏳</span>
+                    {currentUiLang === 'zh' ? '处理中...' : 'Processing...'}
+                  </span>
+                ) : (
+                  t.save
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -313,5 +313,183 @@ export const migrations: Migration[] = [
             // Version 3 down 不做任何事，因为版本2也能处理
             logger.warn('Version 3 rollback - no action needed');
         }
+    },
+    // Version 4: 用户认证表
+    {
+        version: 4,
+        description: 'Add users table for authentication',
+        up: (db) => {
+            db.exec(`
+                -- 用户认证表
+                CREATE TABLE IF NOT EXISTS users (
+                    id TEXT PRIMARY KEY,
+                    username TEXT NOT NULL UNIQUE,
+                    password_hash TEXT NOT NULL,
+                    salt TEXT NOT NULL,
+                    created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000)
+                );
+
+                -- 索引: 按用户名查询
+                CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+            `);
+            logger.info('Users authentication table created successfully');
+        },
+        down: (db) => {
+            db.exec(`
+                DROP INDEX IF EXISTS idx_users_username;
+                DROP TABLE IF EXISTS users;
+            `);
+            logger.warn('Users authentication table dropped');
+        }
+    },
+    // Version 5: 代码片段表
+    {
+        version: 5,
+        description: 'Add snippets table for code/text snippets',
+        up: (db) => {
+            db.exec(`
+                -- 代码片段表
+                CREATE TABLE IF NOT EXISTS snippets (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    category TEXT DEFAULT 'text',
+                    created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000)
+                );
+
+                -- 索引: 按分类和创建时间查询
+                CREATE INDEX IF NOT EXISTS idx_snippets_category ON snippets(category);
+                CREATE INDEX IF NOT EXISTS idx_snippets_created ON snippets(created_at DESC);
+            `);
+            logger.info('Snippets table created successfully');
+        },
+        down: (db) => {
+            db.exec(`
+                DROP INDEX IF EXISTS idx_snippets_created;
+                DROP INDEX IF EXISTS idx_snippets_category;
+                DROP TABLE IF EXISTS snippets;
+            `);
+            logger.warn('Snippets table dropped');
+        }
+    },
+    // Version 6: 学习计划表
+    {
+        version: 6,
+        description: 'Add study_plans and review_tasks tables for spaced repetition',
+        up: (db) => {
+            db.exec(`
+                -- 学习计划表
+                CREATE TABLE IF NOT EXISTS study_plans (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    source_type TEXT NOT NULL,
+                    source_id TEXT NOT NULL,
+                    created_date INTEGER NOT NULL,
+                    progress INTEGER DEFAULT 0,
+                    tags TEXT
+                );
+
+                -- 复习任务表（外键关联学习计划，级联删除）
+                CREATE TABLE IF NOT EXISTS review_tasks (
+                    id TEXT PRIMARY KEY,
+                    plan_id TEXT NOT NULL,
+                    scheduled_date INTEGER NOT NULL,
+                    completed_date INTEGER,
+                    interval_label TEXT NOT NULL,
+                    status TEXT DEFAULT 'pending',
+                    FOREIGN KEY (plan_id) REFERENCES study_plans(id) ON DELETE CASCADE
+                );
+
+                -- 索引: 按计划ID查询任务
+                CREATE INDEX IF NOT EXISTS idx_review_tasks_plan ON review_tasks(plan_id);
+                -- 索引: 按状态和计划日期查询
+                CREATE INDEX IF NOT EXISTS idx_review_tasks_status_date ON review_tasks(status, scheduled_date);
+                -- 索引: 按创建日期查询学习计划
+                CREATE INDEX IF NOT EXISTS idx_study_plans_created ON study_plans(created_date DESC);
+            `);
+            logger.info('Study plans and review tasks tables created successfully');
+        },
+        down: (db) => {
+            db.exec(`
+                DROP INDEX IF EXISTS idx_study_plans_created;
+                DROP INDEX IF EXISTS idx_review_tasks_status_date;
+                DROP INDEX IF EXISTS idx_review_tasks_plan;
+                DROP TABLE IF EXISTS review_tasks;
+                DROP TABLE IF EXISTS study_plans;
+            `);
+            logger.warn('Study plans and review tasks tables dropped');
+        }
+    },
+    // Version 7: 考试结果表
+    {
+        version: 7,
+        description: 'Add exam_results table for quiz history tracking',
+        up: (db) => {
+            db.exec(`
+                -- 考试结果表
+                CREATE TABLE IF NOT EXISTS exam_results (
+                    id TEXT PRIMARY KEY,
+                    quiz_title TEXT NOT NULL,
+                    date INTEGER NOT NULL,
+                    score REAL NOT NULL,
+                    total_questions INTEGER NOT NULL,
+                    correct_count INTEGER NOT NULL,
+                    duration INTEGER NOT NULL,
+                    tags TEXT,
+                    source_file_id TEXT,
+                    FOREIGN KEY (source_file_id) REFERENCES files(id) ON DELETE SET NULL
+                );
+
+                -- 索引: 按日期查询
+                CREATE INDEX IF NOT EXISTS idx_exam_results_date ON exam_results(date DESC);
+                -- 索引: 按源文件查询
+                CREATE INDEX IF NOT EXISTS idx_exam_results_file ON exam_results(source_file_id);
+            `);
+            logger.info('Exam results table created successfully');
+        },
+        down: (db) => {
+            db.exec(`
+                DROP INDEX IF EXISTS idx_exam_results_file;
+                DROP INDEX IF EXISTS idx_exam_results_date;
+                DROP TABLE IF EXISTS exam_results;
+            `);
+            logger.warn('Exam results table dropped');
+        }
+    },
+    // Version 8: 笔记布局表 (3D Note Space)
+    {
+        version: 8,
+        description: 'Add note_layouts table for 3D note space positioning',
+        up: (db) => {
+            db.exec(`
+                -- 笔记布局表 (3D空间位置信息)
+                CREATE TABLE IF NOT EXISTS note_layouts (
+                    id TEXT PRIMARY KEY,
+                    file_id TEXT NOT NULL UNIQUE,
+                    x REAL DEFAULT 0,
+                    y REAL DEFAULT 0,
+                    z REAL DEFAULT 0,
+                    rotation REAL DEFAULT 0,
+                    width REAL DEFAULT 300,
+                    height REAL DEFAULT 200,
+                    scale REAL DEFAULT 1,
+                    color TEXT,
+                    is_pinned INTEGER DEFAULT 0,
+                    FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
+                );
+
+                -- 索引: 按文件ID查询 (UNIQUE约束已自动创建索引)
+                -- 索引: 按固定状态查询
+                CREATE INDEX IF NOT EXISTS idx_note_layouts_pinned ON note_layouts(is_pinned);
+            `);
+            logger.info('Note layouts table created successfully');
+        },
+        down: (db) => {
+            db.exec(`
+                DROP INDEX IF EXISTS idx_note_layouts_pinned;
+                DROP TABLE IF EXISTS note_layouts;
+            `);
+            logger.warn('Note layouts table dropped');
+        }
     }
 ];

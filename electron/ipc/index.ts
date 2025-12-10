@@ -1,6 +1,9 @@
 import { registerDbHandlers } from './dbHandlers.js';
 import { registerFileHandlers } from './fileHandlers.js';
 import { registerAiHandlers } from './aiHandlers.js';
+import { registerBackupHandlers } from './backupHandlers.js';
+import { registerWhisperHandlers } from './whisperHandlers.js';
+import { registerSherpaHandlers } from './sherpaHandlers.js';
 import { logger } from '../utils/logger.js';
 
 export function registerAllHandlers(): void {
@@ -9,6 +12,9 @@ export function registerAllHandlers(): void {
     registerDbHandlers();
     registerFileHandlers();
     registerAiHandlers();
+    registerBackupHandlers();
+    registerWhisperHandlers();
+    registerSherpaHandlers();
 
     logger.info('All IPC handlers registered');
 }
@@ -16,3 +22,6 @@ export function registerAllHandlers(): void {
 export { registerDbHandlers } from './dbHandlers.js';
 export { registerFileHandlers } from './fileHandlers.js';
 export { registerAiHandlers } from './aiHandlers.js';
+export { registerBackupHandlers } from './backupHandlers.js';
+export { registerWhisperHandlers } from './whisperHandlers.js';
+export { registerSherpaHandlers } from './sherpaHandlers.js';

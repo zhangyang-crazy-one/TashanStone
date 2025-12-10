@@ -19,29 +19,35 @@ let cachedPlatform: Platform | null = null;
 
 /**
  * Detect the current platform
+ * Note: We don't cache if electronAPI isn't available yet, as it might load later
  */
 export function getPlatform(): Platform {
-    if (cachedPlatform) {
+    // Always re-check for Electron in case it loaded after initial check
+    // This handles race conditions where React mounts before preload completes
+    if (typeof window !== 'undefined' && window.electronAPI) {
+        // Update cache if we're in Electron
+        if (!cachedPlatform || !cachedPlatform.isElectron) {
+            const osMap: Record<string, OS> = {
+                'win32': 'windows',
+                'darwin': 'darwin',
+                'linux': 'linux'
+            };
+
+            cachedPlatform = {
+                isElectron: true,
+                isMobile: false,
+                isWeb: false,
+                os: osMap[window.electronAPI.platform.os] || 'linux',
+                supportsPdf: true,
+                supportsFileSystem: true,
+                supportsNativeMenus: true
+            };
+        }
         return cachedPlatform;
     }
 
-    // Check for Electron
-    if (typeof window !== 'undefined' && window.electronAPI) {
-        const osMap: Record<string, OS> = {
-            'win32': 'windows',
-            'darwin': 'darwin',
-            'linux': 'linux'
-        };
-
-        cachedPlatform = {
-            isElectron: true,
-            isMobile: false,
-            isWeb: false,
-            os: osMap[window.electronAPI.platform.os] || 'linux',
-            supportsPdf: true,
-            supportsFileSystem: true,
-            supportsNativeMenus: true
-        };
+    // If we already have a cached non-Electron platform, return it
+    if (cachedPlatform) {
         return cachedPlatform;
     }
 

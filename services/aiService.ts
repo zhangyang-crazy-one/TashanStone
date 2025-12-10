@@ -3,7 +3,7 @@
 import { GoogleGenAI, FunctionDeclaration, Type } from "@google/genai";
 import { AIConfig, MarkdownFile, GraphData, Quiz, QuizQuestion, ChatMessage } from "../types";
 import { mcpService } from "../src/services/mcpService";
-import { platformFetch } from "../src/services/ai/platformFetch";
+import { platformFetch, platformStreamFetch } from "../src/services/ai/platformFetch";
 
 // --- Types for MCP ---
 interface MCPServerConfig {
@@ -21,6 +21,91 @@ interface MCPTool {
   description: string;
   inputSchema: any;
 }
+
+// --- Dynamic MCP Tool Guide Generator ---
+/**
+ * 根据工具名称智能识别工具类型
+ */
+const categorizeMCPTool = (toolName: string): string => {
+  const name = toolName.toLowerCase();
+
+  // 浏览器/网页工具
+  if (name.includes('navigate') || name.includes('page') || name.includes('click') ||
+      name.includes('snapshot') || name.includes('fill') || name.includes('screenshot') ||
+      name.includes('browser') || name.includes('scroll') || name.includes('hover') ||
+      name.includes('devtools') || name.includes('chrome')) {
+    return 'browser';
+  }
+
+  // 搜索工具
+  if (name.includes('search') || name.includes('query') || name.includes('find')) {
+    return 'search';
+  }
+
+  // 文件操作工具
+  if (name.includes('file') || name.includes('read') || name.includes('write') ||
+      name.includes('create') || name.includes('delete') || name.includes('directory')) {
+    return 'file';
+  }
+
+  // 数据库工具
+  if (name.includes('database') || name.includes('sql') || name.includes('db') ||
+      name.includes('table') || name.includes('record')) {
+    return 'database';
+  }
+
+  // API/网络工具
+  if (name.includes('fetch') || name.includes('request') || name.includes('api') ||
+      name.includes('http') || name.includes('get') || name.includes('post')) {
+    return 'network';
+  }
+
+  return 'general';
+};
+
+/**
+ * 动态生成 MCP 工具使用指南
+ * 根据可用工具类型生成简洁的使用提示
+ */
+const generateMCPToolGuide = (tools: MCPTool[], lang: 'en' | 'zh' = 'en'): string => {
+  if (tools.length === 0) return '';
+
+  // 按类型分组工具
+  const categories: Record<string, string[]> = {};
+  tools.forEach(t => {
+    const cat = categorizeMCPTool(t.name);
+    if (!categories[cat]) categories[cat] = [];
+    categories[cat].push(t.name);
+  });
+
+  const guides: string[] = [];
+
+  // 重要提示：区分内置工具和 MCP 工具
+  guides.push(lang === 'zh'
+    ? '⚠️ 重要: 创建/修改应用内文件请用 create_file/update_file，MCP工具仅用于外部操作'
+    : '⚠️ Important: Use create_file/update_file for app files. MCP tools are for external operations only');
+
+  // 浏览器工具指南
+  if (categories['browser']) {
+    const hasNavigate = categories['browser'].some(n => n.includes('navigate'));
+    const hasSnapshot = categories['browser'].some(n => n.includes('snapshot'));
+
+    if (hasNavigate && hasSnapshot) {
+      guides.push(lang === 'zh'
+        ? '🌐 浏览器: 先 navigate_page 打开网址，再 take_snapshot 获取内容'
+        : '🌐 Browser: navigate_page first, then take_snapshot');
+    }
+  }
+
+  // 搜索工具指南
+  if (categories['search']) {
+    guides.push(lang === 'zh'
+      ? '🔍 搜索: 可直接搜索，无需先打开网页'
+      : '🔍 Search: Query directly without opening pages');
+  }
+
+  return '\n\n**' + (lang === 'zh' ? '工具使用提示' : 'Usage Tips') + ':**\n' + guides.join('\n');
+};
 
 // Base interface for MCP clients (both Virtual and Real)
 interface IMCPClient {
@@ -176,6 +261,8 @@ export class VirtualMCPClient {
 export class RealMCPClient {
   private isAvailable: boolean = false;
   private tools: MCPTool[] = [];
+  private maxRetries = 3;
+  private retryDelayMs = 500;
 
   constructor(configStr: string) {
     this.isAvailable = mcpService.isAvailable();
@@ -193,13 +280,43 @@ export class RealMCPClient {
       return;
     }
 
-    try {
-      // 工具列表将在需要时动态获取
-      this.tools = await mcpService.getTools();
-      console.log(`[RealMCP] Connected, discovered ${this.tools.length} tools`);
-    } catch (error) {
-      console.error('[RealMCP] Connection failed:', error);
-      this.isAvailable = false;
+    // 使用重试机制确保工具映射表已就绪
+    for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
+      try {
+        console.log(`[RealMCP] Attempting to connect (attempt ${attempt}/${this.maxRetries})`);
+
+        // 获取工具列表
+        this.tools = await mcpService.getTools();
+
+        if (this.tools.length > 0) {
+          console.log(`[RealMCP] Connected successfully, discovered ${this.tools.length} tools:`,
+            this.tools.map(t => t.name).join(', ')
+          );
+          return;
+        } else {
+          console.warn(`[RealMCP] Connection attempt ${attempt}: No tools available yet`);
+
+          if (attempt < this.maxRetries) {
+            // 等待后重试
+            await new Promise(resolve => setTimeout(resolve, this.retryDelayMs * attempt));
+          }
+        }
+      } catch (error) {
+        console.error(`[RealMCP] Connection attempt ${attempt} failed:`, error);
+
+        if (attempt < this.maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, this.retryDelayMs * attempt));
+        } else {
+          this.isAvailable = false;
+          throw error;
+        }
+      }
+    }
+
+    // 如果所有重试都失败
+    if (this.tools.length === 0) {
+      console.warn('[RealMCP] Failed to discover tools after all retries. MCP may not be ready.');
+      // 不设置 isAvailable = false，允许后续调用时再次尝试
     }
   }
 
@@ -228,6 +345,26 @@ export class RealMCPClient {
 
       if (!result.success) {
         console.error(`[RealMCP] Tool execution failed:`, result.error);
+
+        // 如果是工具未找到的错误，刷新工具列表并重试一次
+        if (result.error && result.error.includes('not found')) {
+          console.log('[RealMCP] Refreshing tool list and retrying...');
+          this.tools = await mcpService.getTools();
+
+          if (this.tools.some(t => t.name === name)) {
+            // 工具现在可用了，重试
+            const retryResult = await mcpService.callTool(name, args);
+            if (!retryResult.success) {
+              return {
+                success: false,
+                error: retryResult.error,
+                output: `Error: ${retryResult.error}`
+              };
+            }
+            return retryResult.result || { success: true, output: 'Tool executed successfully' };
+          }
+        }
+
         return {
           success: false,
           error: result.error,
@@ -418,6 +555,213 @@ const extractJson = (text: string): string => {
 
 // Helper for delay
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// --- Streaming Response Helpers ---
+
+/**
+ * Stream Gemini response
+ */
+async function* streamGemini(
+  prompt: string,
+  config: AIConfig,
+  systemInstruction?: string,
+  conversationHistory?: ChatMessage[]
+): AsyncGenerator<string, void, unknown> {
+  try {
+    const client = getClient(config.apiKey);
+    const modelName = config.model || DEFAULT_GEMINI_MODEL;
+
+    // Build contents array
+    const contents: any[] = [];
+
+    if (conversationHistory && conversationHistory.length > 0) {
+      for (const msg of conversationHistory) {
+        if (msg.role === 'user') {
+          contents.push({ role: 'user', parts: [{ text: msg.content }] });
+        } else if (msg.role === 'assistant') {
+          contents.push({ role: 'model', parts: [{ text: msg.content }] });
+        }
+      }
+    }
+
+    contents.push({ role: 'user', parts: [{ text: prompt }] });
+
+    const generateConfig: any = { systemInstruction };
+
+    const result = await client.models.generateContentStream({
+      model: modelName,
+      contents,
+      config: generateConfig
+    });
+
+    // Gemini's generateContentStream returns an AsyncGenerator
+    for await (const chunk of result) {
+      const text = chunk.text;
+      if (text) yield text;
+    }
+  } catch (error: any) {
+    throw new Error(`Gemini Streaming Error: ${error.message || "Unknown error"}`);
+  }
+}
+
+/**
+ * Stream Ollama response (NDJSON format)
+ */
+async function* streamOllama(
+  prompt: string,
+  config: AIConfig,
+  systemInstruction?: string,
+  conversationHistory?: ChatMessage[]
+): AsyncGenerator<string, void, unknown> {
+  const baseUrl = config.baseUrl || 'http://localhost:11434';
+  const model = config.model || 'llama3';
+
+  const messages: any[] = [];
+  if (systemInstruction) messages.push({ role: 'system', content: systemInstruction });
+
+  if (conversationHistory && conversationHistory.length > 0) {
+    for (const msg of conversationHistory) {
+      if (msg.role === 'user') {
+        messages.push({ role: 'user', content: msg.content });
+      } else if (msg.role === 'assistant') {
+        messages.push({ role: 'assistant', content: msg.content });
+      }
+    }
+  }
+
+  messages.push({ role: 'user', content: prompt });
+
+  try {
+    const url = `${baseUrl.replace(/\/$/, '')}/api/chat`;
+    const options = {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        messages,
+        stream: true,
+        options: { temperature: config.temperature }
+      })
+    };
+
+    // Use platformStreamFetch for true streaming in Electron
+    let buffer = '';
+    for await (const chunk of platformStreamFetch(url, options)) {
+      buffer += chunk;
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const json = JSON.parse(line);
+          if (json.message?.content) {
+            yield json.message.content;
+          }
+        } catch (e) {
+          // Skip invalid JSON lines
+        }
+      }
+    }
+
+    // Process any remaining buffer
+    if (buffer.trim()) {
+      try {
+        const json = JSON.parse(buffer);
+        if (json.message?.content) {
+          yield json.message.content;
+        }
+      } catch (e) {
+        // Skip invalid JSON
+      }
+    }
+  } catch (error: any) {
+    throw new Error(`Ollama Streaming Error: ${error.message || "Unknown error"}`);
+  }
+}
+
+/**
+ * Stream OpenAI-compatible response (SSE format)
+ */
+async function* streamOpenAICompatible(
+  prompt: string,
+  config: AIConfig,
+  systemInstruction?: string,
+  conversationHistory?: ChatMessage[]
+): AsyncGenerator<string, void, unknown> {
+  const baseUrl = config.baseUrl || 'https://api.openai.com/v1';
+  const endpoint = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
+
+  const messages: any[] = [];
+  if (systemInstruction) messages.push({ role: 'system', content: systemInstruction });
+
+  if (conversationHistory && conversationHistory.length > 0) {
+    for (const msg of conversationHistory) {
+      if (msg.role === 'user') {
+        messages.push({ role: 'user', content: msg.content });
+      } else if (msg.role === 'assistant') {
+        messages.push({ role: 'assistant', content: msg.content });
+      }
+    }
+  }
+
+  messages.push({ role: 'user', content: prompt });
+
+  try {
+    const options = {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.apiKey || ''}`
+      },
+      body: JSON.stringify({
+        model: config.model,
+        messages,
+        temperature: config.temperature,
+        stream: true
+      })
+    };
+
+    // Use platformStreamFetch for true streaming in Electron
+    let buffer = '';
+    for await (const chunk of platformStreamFetch(endpoint, options)) {
+      buffer += chunk;
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6).trim();
+          if (data === '[DONE]') continue;
+
+          try {
+            const json = JSON.parse(data);
+            const content = json.choices?.[0]?.delta?.content;
+            if (content) yield content;
+          } catch (e) {
+            // Skip invalid JSON
+          }
+        }
+      }
+    }
+
+    // Process any remaining buffer
+    if (buffer.trim() && buffer.startsWith('data: ')) {
+      const data = buffer.slice(6).trim();
+      if (data !== '[DONE]') {
+        try {
+          const json = JSON.parse(data);
+          const content = json.choices?.[0]?.delta?.content;
+          if (content) yield content;
+        } catch (e) {
+          // Skip invalid JSON
+        }
+      }
+    }
+  } catch (error: any) {
+    throw new Error(`Streaming Error: ${error.message || "Unknown error"}`);
+  }
+}
 
 // Helper to format MCP tool results for better display
 const formatMCPToolResult = (toolName: string, result: any): string => {
@@ -674,6 +1018,81 @@ export const compactConversation = async (messages: ChatMessage[], config: AICon
     return [summaryMessage, ...recentMessages];
 };
 
+/**
+ * Stream AI response as it's being generated
+ * @yields Text chunks as they arrive
+ */
+export async function* generateAIResponseStream(
+  prompt: string,
+  config: AIConfig,
+  systemInstruction?: string,
+  contextFiles: MarkdownFile[] = [],
+  retrievedContext?: string,
+  conversationHistory?: ChatMessage[]
+): AsyncGenerator<string, void, unknown> {
+  // Build full prompt with RAG context
+  let fullPrompt = prompt;
+
+  if (retrievedContext) {
+    fullPrompt = `You are answering based on the provided Knowledge Base.\n\nrelevant_context:\n${retrievedContext}\n\nuser_query: ${prompt}`;
+  } else if (contextFiles.length > 0) {
+    const charLimit = config.provider === 'gemini' ? 2000000 : 30000;
+    const contextStr = contextFiles.map(f => `--- File: ${f.name} ---\n${f.content}`).join('\n\n');
+    const truncatedContext = contextStr.substring(0, charLimit);
+    fullPrompt = `Context from user knowledge base:\n${truncatedContext}\n\nUser Query: ${prompt}`;
+  }
+
+  const langInstruction = config.language === 'zh'
+    ? " IMPORTANT: Respond in Chinese (Simplified) for all content, explanations, and labels."
+    : "";
+
+  // Initialize MCP Client for tool descriptions - Use Real if available, fallback to Virtual
+  let mcpClient: RealMCPClient | VirtualMCPClient;
+  const realMCP = new RealMCPClient(config.mcpTools || '{}');
+
+  console.log('[generateAIResponseStream] mcpService.isAvailable:', mcpService.isAvailable());
+  console.log('[generateAIResponseStream] realMCP.isRealMCP:', realMCP.isRealMCP());
+
+  if (realMCP.isRealMCP()) {
+    mcpClient = realMCP;
+    await mcpClient.connect();
+    console.log('[generateAIResponseStream] RealMCP tools:', mcpClient.getTools().length);
+  } else {
+    mcpClient = new VirtualMCPClient(config.mcpTools || '{}');
+    await mcpClient.connect();
+    console.log('[generateAIResponseStream] VirtualMCP tools:', mcpClient.getTools().length);
+  }
+
+  // Generate MCP Tool Descriptions for System Prompt
+  const rawTools = mcpClient ? mcpClient.getTools() : [];
+  const mcpToolDescriptions = rawTools.length > 0
+    ? rawTools.map(t => `- **${t.name}**: ${t.description}`).join('\n')
+    : '';
+
+  // 动态生成工具使用指南
+  const toolGuide = generateMCPToolGuide(
+    rawTools.map(t => ({ name: t.name, description: t.description || '', inputSchema: {} })),
+    config.language === 'zh' ? 'zh' : 'en'
+  );
+
+  const mcpPromptAddition = mcpToolDescriptions
+    ? `\n\n## Available MCP Tools\nYou have access to the following MCP tools. When you need to use a tool, output a tool call in this exact JSON format:\n\`\`\`tool_call\n{"tool": "tool_name", "arguments": {...}}\n\`\`\`\n\nAvailable tools:\n${mcpToolDescriptions}${toolGuide}`
+    : '';
+
+  const finalSystemInstruction = (systemInstruction || "") + mcpPromptAddition + langInstruction;
+
+  // Route to appropriate streaming function
+  if (config.provider === 'gemini') {
+    yield* streamGemini(fullPrompt, config, finalSystemInstruction, conversationHistory);
+  } else if (config.provider === 'ollama') {
+    yield* streamOllama(fullPrompt, config, finalSystemInstruction, conversationHistory);
+  } else if (config.provider === 'openai') {
+    yield* streamOpenAICompatible(fullPrompt, config, finalSystemInstruction, conversationHistory);
+  } else {
+    throw new Error(`Unsupported provider for streaming: ${config.provider}`);
+  }
+}
+
 export const generateAIResponse = async (
   prompt: string,
   config: AIConfig,
@@ -682,13 +1101,14 @@ export const generateAIResponse = async (
   contextFiles: MarkdownFile[] = [],
   toolsCallback?: (toolName: string, args: any) => Promise<any>,
   retrievedContext?: string, // New: Accept pre-retrieved RAG context string
-  conversationHistory?: ChatMessage[] // NEW: Historical conversation context
+  conversationHistory?: ChatMessage[], // NEW: Historical conversation context
+  disableTools: boolean = false // NEW: Disable tool calling for content processing tasks
 ): Promise<string> => {
   
   // RAG: Inject context
   let fullPrompt = prompt;
-  
-  // Strategy: Use retrievedContext if provided (High Quality RAG), 
+
+  // Strategy: Use retrievedContext if provided (High Quality RAG),
   // otherwise fallback to raw concatenation of contextFiles (Legacy/Small context)
   if (retrievedContext) {
       fullPrompt = `You are answering based on the provided Knowledge Base.\n\nrelevant_context:\n${retrievedContext}\n\nuser_query: ${prompt}`;
@@ -696,15 +1116,13 @@ export const generateAIResponse = async (
     // Dynamic context limit for legacy mode
     const charLimit = config.provider === 'gemini' ? 2000000 : 30000;
     const contextStr = contextFiles.map(f => `--- File: ${f.name} ---\n${f.content}`).join('\n\n');
-    const truncatedContext = contextStr.substring(0, charLimit); 
+    const truncatedContext = contextStr.substring(0, charLimit);
     fullPrompt = `Context from user knowledge base:\n${truncatedContext}\n\nUser Query: ${prompt}`;
   }
-  
-  const langInstruction = config.language === 'zh' 
-    ? " IMPORTANT: Respond in Chinese (Simplified) for all content, explanations, and labels." 
-    : "";
 
-  const finalSystemInstruction = (systemInstruction || "") + langInstruction;
+  const langInstruction = config.language === 'zh'
+    ? " IMPORTANT: Respond in Chinese (Simplified) for all content, explanations, and labels."
+    : "";
 
   // Initialize MCP Client - Use Real if available, fallback to Virtual
   let mcpClient: RealMCPClient | VirtualMCPClient;
@@ -720,20 +1138,40 @@ export const generateAIResponse = async (
     console.log('[AI] Using Virtual MCP Client (Browser Simulation)');
   }
 
+  // Generate MCP Tool Descriptions for System Prompt
+  const rawTools2 = mcpClient ? mcpClient.getTools() : [];
+  const mcpToolDescriptions = rawTools2.length > 0
+    ? rawTools2.map(t => `- **${t.name}**: ${t.description}`).join('\n')
+    : '';
+
+  // 动态生成工具使用指南
+  const toolGuide2 = generateMCPToolGuide(
+    rawTools2.map(t => ({ name: t.name, description: t.description || '', inputSchema: {} })),
+    config.language === 'zh' ? 'zh' : 'en'
+  );
+
+  const mcpPromptAddition = mcpToolDescriptions
+    ? `\n\n## Available MCP Tools\nYou have access to the following MCP tools:\n${mcpToolDescriptions}${toolGuide2}\n\nUse function calling to invoke these tools.`
+    : '';
+
+  const finalSystemInstruction = (systemInstruction || "") + mcpPromptAddition + langInstruction;
+
   // Create Unified Tool Callback
+  // IMPORTANT: 所有工具调用都必须经过 toolsCallback 以便 UI 能显示实时反馈
   const unifiedToolCallback = async (name: string, args: any) => {
-      // 1. Check if it's a built-in tool (file operations + RAG search)
-      const builtInTools = ['create_file', 'update_file', 'delete_file', 'search_knowledge_base'];
-      if (builtInTools.includes(name) && toolsCallback) {
+      // 始终通过 toolsCallback 执行，让 App.tsx 能够捕获所有工具调用并显示 UI
+      // toolsCallback 内部（App.tsx 的 executeToolUnified）会判断是内置工具还是 MCP 工具
+      if (toolsCallback) {
           return await toolsCallback(name, args);
       }
-      // 2. Delegate to MCP
+      // Fallback: 如果没有 callback，直接执行 MCP 工具
       return await mcpClient.executeTool(name, args);
   };
-  
+
   // IMPORTANT: Conflicting Config Handling
   // If JSON Mode is enabled, we CANNOT use Function Calling tools in Gemini (API Error 400).
-  const shouldEnableTools = !jsonMode && (!!toolsCallback || (mcpClient.getTools().length > 0));
+  // If disableTools is true, skip tool initialization for content processing tasks (expand/polish)
+  const shouldEnableTools = !jsonMode && !disableTools && (!!toolsCallback || (mcpClient.getTools().length > 0));
   const callbackToPass = shouldEnableTools ? unifiedToolCallback : undefined;
 
   if (config.provider === 'gemini') {
@@ -1101,13 +1539,15 @@ const callOpenAICompatible = async (
 export const polishContent = async (content: string, config: AIConfig): Promise<string> => {
   const defaultPrompt = "You are an expert technical editor. Improve the provided Markdown content for clarity, grammar, and flow. Return only the polished Markdown.";
   const systemPrompt = config.customPrompts?.polish || defaultPrompt;
-  return generateAIResponse(content, config, systemPrompt);
+  // Disable tools for content processing - no MCP/file operations needed
+  return generateAIResponse(content, config, systemPrompt, false, [], undefined, undefined, undefined, true);
 };
 
 export const expandContent = async (content: string, config: AIConfig): Promise<string> => {
   const defaultPrompt = "You are a creative technical writer. Expand on the provided Markdown content, adding relevant details, examples, or explanations. Return only the expanded Markdown.";
   const systemPrompt = config.customPrompts?.expand || defaultPrompt;
-  return generateAIResponse(content, config, systemPrompt);
+  // Disable tools for content processing - no MCP/file operations needed
+  return generateAIResponse(content, config, systemPrompt, false, [], undefined, undefined, undefined, true);
 };
 
 export const generateKnowledgeGraph = async (files: MarkdownFile[], config: AIConfig): Promise<GraphData> => {
@@ -1348,17 +1788,25 @@ Output: JSON Array with objects containing: question, type (single/text), option
             const jsonStr = await generateAIResponse(prompt, config, "You are a Quiz Designer. Create insightful questions even from short content. Return JSON Array.", true);
             const parsed = JSON.parse(extractJson(jsonStr));
             const questions = Array.isArray(parsed) ? parsed : [];
-            return questions.map((q: any, i: number) => ({
-                id: `gen-q-short-${i}`,
-                type: q.type || 'single',
-                question: q.question,
-                options: q.options,
-                correctAnswer: q.correctAnswer,
-                explanation: q.explanation
-            })).filter((q: any) => q.question);
-        } catch (e) {
+            const validQuestions = questions
+                .map((q: any, i: number) => ({
+                    id: `gen-q-short-${i}`,
+                    type: q.type || 'single',
+                    question: q.question,
+                    options: q.options,
+                    correctAnswer: q.correctAnswer,
+                    explanation: q.explanation
+                }))
+                .filter((q: any) => q.question && q.question.trim().length > 0);
+
+            // 如果没有有效题目，抛出详细错误
+            if (validQuestions.length === 0) {
+                throw new Error("AI generated response but no valid questions were found. The content may be too short or not suitable for quiz generation.");
+            }
+            return validQuestions;
+        } catch (e: any) {
             console.error("Short content quiz generation failed:", e);
-            return [];
+            throw new Error(`Quiz generation failed for short content: ${e.message || 'Unknown error'}`);
         }
     }
 
@@ -1382,65 +1830,100 @@ Output: JSON Array with objects containing: question, type (single/text), option
     const flatQuestions: QuizQuestion[] = [];
     results.forEach((batch, batchIdx) => {
         batch.forEach((q: any, qIdx: number) => {
-            if (q && q.question) flatQuestions.push({
-                id: `gen-q-${batchIdx}-${qIdx}`,
-                type: q.type || 'single',
-                question: q.question,
-                options: q.options,
-                correctAnswer: q.correctAnswer,
-                explanation: q.explanation
-            });
+            if (q && q.question && q.question.trim().length > 0) {
+                flatQuestions.push({
+                    id: `gen-q-${batchIdx}-${qIdx}`,
+                    type: q.type || 'single',
+                    question: q.question,
+                    options: q.options,
+                    correctAnswer: q.correctAnswer,
+                    explanation: q.explanation
+                });
+            }
         });
     });
+
+    // 如果没有生成任何题目，抛出详细错误
+    if (flatQuestions.length === 0) {
+        throw new Error(`Failed to generate quiz questions. Possible reasons: AI response was invalid, content is not suitable for quiz generation, or API call failed. Please check your AI configuration and try again.`);
+    }
+
     return flatQuestions;
 };
 
 export const extractQuizFromRawContent = async (content: string, config: AIConfig): Promise<Quiz> => {
-   // Enhanced Regex to detect English (Q1, Question 1) and Chinese (问题1, 第1题) and Markdown Headers (# Question)
-   // Matches: "Q1.", "Q1:", "1.", "1)", "## Question 1", "### 问题1", "第1题", etc.
-   const questionPattern = /(?:^|\n)\s*(?:#{1,6}\s*)?(?:Q\s*\d+|Question\s*\d+|问题\s*\d+|第\s*\d+\s*[题问])[:.．\s]/i;
-   
-   const matchCount = (content.match(new RegExp(questionPattern, 'g')) || []).length;
-   const isStandardList = (content.match(/(?:^|\n)\s*\d+[.．]\s+/g) || []).length > 2; // Matches "1. ", "2. " lists
-   
-   // If we detect even ONE strong question marker, or a few numbered list items that likely imply a quiz
-   if (matchCount >= 1 || isStandardList) {
+   // Enhanced Regex to detect STRONG question markers (not just numbered lists)
+   // Matches: "Q1.", "Q1:", "Question 1", "问题1", "第1题", etc.
+   // NOTE: Removed isStandardList check - numbered lists like "1. xxx" are common in notes and don't indicate quiz content
+   const strongQuestionPattern = /(?:^|\n)\s*(?:#{1,6}\s*)?(?:Q\s*\d+|Question\s*\d+|问题\s*\d+|第\s*\d+\s*[题问])[:.．\s]/i;
+
+   // Also check for option patterns like "A.", "A)", "(A)" which strongly indicate quiz content
+   const optionPattern = /(?:^|\n)\s*[A-Da-d][.）)]\s+\S/;
+
+   const hasStrongQuestionMarker = strongQuestionPattern.test(content);
+   const hasOptions = optionPattern.test(content);
+
+   // Only try to extract if we have STRONG indicators of quiz content
+   if (hasStrongQuestionMarker || hasOptions) {
        // Gemini can handle huge content
        const limit = config.provider === 'gemini' ? 2000000 : 500000;
-       
+
        const prompt = `Task: Extract ALL questions from the provided text verbatim into a JSON format.
-       
+
        Rules:
        1. Preserve the exact text of questions and options.
        2. If options are present (A, B, C, D), extract them into the "options" array.
        3. If a correct answer is marked or implied, include it in "correctAnswer".
        4. Return a valid JSON Object with a "questions" array.
-       
+       5. If there are NO actual quiz questions in the text, return {"questions": []}
+
        Text Content:
        ${content.substring(0, limit)}`;
-       
+
        const jsonStr = await generateAIResponse(prompt, config, "You are a Data Extractor. Extract questions exactly as they appear. Return JSON.", true);
        const result = JSON.parse(extractJson(jsonStr));
-       
+
        // Handle cases where AI returns array directly vs object wrapper
        const questions = Array.isArray(result) ? result : (result.questions || []);
-       
-       return { 
-           id: `quiz-extracted-${Date.now()}`, 
-           title: "Extracted Quiz", 
-           description: "Extracted from current file.", 
-           questions: questions.map((q: any, i: number) => ({
-               ...q, 
-               id: q.id || `ext-${i}`,
-               type: q.options && q.options.length > 0 ? 'single' : 'text'
-           })), 
-           isGraded: false 
-       };
-   } else {
+
+       // If extraction found valid questions, return them
+       if (questions.length > 0) {
+           return {
+               id: `quiz-extracted-${Date.now()}`,
+               title: "Extracted Quiz",
+               description: "Extracted from current file.",
+               questions: questions.map((q: any, i: number) => ({
+                   ...q,
+                   id: q.id || `ext-${i}`,
+                   type: q.options && q.options.length > 0 ? 'single' : 'text'
+               })),
+               isGraded: false
+           };
+       }
+       // If extraction returned empty, fall through to generation mode
+       console.log('[Quiz] Extraction returned no questions, falling back to generation mode');
+   }
+
+   // Fallback: Generate NEW questions from the content notes
+   {
        // Fallback: Generate NEW questions from the content notes
-       const questions = await generateQuestionsFromChunks(content, config);
-       if (questions.length === 0) throw new Error("No questions generated.");
-       return { id: `quiz-gen-${Date.now()}`, title: "Generated Quiz", description: "Generated from notes.", questions, isGraded: false };
+       try {
+           const questions = await generateQuestionsFromChunks(content, config);
+           // 验证题目数组非空（generateQuestionsFromChunks 已经会抛出错误，这是双重保护）
+           if (questions.length === 0) {
+               throw new Error("No questions generated. The AI did not return any valid questions.");
+           }
+           return {
+               id: `quiz-gen-${Date.now()}`,
+               title: "Generated Quiz",
+               description: "Generated from notes.",
+               questions,
+               isGraded: false
+           };
+       } catch (e: any) {
+           // 重新抛出错误，附加上下文信息
+           throw new Error(`Quiz generation failed: ${e.message || 'Unknown error'}`);
+       }
    }
 };
 

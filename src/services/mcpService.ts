@@ -17,13 +17,25 @@ interface MCPServerStatus {
 }
 
 class MCPService {
-    private isElectronEnv: boolean;
+    private _isElectronEnv: boolean | null = null;
 
-    constructor() {
-        // 检测是否在 Electron 环境
-        this.isElectronEnv = typeof window !== 'undefined' &&
-                             window.electronAPI !== undefined &&
-                             window.electronAPI.mcp !== undefined;
+    /**
+     * 动态检测 Electron 环境
+     * 避免在模块加载时 electronAPI 尚未就绪的问题
+     */
+    private get isElectronEnv(): boolean {
+        // 每次都重新检测，因为 electronAPI 可能在模块加载后才可用
+        if (typeof window !== 'undefined' &&
+            window.electronAPI !== undefined &&
+            window.electronAPI.mcp !== undefined) {
+            this._isElectronEnv = true;
+            return true;
+        }
+        // 如果已经确认过是 Electron 环境，直接返回 true
+        if (this._isElectronEnv === true) {
+            return true;
+        }
+        return false;
     }
 
     /**
