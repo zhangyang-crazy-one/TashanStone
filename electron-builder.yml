@@ -18,6 +18,9 @@ files:
 extraResources:
   - from: electron/database/schema.sql
     to: schema.sql
+  # OCR worker script (runs in separate Node.js process)
+  - from: electron/ocr/ocr-worker.cjs
+    to: electron/ocr/ocr-worker.cjs
   # Sherpa-ONNX ASR models (if downloaded)
   - from: resources/sherpa-models
     to: sherpa-models
@@ -39,6 +42,8 @@ asarUnpack:
   - "**/node_modules/better-sqlite3/**"
   - "**/sherpa-onnx/**"
   - "**/node_modules/sherpa-onnx/**"
+  - "**/onnxruntime-node/**"
+  - "**/node_modules/onnxruntime-node/**"
   - "**/@ffmpeg-installer/**"
   - "**/node_modules/@ffmpeg-installer/**"
   - "**/@ffprobe-installer/**"
