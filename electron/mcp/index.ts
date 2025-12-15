@@ -68,11 +68,8 @@ class MCPManager {
      * 加载配置并连接所有服务器
      */
     async loadConfig(configStr: string): Promise<void> {
-        // 如果已经在初始化中,等待完成
-        if (this.initializationPromise) {
-            return this.initializationPromise;
-        }
-
+        // 重置初始化状态，允许重新加载配置
+        this.isInitialized = false;
         this.initializationPromise = this._loadConfigInternal(configStr);
         return this.initializationPromise;
     }
