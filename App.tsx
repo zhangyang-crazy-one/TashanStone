@@ -18,10 +18,10 @@ import { AnalyticsDashboard } from './components/AnalyticsDashboard';
 import { LearningRoadmap } from './components/LearningRoadmap';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { VoiceTranscriptionModal } from './components/VoiceTranscriptionModal';
-import { ViewMode, AIState, MarkdownFile, AIConfig, ChatMessage, GraphData, AppTheme, Quiz, RAGStats, AppShortcut, RAGResultData, EditorPane, Snippet, StudyPlan, ExamResult, KnowledgePointStat } from './types';
+import { ViewMode, AIState, MarkdownFile, AIConfig, ChatMessage, GraphData, AppTheme, Quiz, RAGStats, OCRStats, AppShortcut, RAGResultData, EditorPane, Snippet, StudyPlan, ExamResult, KnowledgePointStat } from './types';
 import { polishContent, expandContent, generateAIResponse, generateAIResponseStream, generateKnowledgeGraph, synthesizeKnowledgeBase, generateQuiz, generateMindMap, extractQuizFromRawContent, compactConversation } from './services/aiService';
 import { applyTheme, getAllThemes, getSavedThemeId, saveCustomTheme, deleteCustomTheme, DEFAULT_THEMES, getLastUsedThemeIdForMode } from './services/themeService';
-import { readDirectory, saveFileToDisk, processPdfFile, extractTextFromFile, parseCsvToQuiz, isExtensionSupported } from './services/fileService';
+import { readDirectory, readDirectoryEnhanced, saveFileToDisk, processPdfFile, extractTextFromFile, parseCsvToQuiz, isExtensionSupported } from './services/fileService';
 import { VectorStore } from './services/ragService';
 import { mcpService } from './src/services/mcpService';
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
@@ -267,6 +267,7 @@ const App: React.FC = () => {
   const [isVoiceTranscriptionOpen, setIsVoiceTranscriptionOpen] = useState(false);
   const [aiState, setAiState] = useState<AIState>({ isThinking: false, error: null, message: null });
   const [ragStats, setRagStats] = useState<RAGStats>({ totalFiles: 0, indexedFiles: 0, totalChunks: 0, isIndexing: false });
+  const [ocrStats, setOcrStats] = useState<OCRStats>({ isProcessing: false, totalPages: 0, processedPages: 0 });
 
   // Multi-File Editor State
   const [openPanes, setOpenPanes] = useState<EditorPane[]>(() => {
@@ -796,11 +797,30 @@ const App: React.FC = () => {
       throw new Error("Directory Picker not supported");
     }
     const dirHandle = await window.showDirectoryPicker();
-    const loadedFiles = await readDirectory(dirHandle);
+
+    // 显示导入进度
+    setAiState({ isThinking: true, message: t.processingFile, error: null });
+
+    const loadedFiles = await readDirectoryEnhanced(
+      dirHandle,
+      aiConfig.apiKey,
+      (progress) => {
+        setAiState({
+          isThinking: true,
+          message: `${t.processingFile} (${progress.processedFiles + 1}/${progress.totalFiles}): ${progress.currentFile}`,
+          error: null
+        });
+      }
+    );
+
+    setAiState({ isThinking: false, message: null, error: null });
+
     if (loadedFiles.length > 0) {
       setFiles(loadedFiles);
       setActiveFileId(loadedFiles[0].id);
       showToast(`${t.filesLoaded}: ${loadedFiles.length}`);
+      // Auto-index after folder import
+      handleIndexKnowledgeBase(loadedFiles);
     } else {
       showToast(t.noFilesFound);
     }
@@ -809,41 +829,84 @@ const App: React.FC = () => {
   const handleImportFolderFiles = async (fileList: FileList) => {
     const newFiles: MarkdownFile[] = [];
     setAiState({ isThinking: true, message: t.processingFile, error: null });
-    
-    try {
-      for (let i = 0; i < fileList.length; i++) {
-        const file = fileList[i];
-        if (isExtensionSupported(file.name)) {
-           const content = await extractTextFromFile(file, aiConfig.apiKey);
-           let path = file.webkitRelativePath || file.name;
-           if (path.match(/\.(pdf|docx|doc)$/i)) {
-               path = path.replace(/\.(pdf|docx|doc)$/i, '.md');
-           }
-           
-           newFiles.push({
-             id: generateId() + '-' + i,
-             name: file.name.replace(/\.[^/.]+$/, ""),
-             content: content,
-             lastModified: file.lastModified,
-             isLocal: false,
-             path: path
-           });
-        }
+
+    // Count total files and PDF files for progress tracking
+    const supportedFiles: File[] = [];
+    for (let i = 0; i < fileList.length; i++) {
+      if (isExtensionSupported(fileList[i].name)) {
+        supportedFiles.push(fileList[i]);
       }
-      
+    }
+
+    // Set initial progress
+    setOcrStats({
+      isProcessing: true,
+      totalPages: supportedFiles.length,
+      processedPages: 0,
+      currentFile: supportedFiles[0]?.name || ''
+    });
+
+    try {
+      for (let i = 0; i < supportedFiles.length; i++) {
+        const file = supportedFiles[i];
+        const isPdf = file.name.toLowerCase().endsWith('.pdf');
+
+        // Update progress
+        setOcrStats(prev => ({
+          ...prev,
+          processedPages: i,
+          currentFile: isPdf ? `${file.name} (OCR)` : file.name
+        }));
+
+        let content: string;
+        if (isPdf) {
+          // Use processPdfFile directly for PDF files to get progress
+          content = await processPdfFile(file, aiConfig.apiKey, {
+            onProgress: (current, total, isOcr) => {
+              setOcrStats(prev => ({
+                ...prev,
+                currentFile: isOcr ? `${file.name} (OCR ${current}/${total})` : `${file.name} (${current}/${total})`
+              }));
+            }
+          });
+        } else {
+          content = await extractTextFromFile(file, aiConfig.apiKey);
+        }
+
+        let path = file.webkitRelativePath || file.name;
+        if (path.match(/\.(pdf|docx|doc)$/i)) {
+            path = path.replace(/\.(pdf|docx|doc)$/i, '.md');
+        }
+
+        newFiles.push({
+          id: generateId() + '-' + i,
+          name: file.name.replace(/\.[^/.]+$/, ""),
+          content: content,
+          lastModified: file.lastModified,
+          isLocal: false,
+          path: path
+        });
+
+        // Update progress after file is processed
+        setOcrStats(prev => ({
+          ...prev,
+          processedPages: i + 1
+        }));
+      }
+
       if (newFiles.length > 0) {
         // Safe Deduplication and Update
         let combinedFiles: MarkdownFile[] = [];
-        
+
         setFiles(prev => {
            const existingPaths = new Set(prev.map(f => f.path || f.name));
            const uniqueNew = newFiles.filter(f => !existingPaths.has(f.path || f.name));
            combinedFiles = [...prev, ...uniqueNew];
            return combinedFiles;
         });
-        
+
         setActiveFileId(newFiles[0].id);
-        
+
         // Trigger indexing outside the state setter to avoid side-effects and double counting
         // We pass the new files specifically to be indexed
         if (combinedFiles.length > 0) {
@@ -858,13 +921,25 @@ const App: React.FC = () => {
        showToast(e.message, true);
     } finally {
        setAiState(prev => ({ ...prev, isThinking: false, message: null }));
+       setOcrStats({ isProcessing: false, totalPages: 0, processedPages: 0 });
     }
   };
 
   const handleImportPdf = async (file: File) => {
     setAiState({ isThinking: true, message: t.processingFile, error: null });
+    setOcrStats({ isProcessing: true, totalPages: 0, processedPages: 0, currentFile: file.name });
     try {
-      const mdContent = await processPdfFile(file, aiConfig.apiKey);
+      const mdContent = await processPdfFile(file, aiConfig.apiKey, {
+        onProgress: (current, total, isOcr) => {
+          // Update progress for all pages, with isOcr indicating OCR mode
+          setOcrStats(prev => ({
+            ...prev,
+            processedPages: current,
+            totalPages: total,
+            currentFile: isOcr ? `${file.name} (OCR)` : file.name
+          }));
+        }
+      });
       const newFile: MarkdownFile = {
         id: generateId(),
         name: file.name.replace('.pdf', ''),
@@ -872,7 +947,7 @@ const App: React.FC = () => {
         lastModified: Date.now(),
         path: file.name.replace('.pdf', '.md')
       };
-      
+
       let updatedList: MarkdownFile[] = [];
       setFiles(prev => {
         if (prev.some(f => (f.path || f.name) === newFile.path)) {
@@ -882,7 +957,7 @@ const App: React.FC = () => {
         updatedList = [...prev, newFile];
         return updatedList;
       });
-      
+
       // Index outside state setter
       if (updatedList.length > 0) {
          handleIndexKnowledgeBase(updatedList);
@@ -894,6 +969,7 @@ const App: React.FC = () => {
       showToast(`${t.importFail}: ${e.message}`, true);
     } finally {
       setAiState(prev => ({ ...prev, isThinking: false, message: null }));
+      setOcrStats({ isProcessing: false, totalPages: 0, processedPages: 0 });
     }
   };
 
@@ -1239,22 +1315,33 @@ const App: React.FC = () => {
             if (await vectorStore.hasFilesToIndex(filesRef.current)) {
               await handleIndexKnowledgeBase();
             }
+            // 限制默认结果数为5，避免上下文过大
+            const maxResults = Math.min(args.maxResults || 5, 8);
             const ragResponse = await vectorStore.searchWithResults(
               args.query,
               aiConfig,
-              args.maxResults || 10
+              maxResults
             );
+
+            // 精简返回结果，只保留必要信息
             const result = {
               success: true,
-              totalChunks: ragResponse.results.length,
-              context: ragResponse.context,
+              query: args.query,
+              matchCount: ragResponse.results.length,
+              // 只返回简洁的来源信息，不返回完整 context
               sources: ragResponse.results.map(r => ({
-                fileName: r.chunk.metadata.fileName,
-                score: r.score,
-                excerpt: r.chunk.text.substring(0, 200) + '...'
-              }))
+                file: r.chunk.metadata.fileName,
+                relevance: Math.round(r.score * 100) + '%',
+                // 限制摘要长度为100字符
+                excerpt: r.chunk.text.substring(0, 100).replace(/\n/g, ' ').trim() + '...'
+              })),
+              // 返回简洁的上下文摘要而非完整内容
+              summary: ragResponse.context.length > 500
+                ? ragResponse.context.substring(0, 500) + '...(truncated)'
+                : ragResponse.context
             };
-            return { success: true, result, formatted: JSON.stringify(result, null, 2) };
+            // 使用紧凑 JSON 减少传输量
+            return { success: true, result, formatted: JSON.stringify(result) };
           } catch (error: any) {
             return { success: false, result: { error: error.message }, formatted: JSON.stringify({ success: false, error: error.message }) };
           }
@@ -1276,15 +1363,20 @@ const App: React.FC = () => {
 
         // 3. update_file - 更新应用内文件
         if (toolName === 'update_file') {
-          let found = false;
-          setFiles(prev => prev.map(f => {
-            if (f.name === args.filename.replace('.md', '') || f.name === args.filename) {
-              found = true;
-              return { ...f, content: args.content, lastModified: Date.now() };
-            }
-            return f;
-          }));
-          if (found) {
+          // 使用 filesRef 同步检查文件是否存在（避免 setFiles 异步问题）
+          const targetFile = filesRef.current.find(f =>
+            f.name === args.filename.replace('.md', '') ||
+            f.name === args.filename ||
+            f.path === args.filename ||
+            f.path?.endsWith(args.filename)
+          );
+
+          if (targetFile) {
+            setFiles(prev => prev.map(f =>
+              f.id === targetFile.id
+                ? { ...f, content: args.content, lastModified: Date.now() }
+                : f
+            ));
             const result = { success: true, message: `Updated file: ${args.filename}` };
             return { success: true, result, formatted: JSON.stringify(result) };
           }
@@ -1293,16 +1385,16 @@ const App: React.FC = () => {
 
         // 4. delete_file - 删除应用内文件
         if (toolName === 'delete_file') {
-          let deleted = false;
-          setFiles(prev => {
-            const filtered = prev.filter(f => {
-              const match = f.name === args.filename.replace('.md', '') || f.name === args.filename;
-              if (match) deleted = true;
-              return !match;
-            });
-            return filtered;
-          });
-          if (deleted) {
+          // 使用 filesRef 同步检查文件是否存在
+          const targetFile = filesRef.current.find(f =>
+            f.name === args.filename.replace('.md', '') ||
+            f.name === args.filename ||
+            f.path === args.filename ||
+            f.path?.endsWith(args.filename)
+          );
+
+          if (targetFile) {
+            setFiles(prev => prev.filter(f => f.id !== targetFile.id));
             const result = { success: true, message: `Deleted file: ${args.filename}` };
             return { success: true, result, formatted: JSON.stringify(result) };
           }
@@ -1681,6 +1773,7 @@ IMPORTANT:
         onImportQuiz={handleImportQuiz}
         language={lang}
         ragStats={ragStats}
+        ocrStats={ocrStats}
         onRefreshIndex={() => handleIndexKnowledgeBase()}
         snippets={snippets}
         onCreateSnippet={handleCreateSnippet}

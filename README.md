@@ -20,9 +20,9 @@
 
 | 平台 Platform | 下载链接 Download |
 |:---:|:---:|
-| Windows x64 | [ZhangNote-Setup-1.5.0-x64.exe](https://github.com/zhangyang-crazy-one/Zhang_Note/releases/download/v1.5.0/ZhangNote-Setup-1.5.0-x64.exe) |
-| Linux x64 (Debian/Ubuntu/麒麟) | [zhangnote_1.5.0_amd64.deb](https://github.com/zhangyang-crazy-one/Zhang_Note/releases/download/v1.5.0/zhangnote_1.5.0_amd64.deb) |
-| Linux AppImage | [ZhangNote-1.5.0.AppImage](https://github.com/zhangyang-crazy-one/Zhang_Note/releases/download/v1.5.0/ZhangNote-1.5.0.AppImage) |
+| Windows x64 | [ZhangNote-Setup-1.6.0-x64.exe](https://github.com/zhangyang-crazy-one/Zhang_Note/releases/download/v1.6.0/ZhangNote-Setup-1.6.0-x64.exe) |
+| Linux x64 (Debian/Ubuntu/麒麟) | [zhangnote_1.6.0_amd64.deb](https://github.com/zhangyang-crazy-one/Zhang_Note/releases/download/v1.6.0/zhangnote_1.6.0_amd64.deb) |
+| Linux AppImage | [ZhangNote-1.6.0.AppImage](https://github.com/zhangyang-crazy-one/Zhang_Note/releases/download/v1.6.0/ZhangNote-1.6.0.AppImage) |
 
 </div>
 
@@ -68,7 +68,8 @@ ZhangNote 是一款现代化的 AI 驱动 Markdown 编辑器，专为知识工�
 |--------|----------|------|
 | **Google Gemini** | gemini-2.5-flash, gemini-2.5-pro | 网络搜索、超长上下文 (100万tokens) |
 | **Ollama** | qwen3, llama3, mistral | 本地运行、完全隐私 |
-| **OpenAI 兼容** | DeepSeek, Claude, GLM-4, Kimi | 灵活 API、多选择 |
+| **OpenAI 兼容** | DeepSeek, GLM-4, Kimi | 灵活 API、多选择 |
+| **Anthropic 兼容** | Claude Sonnet 4, Claude 3.5 | 支持官方API及MiniMaxi等代理 |
 
 ### 主题系统
 
@@ -86,7 +87,7 @@ ZhangNote 是一款现代化的 AI 驱动 Markdown 编辑器，专为知识工�
 
 1. **下载安装**
    - Windows: 下载 `.exe` 安装包，双击安装
-   - Linux: 下载 `.deb` 包，运行 `sudo dpkg -i zhangnote_1.5.0_amd64.deb`
+   - Linux: 下载 `.deb` 包，运行 `sudo dpkg -i zhangnote_1.6.0_amd64.deb`
    - 或下载 `.AppImage`，添加执行权限后直接运行
 
 2. **配置 AI**
@@ -158,13 +159,14 @@ ZhangNote is a modern AI-powered Markdown editor designed for knowledge workers,
 |----------|-------------------|----------|
 | **Google Gemini** | gemini-2.5-flash, gemini-2.5-pro | Web search, 1M token context |
 | **Ollama** | qwen3, llama3, mistral | Local, fully private |
-| **OpenAI Compatible** | DeepSeek, Claude, GLM-4 | Flexible API options |
+| **OpenAI Compatible** | DeepSeek, GLM-4 | Flexible API options |
+| **Anthropic Compatible** | Claude Sonnet 4, Claude 3.5 | Official API & MiniMaxi proxy support |
 
 ### Quick Start
 
 1. **Install**
    - Windows: Download and run the `.exe` installer
-   - Linux: Download `.deb` and run `sudo dpkg -i zhangnote_1.5.0_amd64.deb`
+   - Linux: Download `.deb` and run `sudo dpkg -i zhangnote_1.6.0_amd64.deb`
    - Or download `.AppImage`, make it executable and run directly
 
 2. **Configure AI**

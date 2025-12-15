@@ -80,6 +80,15 @@ export const translations = {
     expandView: "Expand View",
     stopGeneration: "Stop",
     ragIndexing: "Indexing...",
+    // Knowledge Base / RAG translations
+    knowledgeBase: "Knowledge Base",
+    filesIndexed: "Files Indexed",
+    totalChunks: "Total Chunks",
+    refreshIndex: "Re-index Knowledge Base",
+    // OCR translations
+    ocrProcessing: "OCR Processing",
+    pdfProcessing: "PDF Processing",
+    detecting: "Detecting...",
     aiOperations: "AI Operations",
     viewMode: "View Mode",
     aiActions: "AI",
@@ -274,6 +283,15 @@ export const translations = {
     expandView: "展开视图",
     stopGeneration: "停止生成",
     ragIndexing: "索引中...",
+    // Knowledge Base / RAG translations
+    knowledgeBase: "知识库",
+    filesIndexed: "已索引文件",
+    totalChunks: "总分块数",
+    refreshIndex: "重新索引知识库",
+    // OCR translations
+    ocrProcessing: "OCR 识别中",
+    pdfProcessing: "PDF 处理中",
+    detecting: "检测中...",
     aiOperations: "AI 操作",
     viewMode: "视图模式",
     aiActions: "AI",

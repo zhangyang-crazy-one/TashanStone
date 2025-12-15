@@ -52,6 +52,12 @@ const RECOMMENDED_MODELS: Record<string, {id: string, name: string}[]> = {
     { id: 'qwen2', name: 'Qwen 2' },
     { id: 'deepseek-coder', name: 'DeepSeek Coder' },
     { id: 'codellama', name: 'Code Llama' },
+  ],
+  anthropic: [
+    { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4 (Latest)' },
+    { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet' },
+    { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus' },
+    { id: 'claude-3-haiku-20240307', name: 'Claude 3 Haiku (Fast)' },
   ]
 };
 
@@ -460,8 +466,8 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
                   {t.provider}
                 </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {['gemini', 'ollama', 'openai'].map((p) => (
+                <div className="grid grid-cols-4 gap-2">
+                  {['gemini', 'ollama', 'openai', 'anthropic'].map((p) => (
                     <button
                       key={p}
                       type="button"
@@ -666,7 +672,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                 )}
               </div>
 
-              {(tempConfig.provider !== 'gemini') && (
+              {(tempConfig.provider !== 'gemini' && tempConfig.provider !== 'anthropic') && (
                 <div className="space-y-2 animate-fadeIn">
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
                     <Globe size={14} />
@@ -694,6 +700,41 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                     className="w-full px-3 py-2 rounded-lg bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600"
                     placeholder="sk-..."
                   />
+                </div>
+              )}
+
+              {/* Anthropic Configuration */}
+              {tempConfig.provider === 'anthropic' && (
+                <div className="space-y-3 animate-fadeIn p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-100 dark:border-purple-800">
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                      <Globe size={14} />
+                      API Base URL
+                    </label>
+                    <input
+                      type="text"
+                      value={tempConfig.baseUrl || ''}
+                      onChange={(e) => setTempConfig({ ...tempConfig, baseUrl: e.target.value })}
+                      className="w-full px-3 py-2 rounded-lg bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600"
+                      placeholder="https://api.anthropic.com or https://api.minimaxi.com/anthropic"
+                    />
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      支持官方 API 或兼容接口（如 MiniMaxi）
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                      <Key size={14} />
+                      {t.apiKey}
+                    </label>
+                    <input
+                      type="password"
+                      value={tempConfig.apiKey || ''}
+                      onChange={(e) => setTempConfig({ ...tempConfig, apiKey: e.target.value })}
+                      className="w-full px-3 py-2 rounded-lg bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600"
+                      placeholder="x-api-key..."
+                    />
+                  </div>
                 </div>
               )}
             </form>

@@ -4,15 +4,18 @@ import { GoogleGenAI } from "@google/genai";
 import * as pdfjsLib from 'pdfjs-dist';
 import mammoth from 'mammoth';
 import Papa from 'papaparse';
+import { ocrServiceRenderer, isOcrAvailable } from './ocrService';
 
-// Configure PDF.js Worker
+// Configure PDF.js Worker - use local worker to avoid CSP issues in Electron
 const pdfjs: any = pdfjsLib;
 try {
   if (typeof window !== 'undefined' && pdfjs) {
+    // Import worker from node_modules directly for bundler to handle
+    const workerUrl = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url);
     if (pdfjs.GlobalWorkerOptions) {
-      pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+      pdfjs.GlobalWorkerOptions.workerSrc = workerUrl.href;
     } else if (pdfjs.default && pdfjs.default.GlobalWorkerOptions) {
-      pdfjs.default.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+      pdfjs.default.GlobalWorkerOptions.workerSrc = workerUrl.href;
     }
   }
 } catch (e) {
@@ -128,6 +131,84 @@ export const readDirectory = async (
   };
 
   await traverse(dirHandle, '');
+  return results;
+};
+
+/**
+ * 增强版目录读取（支持进度回调和批量导入）
+ * 两遍扫描：先收集所有文件，再批量处理并报告进度
+ */
+export interface ImportProgress {
+  totalFiles: number;
+  processedFiles: number;
+  currentFile: string;
+}
+
+export const readDirectoryEnhanced = async (
+  dirHandle: FileSystemDirectoryHandle,
+  apiKey?: string,
+  onProgress?: (progress: ImportProgress) => void
+): Promise<MarkdownFile[]> => {
+  const results: MarkdownFile[] = [];
+
+  // 第一遍：收集所有支持的文件
+  const allFiles: { handle: FileSystemFileHandle; path: string }[] = [];
+
+  const collectFiles = async (dir: FileSystemDirectoryHandle, currentPath: string) => {
+    const entries: (FileSystemFileHandle | FileSystemDirectoryHandle)[] = [];
+    try {
+      for await (const entry of dir.values()) {
+        entries.push(entry as FileSystemFileHandle | FileSystemDirectoryHandle);
+      }
+    } catch (e) {
+      console.warn("Error iterating directory:", e);
+      return;
+    }
+
+    for (const entry of entries) {
+      try {
+        if (entry.name.startsWith('.')) continue;
+        const entryPath = currentPath ? `${currentPath}/${entry.name}` : entry.name;
+
+        if (entry.kind === 'file') {
+          if (isExtensionSupported(entry.name)) {
+            allFiles.push({ handle: entry as FileSystemFileHandle, path: entryPath });
+          }
+        } else if (entry.kind === 'directory') {
+          await collectFiles(entry as FileSystemDirectoryHandle, entryPath);
+        }
+      } catch (e) {
+        console.warn(`Failed to collect ${entry.name}`, e);
+      }
+    }
+  };
+
+  await collectFiles(dirHandle, '');
+
+  // 第二遍：处理文件并报告进度
+  for (let i = 0; i < allFiles.length; i++) {
+    const { handle, path } = allFiles[i];
+    onProgress?.({ totalFiles: allFiles.length, processedFiles: i, currentFile: handle.name });
+
+    try {
+      const file = await handle.getFile();
+      const content = await extractTextFromFile(file, apiKey);
+
+      results.push({
+        id: `local-${path.replace(/[^\w-]/g, '_')}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        name: handle.name.replace(/\.[^/.]+$/, ""),
+        content,
+        lastModified: file.lastModified,
+        handle,
+        isLocal: true,
+        path
+      });
+    } catch (e) {
+      console.warn(`Failed to process ${path}`, e);
+    }
+  }
+
+  onProgress?.({ totalFiles: allFiles.length, processedFiles: allFiles.length, currentFile: '' });
   return results;
 };
 
@@ -342,61 +423,133 @@ export const parseCsvToQuiz = (file: File): Promise<Quiz | null> => {
     });
 };
 
-export const processPdfFile = async (file: File, apiKey?: string): Promise<string> => {
+/**
+ * PDF 处理选项
+ */
+interface ProcessPdfOptions {
+  /** 处理进度回调 */
+  onProgress?: (current: number, total: number, isOcr: boolean) => void;
+}
+
+export const processPdfFile = async (
+  file: File,
+  apiKey?: string,
+  options?: ProcessPdfOptions
+): Promise<string> => {
   try {
       const arrayBuffer = await file.arrayBuffer();
       const docInit = pdfjs.default?.getDocument ? pdfjs.default.getDocument : pdfjs.getDocument;
       const pdf = await docInit({ data: arrayBuffer }).promise;
-      
-      let fullText = "";
-      let useVision = false;
 
+      let fullText = "";
+      let needsOcr = false;
+
+      // 第一遍：检查是否需要 OCR
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
-        
-        // Intelligent whitespace handling
-        const pageText = textContent.items.map((item: any) => {
-             // Basic join, relying on AI to fix flow later
-             return item.str;
-        }).join(" ");
-        
-        if (pageText.trim().length < 50 && apiKey) {
-          useVision = true;
-          if (apiKey) break; 
+
+        const pageText = textContent.items.map((item: any) => item.str).join(" ");
+
+        if (pageText.trim().length < 50) {
+          needsOcr = true;
+          break;
         }
         fullText += `--- Page ${i} ---\n${pageText}\n\n`;
+        options?.onProgress?.(i, pdf.numPages, false);
       }
 
-      if (useVision && apiKey) {
-        fullText = ""; 
-        const ai = new GoogleGenAI({ apiKey });
-        
-        // Process max 10 pages for Vision to save tokens/time
-        for (let i = 1; i <= Math.min(pdf.numPages, 10); i++) {
-          const page = await pdf.getPage(i);
-          const viewport = page.getViewport({ scale: 2.0 }); // Higher scale for better OCR
-          const canvas = document.createElement('canvas');
-          const context = canvas.getContext('2d');
-          canvas.height = viewport.height;
-          canvas.width = viewport.width;
+      // 如果需要 OCR，检查本地 OCR 是否可用
+      if (needsOcr) {
+        // 使用渲染进程的 OCR 服务 (onnxruntime-web)
+        let useLocalOcr = false;
+        try {
+          useLocalOcr = await isOcrAvailable();
+          console.log('[PDF] Local OCR available:', useLocalOcr);
+        } catch (e) {
+          console.warn('[PDF] Local OCR check failed:', e);
+        }
 
-          await page.render({ canvasContext: context!, viewport: viewport }).promise;
-          const base64Image = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+        // 重新处理所有页面
+        fullText = "";
 
-          try {
-            const response = await ai.models.generateContent({
-              model: 'gemini-2.5-flash',
-              contents: {
-                parts: [
-                  { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
-                  { text: "Extract text from this exam page verbatim. Preserve question numbers and options." }
-                ]
+        if (useLocalOcr) {
+          // 使用本地 PaddleOCR (渲染进程)
+          console.log('[PDF] Using local PaddleOCR for OCR...');
+          for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const textContent = await page.getTextContent();
+            const pageText = textContent.items.map((item: any) => item.str).join(" ");
+
+            if (pageText.trim().length >= 50) {
+              // 文本够多，直接使用提取的文本
+              fullText += `--- Page ${i} ---\n${pageText}\n\n`;
+            } else {
+              // 文本太少，使用 OCR
+              const viewport = page.getViewport({ scale: 2.0 });
+              const canvas = document.createElement('canvas');
+              const context = canvas.getContext('2d');
+              canvas.height = viewport.height;
+              canvas.width = viewport.width;
+
+              await page.render({ canvasContext: context!, viewport: viewport }).promise;
+
+              try {
+                // 使用渲染进程的 OCR 服务
+                const ocrResult = await ocrServiceRenderer.recognize(canvas);
+                if (ocrResult.success && ocrResult.text) {
+                  fullText += `--- Page ${i} (OCR) ---\n${ocrResult.text}\n\n`;
+                  console.log(`[PDF] Page ${i} OCR success, ${ocrResult.text.length} chars in ${ocrResult.duration}ms`);
+                } else {
+                  fullText += `--- Page ${i} ---\n[OCR failed: ${ocrResult.error || 'Unknown error'}]\n\n`;
+                  console.warn(`[PDF] Page ${i} OCR failed:`, ocrResult.error);
+                }
+              } catch (e: any) {
+                fullText += `--- Page ${i} ---\n[OCR error: ${e.message}]\n\n`;
+                console.error(`[PDF] Page ${i} OCR error:`, e);
               }
-            });
-            fullText += `--- Page ${i} (OCR) ---\n${response.text}\n\n`;
-          } catch (e) {
-            fullText += `[AI OCR Failed for Page ${i}]\n`;
+            }
+            options?.onProgress?.(i, pdf.numPages, true);
+          }
+        } else if (apiKey) {
+          // 回退到 Gemini Vision API
+          const ai = new GoogleGenAI({ apiKey });
+
+          for (let i = 1; i <= Math.min(pdf.numPages, 10); i++) {
+            const page = await pdf.getPage(i);
+            const viewport = page.getViewport({ scale: 2.0 });
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+
+            await page.render({ canvasContext: context!, viewport: viewport }).promise;
+            const base64Image = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+
+            try {
+              const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: {
+                  parts: [
+                    { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
+                    { text: "Extract text from this page verbatim. Preserve formatting and structure." }
+                  ]
+                }
+              });
+              fullText += `--- Page ${i} (Gemini OCR) ---\n${response.text}\n\n`;
+            } catch (e) {
+              fullText += `[AI OCR Failed for Page ${i}]\n`;
+            }
+            options?.onProgress?.(i, Math.min(pdf.numPages, 10), true);
+          }
+        } else {
+          // 没有 OCR 可用，返回原始提取的文本
+          for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const textContent = await page.getTextContent();
+            const pageText = textContent.items.map((item: any) => item.str).join(" ");
+            fullText += `--- Page ${i} ---\n${pageText}\n[OCR not available - text may be incomplete]\n\n`;
+            options?.onProgress?.(i, pdf.numPages, false);
           }
         }
       }

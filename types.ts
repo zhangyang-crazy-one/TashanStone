@@ -122,7 +122,7 @@ export interface AIState {
   message: string | null;
 }
 
-export type AIProvider = 'gemini' | 'ollama' | 'openai';
+export type AIProvider = 'gemini' | 'ollama' | 'openai' | 'anthropic';
 
 export type BackupFrequency = 'never' | 'daily' | 'weekly' | 'monthly';
 
@@ -383,6 +383,19 @@ export interface RAGStats {
   indexedFiles: number;
   totalChunks: number;
   isIndexing: boolean;
+}
+
+export interface OCRStats {
+  isProcessing: boolean;      // 是否正在处理 OCR
+  totalPages: number;         // 总页数
+  processedPages: number;     // 已处理页数
+  currentFile?: string;       // 当前处理的文件名
+}
+
+export interface ImportProgress {
+  totalFiles: number;
+  processedFiles: number;
+  currentFile: string;
 }
 
 export interface AppShortcut {

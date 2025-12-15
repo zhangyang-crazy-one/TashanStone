@@ -681,6 +681,98 @@ async function* streamOllama(
 }
 
 /**
+ * Stream Anthropic-compatible response (SSE format)
+ */
+async function* streamAnthropic(
+  prompt: string,
+  config: AIConfig,
+  systemInstruction?: string,
+  conversationHistory?: ChatMessage[]
+): AsyncGenerator<string, void, unknown> {
+  const baseUrl = config.baseUrl || 'https://api.anthropic.com';
+  const endpoint = `${baseUrl.replace(/\/$/, '')}/v1/messages`;
+
+  const messages: any[] = [];
+
+  if (conversationHistory && conversationHistory.length > 0) {
+    for (const msg of conversationHistory) {
+      if (msg.role === 'user') {
+        messages.push({ role: 'user', content: msg.content });
+      } else if (msg.role === 'assistant') {
+        messages.push({ role: 'assistant', content: msg.content });
+      }
+    }
+  }
+
+  messages.push({ role: 'user', content: prompt });
+
+  try {
+    const requestBody: any = {
+      model: config.model || 'claude-sonnet-4-20250514',
+      max_tokens: 4096,
+      messages,
+      stream: true
+    };
+
+    if (systemInstruction) {
+      requestBody.system = systemInstruction;
+    }
+
+    const options = {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': config.apiKey || '',
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify(requestBody)
+    };
+
+    // Use platformStreamFetch for true streaming in Electron
+    let buffer = '';
+    for await (const chunk of platformStreamFetch(endpoint, options)) {
+      buffer += chunk;
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6).trim();
+          if (data === '[DONE]') continue;
+
+          try {
+            const json = JSON.parse(data);
+            // Anthropic SSE format: content_block_delta with delta.text
+            if (json.type === 'content_block_delta' && json.delta?.text) {
+              yield json.delta.text;
+            }
+          } catch (e) {
+            // Skip invalid JSON
+          }
+        }
+      }
+    }
+
+    // Process any remaining buffer
+    if (buffer.trim() && buffer.startsWith('data: ')) {
+      const data = buffer.slice(6).trim();
+      if (data !== '[DONE]') {
+        try {
+          const json = JSON.parse(data);
+          if (json.type === 'content_block_delta' && json.delta?.text) {
+            yield json.delta.text;
+          }
+        } catch (e) {
+          // Skip invalid JSON
+        }
+      }
+    }
+  } catch (error: any) {
+    throw new Error(`Anthropic Streaming Error: ${error.message || "Unknown error"}`);
+  }
+}
+
+/**
  * Stream OpenAI-compatible response (SSE format)
  */
 async function* streamOpenAICompatible(
@@ -1088,6 +1180,8 @@ export async function* generateAIResponseStream(
     yield* streamOllama(fullPrompt, config, finalSystemInstruction, conversationHistory);
   } else if (config.provider === 'openai') {
     yield* streamOpenAICompatible(fullPrompt, config, finalSystemInstruction, conversationHistory);
+  } else if (config.provider === 'anthropic') {
+    yield* streamAnthropic(fullPrompt, config, finalSystemInstruction, conversationHistory);
   } else {
     throw new Error(`Unsupported provider for streaming: ${config.provider}`);
   }
@@ -1180,6 +1274,8 @@ export const generateAIResponse = async (
     return callOllama(fullPrompt, config, finalSystemInstruction, jsonMode, callbackToPass, mcpClient, conversationHistory);
   } else if (config.provider === 'openai') {
     return callOpenAICompatible(fullPrompt, config, finalSystemInstruction, jsonMode, callbackToPass, mcpClient, conversationHistory);
+  } else if (config.provider === 'anthropic') {
+    return callAnthropic(fullPrompt, config, finalSystemInstruction, jsonMode, callbackToPass, mcpClient, conversationHistory);
   }
   throw new Error(`Unsupported provider: ${config.provider}`);
 };
@@ -1534,6 +1630,177 @@ const callOpenAICompatible = async (
       }
       return messages[messages.length - 1].content || "Maximum iterations reached.";
     } catch (error: any) { throw new Error(`Failed to connect to AI provider: ${error.message}`); }
+};
+
+const callAnthropic = async (
+    prompt: string,
+    config: AIConfig,
+    systemInstruction?: string,
+    jsonMode: boolean = false,
+    toolsCallback?: (toolName: string, args: any) => Promise<any>,
+    mcpClient?: IMCPClient,
+    conversationHistory?: ChatMessage[]
+  ): Promise<string> => {
+    const baseUrl = config.baseUrl || 'https://api.anthropic.com';
+    const endpoint = `${baseUrl.replace(/\/$/, '')}/v1/messages`;
+
+    const messages: any[] = [];
+
+    // Add conversation history
+    if (conversationHistory && conversationHistory.length > 0) {
+      for (const msg of conversationHistory) {
+        if (msg.role === 'user') {
+          messages.push({ role: 'user', content: msg.content });
+        } else if (msg.role === 'assistant') {
+          messages.push({ role: 'assistant', content: msg.content });
+        }
+      }
+    }
+
+    // Add current prompt
+    messages.push({ role: 'user', content: prompt });
+
+    // Build tools array for Anthropic format
+    let tools: any[] | undefined = undefined;
+    if (toolsCallback && !jsonMode) {
+        const dynamicTools = mcpClient ? mcpClient.getTools() : [];
+        // Map to Anthropic tool format
+        const baseToolsAnthropic = [
+            {
+                name: 'create_file',
+                description: 'Create a new file with the given name and content.',
+                input_schema: {
+                    type: 'object',
+                    properties: {
+                        filename: { type: 'string', description: "Name of the file" },
+                        content: { type: 'string', description: "Content of the file" }
+                    },
+                    required: ['filename', 'content']
+                }
+            },
+            {
+                name: 'update_file',
+                description: 'Update an existing file.',
+                input_schema: {
+                    type: 'object',
+                    properties: {
+                        filename: { type: 'string', description: "Name of the file" },
+                        content: { type: 'string', description: "New content" }
+                    },
+                    required: ['filename', 'content']
+                }
+            },
+            {
+                name: 'delete_file',
+                description: 'Delete a file by name.',
+                input_schema: {
+                    type: 'object',
+                    properties: {
+                        filename: { type: 'string', description: "Name of the file" }
+                    },
+                    required: ['filename']
+                }
+            },
+            {
+                name: 'search_knowledge_base',
+                description: "Search the user's indexed notes and documents.",
+                input_schema: {
+                    type: 'object',
+                    properties: {
+                        query: { type: 'string', description: "Search query" },
+                        maxResults: { type: 'number', description: "Max results" }
+                    },
+                    required: ['query']
+                }
+            }
+        ];
+
+        const mappedDynamic = dynamicTools.map(t => ({
+            name: t.name,
+            description: t.description,
+            input_schema: t.parameters || { type: 'object', properties: {} }
+        }));
+
+        tools = [...baseToolsAnthropic, ...mappedDynamic];
+    }
+
+    let iterations = 0;
+    const MAX_ITERATIONS = 10;
+
+    try {
+      while (iterations < MAX_ITERATIONS) {
+        const requestBody: any = {
+          model: config.model || 'claude-sonnet-4-20250514',
+          max_tokens: 4096,
+          messages
+        };
+
+        if (systemInstruction) {
+          requestBody.system = systemInstruction;
+        }
+
+        if (tools && tools.length > 0) {
+          requestBody.tools = tools;
+        }
+
+        const response = await platformFetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': config.apiKey || '',
+            'anthropic-version': '2023-06-01'
+          },
+          body: JSON.stringify(requestBody),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(`Anthropic API Error: ${response.status} ${errorData.error?.message || response.statusText}`);
+        }
+
+        const data = await response.json();
+
+        // Check for tool use
+        const toolUseBlocks = data.content?.filter((block: any) => block.type === 'tool_use') || [];
+        const textBlocks = data.content?.filter((block: any) => block.type === 'text') || [];
+
+        if (toolUseBlocks.length > 0 && toolsCallback) {
+          // Add assistant message with tool use to history
+          messages.push({
+            role: 'assistant',
+            content: data.content
+          });
+
+          // Execute tools and build tool results
+          const toolResults: any[] = [];
+          for (const toolUse of toolUseBlocks) {
+            const result = await toolsCallback(toolUse.name, toolUse.input);
+            toolResults.push({
+              type: 'tool_result',
+              tool_use_id: toolUse.id,
+              content: JSON.stringify(result)
+            });
+          }
+
+          // Add tool results as user message
+          messages.push({
+            role: 'user',
+            content: toolResults
+          });
+
+          iterations++;
+          // Continue loop
+        } else {
+          // Extract text from response
+          const responseText = textBlocks.map((b: any) => b.text).join('');
+          return responseText;
+        }
+      }
+
+      return "Maximum iterations reached.";
+    } catch (error: any) {
+      throw new Error(`Anthropic API Error: ${error.message}`);
+    }
 };
 
 export const polishContent = async (content: string, config: AIConfig): Promise<string> => {

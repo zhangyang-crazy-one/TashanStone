@@ -1,6 +1,7 @@
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import { viteStaticCopy } from 'vite-plugin-static-copy';
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
@@ -27,6 +28,10 @@ export default defineConfig(({ mode }) => {
             secure: true,
           },
         },
+        // Allow serving files from node_modules for onnxruntime-web
+        fs: {
+          allow: ['..', 'node_modules/onnxruntime-web']
+        }
       },
       base: isElectron ? './' : '/',
       build: {
@@ -45,7 +50,9 @@ export default defineConfig(({ mode }) => {
       plugins: [react()],
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
+        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+        // Fix for CommonJS modules that check for Node.js Module
+        'Module': '{}'
       },
       resolve: {
         alias: {
@@ -53,7 +60,11 @@ export default defineConfig(({ mode }) => {
         }
       },
       optimizeDeps: {
-        exclude: ['better-sqlite3']
+        exclude: ['better-sqlite3'],
+        include: ['pdfjs-dist', '@paddlejs-models/ocr', '@paddlejs/paddlejs-core', '@paddlejs/paddlejs-backend-webgl']
+      },
+      worker: {
+        format: 'es'
       }
     };
 });

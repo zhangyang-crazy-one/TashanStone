@@ -4,7 +4,7 @@ import { ChatMessage, AIState } from '../types';
 import ReactMarkdown from 'react-markdown';
 import { translations, Language } from '../utils/translations';
 import { RAGResultsCard } from './RAGResultsCard';
-import { ToolCallCard, StreamToolCard, parseToolCallsFromContent } from './ToolCallCard';
+import { ToolCallCard, StreamToolCard, parseToolCallsFromContent, ThinkingCard } from './ToolCallCard';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 
 // 智能内容渲染器 - 解析工具调用并渲染
@@ -37,6 +37,14 @@ const SmartMessageContent: React.FC<{ content: string; isStreaming?: boolean }> 
               toolName={part.toolName}
               status={part.status || 'executing'}
               result={part.result}
+            />
+          );
+        } else if (part.type === 'thinking' && part.content) {
+          return (
+            <ThinkingCard
+              key={idx}
+              content={part.content}
+              defaultExpanded={false}
             />
           );
         }

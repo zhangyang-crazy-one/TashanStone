@@ -4,6 +4,7 @@ import { registerAiHandlers } from './aiHandlers.js';
 import { registerBackupHandlers } from './backupHandlers.js';
 import { registerWhisperHandlers } from './whisperHandlers.js';
 import { registerSherpaHandlers } from './sherpaHandlers.js';
+import { registerOcrHandlers } from './ocrHandlers.js';
 import { logger } from '../utils/logger.js';
 
 export function registerAllHandlers(): void {
@@ -15,6 +16,7 @@ export function registerAllHandlers(): void {
     registerBackupHandlers();
     registerWhisperHandlers();
     registerSherpaHandlers();
+    registerOcrHandlers();
 
     logger.info('All IPC handlers registered');
 }
@@ -25,3 +27,4 @@ export { registerAiHandlers } from './aiHandlers.js';
 export { registerBackupHandlers } from './backupHandlers.js';
 export { registerWhisperHandlers } from './whisperHandlers.js';
 export { registerSherpaHandlers } from './sherpaHandlers.js';
+export { registerOcrHandlers } from './ocrHandlers.js';

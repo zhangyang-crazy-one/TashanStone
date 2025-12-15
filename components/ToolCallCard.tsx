@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Terminal, Check, AlertTriangle, Loader2, ChevronDown, Copy, CheckCheck, Sparkles } from 'lucide-react';
+import { Terminal, Check, AlertTriangle, Loader2, ChevronDown, Copy, CheckCheck, Sparkles, Brain } from 'lucide-react';
 import { ToolCall } from '../types';
 
 interface ToolCallCardProps {
@@ -7,6 +7,117 @@ interface ToolCallCardProps {
   isExpanded?: boolean;
   language?: 'en' | 'zh';
 }
+
+// 思考过程卡片 - 可折叠的主题适配卡片
+interface ThinkingCardProps {
+  content: string;
+  defaultExpanded?: boolean;
+}
+
+export const ThinkingCard: React.FC<ThinkingCardProps> = ({
+  content,
+  defaultExpanded = false
+}) => {
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    await navigator.clipboard.writeText(content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  // 获取预览文本（前100字符）
+  const previewText = content.length > 100
+    ? content.substring(0, 100).replace(/\n/g, ' ').trim() + '...'
+    : content.replace(/\n/g, ' ').trim();
+
+  return (
+    <div className={`
+      my-3 rounded-2xl overflow-hidden
+      bg-violet-50 dark:bg-violet-950/30
+      border border-violet-200 dark:border-violet-500/30
+      backdrop-blur-xl
+      transition-all duration-300
+      hover:shadow-lg hover:shadow-violet-500/10
+    `}>
+      {/* 顶部渐变条 */}
+      <div className="h-1 bg-gradient-to-r from-violet-400 via-purple-500 to-indigo-500" />
+
+      {/* 头部区域 */}
+      <div
+        className="flex items-center justify-between px-4 py-2.5 cursor-pointer select-none group"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          {/* 图标 */}
+          <div className="relative shrink-0">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-gradient-to-br from-violet-400 via-purple-500 to-indigo-500 shadow-md">
+              <Brain size={14} className="text-white" />
+            </div>
+            {/* 思考动画 */}
+            <div className="absolute -inset-0.5 rounded-lg bg-gradient-to-br from-violet-400 to-indigo-500 opacity-20 blur-sm animate-pulse -z-10" />
+          </div>
+
+          {/* 标题和预览 */}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-violet-600 dark:text-violet-400 uppercase tracking-wider">
+                Thinking
+              </span>
+              <span className="text-[10px] text-violet-400 dark:text-violet-500">
+                ({content.length} chars)
+              </span>
+            </div>
+            {!isExpanded && (
+              <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                {previewText}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* 右侧控制 */}
+        <div className="flex items-center gap-1.5 shrink-0 ml-2">
+          <button
+            onClick={handleCopy}
+            className="p-1.5 rounded-lg transition-all hover:bg-violet-100 dark:hover:bg-violet-900/30 text-violet-500 dark:text-violet-400"
+            title="Copy thinking content"
+          >
+            {copied ? <CheckCheck size={12} /> : <Copy size={12} />}
+          </button>
+          <ChevronDown
+            size={14}
+            className={`
+              text-violet-400 dark:text-violet-500
+              transition-transform duration-300
+              ${isExpanded ? 'rotate-180' : 'rotate-0'}
+            `}
+          />
+        </div>
+      </div>
+
+      {/* 展开内容 */}
+      <div className={`
+        overflow-hidden transition-all duration-300
+        ${isExpanded ? 'max-h-[400px] opacity-100' : 'max-h-0 opacity-0'}
+      `}>
+        <div className="border-t border-violet-200 dark:border-violet-500/20">
+          <div className="px-4 py-3 max-h-[350px] overflow-auto custom-scrollbar">
+            <pre className="
+              text-xs leading-relaxed whitespace-pre-wrap break-words
+              text-slate-600 dark:text-slate-300
+              font-sans
+            ">
+              {content}
+            </pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // 流式工具调用卡片 - 用于流式聊天中的内联显示
 interface StreamToolCardProps {
@@ -109,9 +220,9 @@ export const StreamToolCard: React.FC<StreamToolCardProps> = ({
         className="flex items-center justify-between px-4 py-3 cursor-pointer select-none group"
         onClick={() => setIsExpanded(!isExpanded)}
       >
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
           {/* 动态图标 */}
-          <div className="relative">
+          <div className="relative shrink-0">
             <div className={`
               w-8 h-8 rounded-xl flex items-center justify-center
               bg-gradient-to-br ${config.gradient}
@@ -133,11 +244,11 @@ export const StreamToolCard: React.FC<StreamToolCardProps> = ({
             )}
           </div>
 
-          {/* 工具名称 */}
-          <div>
+          {/* 工具名称 - 添加截断 */}
+          <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <Terminal size={12} className="text-slate-400 dark:text-slate-500" />
-              <span className={`font-mono text-sm font-bold ${config.text}`}>
+              <Terminal size={12} className="text-slate-400 dark:text-slate-500 shrink-0" />
+              <span className={`font-mono text-sm font-bold ${config.text} truncate`} title={toolName}>
                 {toolName}
               </span>
             </div>
@@ -163,8 +274,8 @@ export const StreamToolCard: React.FC<StreamToolCardProps> = ({
           </div>
         </div>
 
-        {/* 右侧控制 */}
-        <div className="flex items-center gap-2">
+        {/* 右侧控制 - 确保不被挤压 */}
+        <div className="flex items-center gap-2 shrink-0 ml-2">
           {result && (
             <button
               onClick={handleCopy}
@@ -314,7 +425,7 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
 
 // 解析工具调用的辅助函数
 export const parseToolCallsFromContent = (content: string): Array<{
-  type: 'text' | 'tool';
+  type: 'text' | 'tool' | 'thinking';
   content?: string;
   toolName?: string;
   status?: 'executing' | 'success' | 'error';
@@ -322,7 +433,7 @@ export const parseToolCallsFromContent = (content: string): Array<{
   args?: Record<string, any>;
 }> => {
   const parts: Array<{
-    type: 'text' | 'tool';
+    type: 'text' | 'tool' | 'thinking';
     content?: string;
     toolName?: string;
     status?: 'executing' | 'success' | 'error';
@@ -330,13 +441,55 @@ export const parseToolCallsFromContent = (content: string): Array<{
     args?: Record<string, any>;
   }> = [];
 
+  // 先提取 <think> 块，避免被其他解析干扰
+  // 支持多种格式: <think>, <thinking>, </think>, </thinking>
+  const thinkPattern = /<(?:think|thinking)>([\s\S]*?)<\/(?:think|thinking)>/gi;
+
   // 匹配工具执行块
   const toolPattern = /🔧\s*\*\*(?:Tool|Executing):\s*([^*]+)\*\*(?:\.\.\.)?\s*(?:```json\s*([\s\S]*?)```)?/g;
 
-  let lastIndex = 0;
-  let match;
+  // 合并所有匹配项并按位置排序
+  interface MatchItem {
+    index: number;
+    length: number;
+    type: 'thinking' | 'tool';
+    content?: string;
+    toolName?: string;
+    result?: string;
+  }
 
-  while ((match = toolPattern.exec(content)) !== null) {
+  const matches: MatchItem[] = [];
+
+  // 收集 thinking 匹配
+  let thinkMatch;
+  while ((thinkMatch = thinkPattern.exec(content)) !== null) {
+    matches.push({
+      index: thinkMatch.index,
+      length: thinkMatch[0].length,
+      type: 'thinking',
+      content: thinkMatch[1].trim()
+    });
+  }
+
+  // 收集 tool 匹配
+  let toolMatch;
+  while ((toolMatch = toolPattern.exec(content)) !== null) {
+    matches.push({
+      index: toolMatch.index,
+      length: toolMatch[0].length,
+      type: 'tool',
+      toolName: toolMatch[1].trim(),
+      result: toolMatch[2]?.trim()
+    });
+  }
+
+  // 按位置排序
+  matches.sort((a, b) => a.index - b.index);
+
+  let lastIndex = 0;
+
+  for (const match of matches) {
+    // 添加匹配前的文本
     if (match.index > lastIndex) {
       const textBefore = content.substring(lastIndex, match.index).trim();
       if (textBefore) {
@@ -344,34 +497,39 @@ export const parseToolCallsFromContent = (content: string): Array<{
       }
     }
 
-    const toolName = match[1].trim();
-    const resultJson = match[2]?.trim();
+    if (match.type === 'thinking') {
+      parts.push({
+        type: 'thinking',
+        content: match.content
+      });
+    } else if (match.type === 'tool') {
+      let status: 'executing' | 'success' | 'error' = match.result ? 'success' : 'executing';
 
-    let status: 'executing' | 'success' | 'error' = resultJson ? 'success' : 'executing';
-
-    if (resultJson) {
-      try {
-        const parsed = JSON.parse(resultJson);
-        if (parsed.success === false || resultJson.toLowerCase().includes('error')) {
-          status = 'error';
-        }
-      } catch {
-        if (resultJson.toLowerCase().includes('error')) {
-          status = 'error';
+      if (match.result) {
+        try {
+          const parsed = JSON.parse(match.result);
+          if (parsed.success === false || match.result.toLowerCase().includes('error')) {
+            status = 'error';
+          }
+        } catch {
+          if (match.result.toLowerCase().includes('error')) {
+            status = 'error';
+          }
         }
       }
+
+      parts.push({
+        type: 'tool',
+        toolName: match.toolName,
+        status,
+        result: match.result
+      });
     }
 
-    parts.push({
-      type: 'tool',
-      toolName,
-      status,
-      result: resultJson
-    });
-
-    lastIndex = match.index + match[0].length;
+    lastIndex = match.index + match.length;
   }
 
+  // 添加剩余文本
   if (lastIndex < content.length) {
     const remainingText = content.substring(lastIndex).trim();
     if (remainingText) {

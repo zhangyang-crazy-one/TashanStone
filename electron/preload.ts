@@ -329,6 +329,24 @@ try {
             ipcRenderer.invoke('sherpa:isFFmpegAvailable')
     },
 
+    // OCR (PaddleOCR via esearch-ocr)
+    ocr: {
+        isAvailable: (): Promise<boolean> =>
+            ipcRenderer.invoke('ocr:isAvailable'),
+        isModelAvailable: (): Promise<boolean> =>
+            ipcRenderer.invoke('ocr:isModelAvailable'),
+        getModelDownloadInfo: (): Promise<{ url: string; name: string; size: string; files: string[] }> =>
+            ipcRenderer.invoke('ocr:getModelDownloadInfo'),
+        initialize: (config?: { modelDir?: string; backend?: 'directml' | 'cpu' }): Promise<{ success: boolean; error?: string }> =>
+            ipcRenderer.invoke('ocr:initialize', config),
+        reinitialize: (config?: { modelDir?: string; backend?: 'directml' | 'cpu' }): Promise<{ success: boolean; error?: string }> =>
+            ipcRenderer.invoke('ocr:reinitialize', config),
+        recognize: (imageData: string): Promise<{ success: boolean; text?: string; error?: string; duration?: number; backend?: string }> =>
+            ipcRenderer.invoke('ocr:recognize', imageData),
+        getStatus: (): Promise<{ available: boolean; initialized: boolean; backend: string; modelVersion: string | null; modelPath: string }> =>
+            ipcRenderer.invoke('ocr:getStatus')
+    },
+
     // Menu event listeners
     onMenuEvent: (channel: string, callback: () => void) => {
         const validChannels = [
@@ -471,6 +489,15 @@ declare global {
                 getAudioInfo: (filePath: string) => Promise<{ success: boolean; duration?: number; sampleRate?: number; format?: string; error?: string }>;
                 transcribeFile: (filePath: string, options?: { enableNoiseReduction?: boolean; language?: string }) => Promise<{ success: boolean; text?: string; duration?: number; error?: string }>;
                 isFFmpegAvailable: () => Promise<boolean>;
+            };
+            ocr: {
+                isAvailable: () => Promise<boolean>;
+                isModelAvailable: () => Promise<boolean>;
+                getModelDownloadInfo: () => Promise<{ url: string; name: string; size: string; files: string[] }>;
+                initialize: (config?: { modelDir?: string; backend?: 'directml' | 'cpu' }) => Promise<{ success: boolean; error?: string }>;
+                reinitialize: (config?: { modelDir?: string; backend?: 'directml' | 'cpu' }) => Promise<{ success: boolean; error?: string }>;
+                recognize: (imageData: string) => Promise<{ success: boolean; text?: string; error?: string; duration?: number; backend?: string }>;
+                getStatus: () => Promise<{ available: boolean; initialized: boolean; backend: string; modelVersion: string | null; modelPath: string }>;
             };
             onMenuEvent: (channel: string, callback: () => void) => () => void;
         };
