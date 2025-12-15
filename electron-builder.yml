@@ -77,8 +77,29 @@ mac:
       arch:
         - x64
         - arm64
-  icon: build/icon.icns
+    - target: zip
+      arch:
+        - x64
+        - arm64
+  icon: build/icons/icon.icns
   category: public.app-category.productivity
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  artifactName: "${productName}-${version}-${arch}.${ext}"
+
+dmg:
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+  window:
+    width: 540
+    height: 380
 
 linux:
   target:
