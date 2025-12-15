@@ -56,3 +56,24 @@ docker-compose.yml
 build-linux.sh
 BUILD_LINUX.md
 resources/
+
+# Development feature folder (not for production)
+New_Features/
+
+# Test files
+test-*.js
+test-*.cjs
+
+# Unnecessary documentation (development notes)
+AUTH_API_REFERENCE.md
+BACKEND_OPTIMIZATION_REPORT.md
+FRONTEND_FIXES_SUMMARY.md
+IMPLEMENTATION_REPORT_PHASE_*.md
+PHASE*_INTEGRATION_GUIDE.md
+RAG_INTEGRATION_SUMMARY.md
+RAG_RESULTS_IMPROVEMENTS.md
+RAG_TESTING_GUIDE.md
+TOOL_CALL_INTEGRATION.md
+VECTOR_PERSISTENCE.md
+metadata.json
+postcss.config.js

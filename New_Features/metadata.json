@@ -1,7 +1,0 @@
-{
-  "name": "ZhangNote",
-  "description": "A futuristic Markdown editor with support for multiple AI providers (Gemini, Ollama, OpenAI-compatible), LaTeX math, and split-pane editing.",
-  "requestFramePermissions": [
-    "microphone"
-  ]
-}

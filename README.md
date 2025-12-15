@@ -8,7 +8,7 @@
 
 [![Release](https://img.shields.io/github/v/release/zhangyang-crazy-one/Zhang_Note?style=flat-square)](https://github.com/zhangyang-crazy-one/Zhang_Note/releases)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=flat-square)](https://opensource.org/licenses/Apache-2.0)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20|%20Linux-lightgrey.svg?style=flat-square)](https://github.com/zhangyang-crazy-one/Zhang_Note/releases)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20|%20macOS%20|%20Linux-lightgrey.svg?style=flat-square)](https://github.com/zhangyang-crazy-one/Zhang_Note/releases)
 [![Electron](https://img.shields.io/badge/Electron-33-47848F.svg?style=flat-square)](https://www.electronjs.org/)
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg?style=flat-square)](https://reactjs.org/)
 
@@ -21,8 +21,11 @@
 | 平台 Platform | 下载链接 Download |
 |:---:|:---:|
 | Windows x64 | [ZhangNote-Setup-1.6.0-x64.exe](https://github.com/zhangyang-crazy-one/Zhang_Note/releases/download/v1.6.0/ZhangNote-Setup-1.6.0-x64.exe) |
+| macOS (Intel / Apple Silicon) | [📖 查看编译指南 / Build Guide](docs/BUILD_MAC.md) |
 | Linux x64 (Debian/Ubuntu/麒麟) | [zhangnote_1.6.0_amd64.deb](https://github.com/zhangyang-crazy-one/Zhang_Note/releases/download/v1.6.0/zhangnote_1.6.0_amd64.deb) |
 | Linux AppImage | [ZhangNote-1.6.0.AppImage](https://github.com/zhangyang-crazy-one/Zhang_Note/releases/download/v1.6.0/ZhangNote-1.6.0.AppImage) |
+
+> 💡 **macOS 用户**: 由于缺少 Apple 开发者签名，macOS 版本需要用户自行编译。请参考 [macOS 编译指南](docs/BUILD_MAC.md)
 
 </div>
 
@@ -87,6 +90,7 @@ ZhangNote 是一款现代化的 AI 驱动 Markdown 编辑器，专为知识工�
 
 1. **下载安装**
    - Windows: 下载 `.exe` 安装包，双击安装
+   - macOS: 参考 [编译指南](docs/BUILD_MAC.md) 自行编译
    - Linux: 下载 `.deb` 包，运行 `sudo dpkg -i zhangnote_1.6.0_amd64.deb`
    - 或下载 `.AppImage`，添加执行权限后直接运行
 
@@ -166,6 +170,7 @@ ZhangNote is a modern AI-powered Markdown editor designed for knowledge workers,
 
 1. **Install**
    - Windows: Download and run the `.exe` installer
+   - macOS: Follow the [Build Guide](docs/BUILD_MAC.md) to compile
    - Linux: Download `.deb` and run `sudo dpkg -i zhangnote_1.6.0_amd64.deb`
    - Or download `.AppImage`, make it executable and run directly
 
@@ -209,6 +214,7 @@ npm run dev:electron
 
 # Build for production
 npm run dist:win      # Windows
+npm run dist:mac      # macOS (see docs/BUILD_MAC.md)
 npm run dist:linux    # Linux
 ```
 
