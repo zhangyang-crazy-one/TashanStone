@@ -16,6 +16,9 @@ class MCPManager {
     private toolToServerMap: Map<string, string> = new Map();
     private isInitialized = false;
     private initializationPromise: Promise<void> | null = null;
+    // 跟踪所有服务器状态（包括失败的）
+    private serverErrors: Map<string, string> = new Map();
+    private configuredServers: Set<string> = new Set();
 
     private constructor() {
         logger.info('MCPManager initialized');
@@ -89,10 +92,24 @@ class MCPManager {
             // 断开现有连接
             await this.disconnectAll();
 
+            // 清除旧的错误记录
+            this.serverErrors.clear();
+            this.configuredServers.clear();
+
+            // 记录所有配置的服务器
+            for (const name of Object.keys(config.mcpServers)) {
+                this.configuredServers.add(name);
+            }
+
             // 连接所有服务器
             const connectionPromises = Object.entries(config.mcpServers).map(
                 async ([name, serverConfig]) => {
                     try {
+                        logger.info(`Attempting to connect MCP server: ${name}`, {
+                            command: serverConfig.command,
+                            args: serverConfig.args
+                        });
+
                         const client = new MCPClient(name, serverConfig);
                         await client.connect();
                         this.clients.set(name, client);
@@ -110,11 +127,14 @@ class MCPManager {
 
                         return { name, success: true };
                     } catch (error) {
-                        logger.error(`Failed to connect to MCP server ${name}:`, error);
+                        const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+                        logger.error(`Failed to connect to MCP server ${name}:`, errorMsg);
+                        // 保存错误信息
+                        this.serverErrors.set(name, errorMsg);
                         return {
                             name,
                             success: false,
-                            error: error instanceof Error ? error.message : 'Unknown error'
+                            error: errorMsg
                         };
                     }
                 }
@@ -218,11 +238,12 @@ class MCPManager {
     }
 
     /**
-     * 获取所有服务器状态
+     * 获取所有服务器状态（包括失败的）
      */
     getStatuses(): MCPServerStatus[] {
         const statuses: MCPServerStatus[] = [];
 
+        // 先添加所有已连接的服务器
         for (const [name, client] of this.clients.entries()) {
             statuses.push({
                 name,
@@ -230,6 +251,19 @@ class MCPManager {
                 tools: client.getTools(),
                 error: undefined
             });
+        }
+
+        // 添加配置了但连接失败的服务器
+        for (const name of this.configuredServers) {
+            if (!this.clients.has(name)) {
+                const errorMsg = this.serverErrors.get(name);
+                statuses.push({
+                    name,
+                    status: 'error',
+                    tools: [],
+                    error: errorMsg || 'Connection failed'
+                });
+            }
         }
 
         return statuses;
@@ -251,6 +285,8 @@ class MCPManager {
 
         this.clients.clear();
         this.toolToServerMap.clear();
+        this.serverErrors.clear();
+        this.configuredServers.clear();
 
         logger.info('All MCP servers disconnected');
     }
