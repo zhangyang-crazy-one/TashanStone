@@ -25,6 +25,12 @@ extraResources:
       - "**/*.onnx"
       - "**/*.txt"
       - "**/*.fst"
+  # OCR models (PP-OCRv5)
+  - from: resources/ocr-models
+    to: ocr-models
+    filter:
+      - "**/*.onnx"
+      - "**/*.txt"
 
 asar: true
 asarUnpack:
