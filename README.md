@@ -203,6 +203,34 @@ ZhangNote is a modern AI-powered Markdown editor designed for knowledge workers,
 
 ---
 
+## Changelog
+
+### v1.6.0 (2024-12-21)
+
+#### 新功能 / New Features
+- ✨ **LanceDB 向量数据库** - 使用 LanceDB 替代内存向量存储，提升 RAG 检索性能和持久化能力
+- ✨ **本地 OCR 识别** - 集成 PaddleOCR (esearch-ocr)，支持离线 PDF 图片文字识别
+- ✨ **编辑器光标同步** - 切换文件时自动恢复光标位置
+- ✨ **预览滚动同步** - 编辑器与预览模式滚动位置同步
+
+#### Bug 修复 / Bug Fixes
+- 🐛 **LanceDB 打包问题** - 修复 Electron 打包后 LanceDB 初始化失败的问题
+  - 原因：纯 JS 依赖 (apache-arrow, flatbuffers 等) 未解压到 app.asar.unpacked
+  - 方案：使用 afterPack 钩子手动复制纯 JS 模块
+- 🐛 **OCR 打包问题** - 修复安装版 OCR 服务初始化失败的问题
+  - 原因：onnxruntime-common 未解压，外部 Node.js Worker 无法读取 asar
+  - 方案：afterPack 钩子复制 onnxruntime-common 到 unpacked 目录
+- 🐛 **加粗/斜体按钮** - 修复工具栏加粗和斜体按钮无响应的问题
+  - 原因：editorRef 未正确传递到 SplitEditor 组件
+- 🐛 **MCP 配置重载** - 修复 MCP 服务器配置变更后无法重新加载的问题
+
+#### 技术改进 / Technical Improvements
+- 📦 afterPack 构建钩子自动处理纯 JS 模块打包
+- 🔧 改进 module.paths 配置，确保打包环境正确加载依赖
+- 📝 完善 macOS 编译文档
+
+---
+
 ## Development
 
 ```bash

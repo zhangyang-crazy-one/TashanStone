@@ -325,11 +325,13 @@ button, input, select, textarea, a, [role="button"] {
 }
 
 .prose blockquote {
-  border-left-color: rgb(var(--primary-500));
+  border-left: 4px solid rgb(var(--primary-500));
   background-color: rgb(var(--bg-panel));
   color: rgb(var(--text-secondary));
   font-style: normal;
-  padding: 0.5rem 1rem;
+  padding: 1rem 1.5rem;
+  margin: 1.5rem 0;
+  border-radius: 0 0.5rem 0.5rem 0;
 }
 
 .prose blockquote p:first-of-type::before,
@@ -443,4 +445,252 @@ button, input, select, textarea, a, [role="button"] {
     opacity: 1;
     transform: scale(1);
   }
+}
+
+/* Chat markdown content overflow fix */
+.chat-markdown-content {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+
+.chat-markdown-content pre {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.chat-markdown-content code {
+  word-break: break-all;
+}
+
+/* HTML Form Elements in Prose (when Render HTML is enabled) */
+.prose input[type="text"],
+.prose input[type="email"],
+.prose input[type="password"],
+.prose input[type="number"],
+.prose input[type="date"],
+.prose input[type="search"],
+.prose textarea,
+.prose select {
+  display: inline-block;
+  padding: 0.5rem 0.75rem;
+  margin: 0.25rem;
+  border: 1px solid rgb(var(--border-main));
+  border-radius: 0.375rem;
+  background-color: rgb(var(--bg-main));
+  color: rgb(var(--text-primary));
+  font-size: 0.875rem;
+  line-height: 1.5;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.prose input[type="text"]:focus,
+.prose input[type="email"]:focus,
+.prose input[type="password"]:focus,
+.prose input[type="number"]:focus,
+.prose input[type="date"]:focus,
+.prose input[type="search"]:focus,
+.prose textarea:focus,
+.prose select:focus {
+  outline: none;
+  border-color: rgb(var(--primary-500));
+  box-shadow: 0 0 0 3px rgb(var(--primary-500) / 0.2);
+}
+
+.prose input[type="checkbox"],
+.prose input[type="radio"] {
+  width: 1rem;
+  height: 1rem;
+  margin-right: 0.5rem;
+  accent-color: rgb(var(--primary-500));
+  cursor: pointer;
+}
+
+.prose input[type="range"] {
+  width: 100%;
+  max-width: 200px;
+  margin: 0.25rem;
+  accent-color: rgb(var(--primary-500));
+}
+
+.prose input[type="color"] {
+  width: 3rem;
+  height: 2rem;
+  padding: 0.25rem;
+  border: 1px solid rgb(var(--border-main));
+  border-radius: 0.375rem;
+  cursor: pointer;
+}
+
+.prose button,
+.prose input[type="submit"],
+.prose input[type="button"] {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  margin: 0.25rem;
+  background-color: rgb(var(--primary-500));
+  color: white;
+  border: none;
+  border-radius: 0.375rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.prose button:hover,
+.prose input[type="submit"]:hover,
+.prose input[type="button"]:hover {
+  background-color: rgb(var(--primary-600));
+}
+
+.prose label {
+  display: inline-block;
+  margin-right: 0.5rem;
+  color: rgb(var(--text-primary));
+  font-weight: 500;
+}
+
+.prose fieldset {
+  border: 1px solid rgb(var(--border-main));
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin: 1rem 0;
+}
+
+.prose legend {
+  padding: 0 0.5rem;
+  font-weight: 600;
+  color: rgb(var(--text-primary));
+}
+
+/* Semantic HTML Elements in Prose */
+.prose header,
+.prose footer,
+.prose nav,
+.prose main,
+.prose article,
+.prose section,
+.prose aside {
+  display: block;
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px dashed rgb(var(--border-main) / 0.5);
+  border-radius: 0.5rem;
+  background-color: rgb(var(--bg-panel) / 0.3);
+}
+
+.prose header::before { content: "header"; }
+.prose footer::before { content: "footer"; }
+.prose nav::before { content: "nav"; }
+.prose main::before { content: "main"; }
+.prose article::before { content: "article"; }
+.prose section::before { content: "section"; }
+.prose aside::before { content: "aside"; }
+
+.prose header::before,
+.prose footer::before,
+.prose nav::before,
+.prose main::before,
+.prose article::before,
+.prose section::before,
+.prose aside::before {
+  display: block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgb(var(--primary-500) / 0.7);
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid rgb(var(--border-main) / 0.3);
+}
+
+/* Details/Summary */
+.prose details {
+  margin: 1rem 0;
+  padding: 0.75rem;
+  border: 1px solid rgb(var(--border-main));
+  border-radius: 0.5rem;
+  background-color: rgb(var(--bg-panel));
+}
+
+.prose summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: rgb(var(--text-primary));
+  padding: 0.25rem 0;
+}
+
+.prose summary:hover {
+  color: rgb(var(--primary-500));
+}
+
+/* Definition List */
+.prose dl {
+  margin: 1rem 0;
+}
+
+.prose dt {
+  font-weight: 600;
+  color: rgb(var(--text-primary));
+  margin-top: 1rem;
+}
+
+.prose dd {
+  margin-left: 1.5rem;
+  color: rgb(var(--text-secondary));
+}
+
+/* Mark/Highlight */
+.prose mark {
+  background-color: rgb(var(--secondary-500) / 0.3);
+  color: inherit;
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+}
+
+/* Abbreviation */
+.prose abbr[title] {
+  text-decoration: underline dotted;
+  cursor: help;
+}
+
+/* Keyboard Input */
+.prose kbd {
+  display: inline-block;
+  padding: 0.125rem 0.375rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.875em;
+  background-color: rgb(var(--bg-panel));
+  border: 1px solid rgb(var(--border-main));
+  border-radius: 0.25rem;
+  box-shadow: 0 1px 0 rgb(var(--border-main));
+}
+
+/* Sample Output */
+.prose samp {
+  font-family: 'JetBrains Mono', monospace;
+  background-color: rgb(var(--bg-panel));
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+}
+
+/* Variable */
+.prose var {
+  font-style: italic;
+  color: rgb(var(--primary-500));
+}
+
+/* Figure and Figcaption */
+.prose figure {
+  margin: 1.5rem 0;
+  text-align: center;
+}
+
+.prose figcaption {
+  font-size: 0.875rem;
+  color: rgb(var(--text-secondary));
+  font-style: italic;
+  margin-top: 0.5rem;
 }

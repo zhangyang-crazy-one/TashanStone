@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Quiz, AIConfig, Theme, MistakeRecord } from '../types';
-import { CheckCircle2, XCircle, HelpCircle, Download, BookOpen, AlertTriangle, ArrowRight, ArrowLeft, RotateCcw, BookmarkX, Trash2, Sparkles, Loader2 } from 'lucide-react';
+import { CheckCircle2, XCircle, HelpCircle, Download, BookOpen, AlertTriangle, ArrowRight, ArrowLeft, RotateCcw, BookmarkX, Trash2, Sparkles, Loader2, CheckSquare, Circle } from 'lucide-react';
 import { gradeQuizQuestion, generateQuizExplanation } from '../services/aiService';
 import { translations, Language } from '../utils/translations';
 
@@ -30,12 +30,38 @@ export const QuizPanel: React.FC<QuizPanelProps> = ({ quiz, aiConfig, theme, onC
   useEffect(() => {
     try {
       const stored = localStorage.getItem('neon-quiz-mistakes');
-      if (stored) setSavedMistakes(JSON.parse(stored));
+      if (stored) {
+        const parsed = JSON.parse(stored) as MistakeRecord[];
+        // Deduplicate by ID (keep first occurrence)
+        const seen = new Set<string>();
+        const deduped = parsed.filter(m => {
+          if (seen.has(m.id)) return false;
+          seen.add(m.id);
+          return true;
+        });
+        setSavedMistakes(deduped);
+        // Save back deduplicated list if it changed
+        if (deduped.length !== parsed.length) {
+          localStorage.setItem('neon-quiz-mistakes', JSON.stringify(deduped));
+        }
+      }
     } catch (e) { console.error("Failed to load mistakes", e); }
   }, []);
 
   const saveMistake = (record: MistakeRecord) => {
-    const updated = [record, ...savedMistakes];
+    // Check if a record with the same ID already exists (for updates)
+    const existingIndex = savedMistakes.findIndex(m => m.id === record.id);
+    let updated: MistakeRecord[];
+
+    if (existingIndex !== -1) {
+      // Update existing record in place
+      updated = [...savedMistakes];
+      updated[existingIndex] = record;
+    } else {
+      // Add new record at the beginning
+      updated = [record, ...savedMistakes];
+    }
+
     setSavedMistakes(updated);
     localStorage.setItem('neon-quiz-mistakes', JSON.stringify(updated));
   };
@@ -49,13 +75,31 @@ export const QuizPanel: React.FC<QuizPanelProps> = ({ quiz, aiConfig, theme, onC
   // Safe access to active question
   const activeQuestion = currentQuiz.questions?.[activeQuestionIdx];
 
-  const handleOptionSelect = (option: string) => {
-    if (activeQuestion.isCorrect !== undefined) return; 
+  // Handle option selection - supports both single and multiple choice using numeric index
+  const handleOptionSelect = (optionIndex: number) => {
+    if (activeQuestion.isCorrect !== undefined) return; // Already answered
+
     const updatedQuestions = [...currentQuiz.questions];
-    updatedQuestions[activeQuestionIdx] = {
-      ...activeQuestion,
-      userAnswer: option
-    };
+
+    if (activeQuestion.type === 'multiple') {
+      // Multiple choice: toggle selection in array
+      const currentSelection = (activeQuestion.userAnswer as number[]) || [];
+      const newSelection = currentSelection.includes(optionIndex)
+        ? currentSelection.filter(i => i !== optionIndex)
+        : [...currentSelection, optionIndex].sort();
+
+      updatedQuestions[activeQuestionIdx] = {
+        ...activeQuestion,
+        userAnswer: newSelection
+      };
+    } else {
+      // Single choice: replace selection with index
+      updatedQuestions[activeQuestionIdx] = {
+        ...activeQuestion,
+        userAnswer: optionIndex
+      };
+    }
+
     setCurrentQuiz({ ...currentQuiz, questions: updatedQuestions });
   };
 
@@ -69,106 +113,234 @@ export const QuizPanel: React.FC<QuizPanelProps> = ({ quiz, aiConfig, theme, onC
     setCurrentQuiz({ ...currentQuiz, questions: updatedQuestions });
   };
 
-  // Helper: Smart comparison for multiple choice
-  const isAnswerCorrect = (userAns: string | string[], correctAns: string | string[], options?: string[]): boolean => {
-      // 1. Array comparison (Select All)
-      if (Array.isArray(correctAns)) {
-          if (!Array.isArray(userAns)) return false;
-          const correctSet = new Set(correctAns.map(s => s.trim()));
-          const userSet = new Set(userAns.map(s => s.trim()));
-          return correctSet.size === userSet.size && [...correctSet].every(x => userSet.has(x));
-      }
+  // Simplified answer checking for numeric index format
+  // Returns true/false for deterministic checking, null for AI grading needed
+  const isAnswerCorrect = (
+    userAns: number | number[] | string | string[] | undefined,
+    correctAns: number | number[] | string | string[] | undefined,
+    type: string,
+    options?: string[]
+  ): boolean | null => {
+    // Normalize string for text comparison
+    const normalize = (str: string) => str.trim().toLowerCase();
 
-      // 2. Single value comparison
-      const uStr = (Array.isArray(userAns) ? userAns[0] : userAns || '').trim();
-      const cStr = (correctAns || '').trim();
-      
-      if (uStr === cStr) return true;
+    switch (type) {
+      case 'single':
+        // Single choice: compare numeric indices
+        // CRITICAL: Reject undefined/null values to prevent false positives
+        if (userAns === undefined || userAns === null || correctAns === undefined || correctAns === null) {
+          return false;
+        }
+        if (typeof userAns === 'number' && typeof correctAns === 'number') {
+          return userAns === correctAns;
+        }
+        // Fallback: try to parse string to number or compare strings
+        return parseSingleAnswer(userAns, correctAns, options);
 
-      // 3. Letter Matching (e.g. Correct="B", User selected "4" which is the 2nd option)
-      if (options && options.length > 0) {
-          const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
-          
-          // Case A: Correct is Letter (B), User is Value (4)
-          // Find index of user selection in options
-          const userIdx = options.indexOf(uStr); // e.g. "4" is at index 1
-          if (userIdx !== -1) {
-              // Check if the letter for this index matches the correct answer
-              if (letters[userIdx] === cStr.toUpperCase()) return true;
-              
-              // Also check if option starts with Letter (e.g. "B. 4")
-              const optWithLetter = options[userIdx];
-              if (optWithLetter.startsWith(cStr + ".") || optWithLetter.startsWith(cStr + " ")) return true;
-          }
+      case 'multiple':
+        // Multiple choice: compare index arrays
+        const userArr = Array.isArray(userAns) ? userAns : [];
+        const correctArr = Array.isArray(correctAns) ? correctAns : [];
+        // CRITICAL: Empty correctArr means invalid question data - return false
+        // (empty array's every() always returns true, which is a bug)
+        if (correctArr.length === 0) return false;
+        if (userArr.length === 0) return false; // User must select at least one
+        if (userArr.length !== correctArr.length) return false;
+        // Convert all values to strings for comparison (handles both number[] and string[])
+        const userSetStr = new Set(userArr.map(v => String(v)));
+        const correctSetStr = new Set(correctArr.map(v => String(v)));
+        return [...correctSetStr].every(x => userSetStr.has(x));
 
-          // Case B: Correct is Value (4), User is Letter (B) - unlikely in this UI but safe to add
-          const correctIdx = options.indexOf(cStr);
-          if (correctIdx !== -1 && letters[correctIdx] === uStr.toUpperCase()) return true;
-      }
+      case 'fill_blank':
+        // Fill-in-blank: exact string match after normalization
+        const userStr = typeof userAns === 'string' ? normalize(userAns) : '';
+        const correctStr = typeof correctAns === 'string' ? normalize(correctAns) : '';
+        // CRITICAL: Empty strings should not match - prevent false positives
+        if (userStr === '' || correctStr === '') return false;
+        if (userStr === correctStr) return true;
+        // Numeric tolerance for numbers
+        const userNum = parseFloat(userStr);
+        const correctNum = parseFloat(correctStr);
+        if (!isNaN(userNum) && !isNaN(correctNum)) {
+          return Math.abs(userNum - correctNum) <= Math.abs(correctNum) * 0.01;
+        }
+        return false;
 
-      // 4. Loose Substring Match (e.g. "A. Paris" vs "Paris")
-      if (uStr && cStr && (uStr.includes(cStr) || cStr.includes(uStr)) && uStr.length > 2) return true;
+      case 'text':
+        // Essay/text: always requires AI grading
+        return null;
 
+      default:
+        // Unknown type with options: try choice comparison
+        if (options && options.length > 0) {
+          return parseSingleAnswer(userAns, correctAns, options);
+        }
+        // Without options: try string comparison
+        return null;
+    }
+  };
+
+  // Helper to parse various answer formats for backward compatibility
+  const parseSingleAnswer = (
+    userAns: number | number[] | string | string[] | undefined,
+    correctAns: number | number[] | string | string[] | undefined,
+    options?: string[]
+  ): boolean => {
+    // Early exit for undefined/null values
+    if (userAns === undefined || userAns === null || correctAns === undefined || correctAns === null) {
       return false;
+    }
+
+    const letterToIndex: { [key: string]: number } = { 'A': 0, 'B': 1, 'C': 2, 'D': 3 };
+
+    const parseToIndex = (val: any): number => {
+      if (typeof val === 'number') return val;
+      if (typeof val !== 'string') return -1;
+
+      const str = val.trim().toUpperCase();
+      // Letter format
+      if (letterToIndex[str] !== undefined) return letterToIndex[str];
+      // Numeric string
+      const num = parseInt(str, 10);
+      if (!isNaN(num) && num >= 0) return num;
+      // Match option text
+      if (options) {
+        const idx = options.findIndex(opt => opt.trim().toLowerCase() === val.trim().toLowerCase());
+        if (idx !== -1) return idx;
+      }
+      return -1;
+    };
+
+    const userIdx = parseToIndex(userAns);
+    const correctIdx = parseToIndex(correctAns);
+
+    if (userIdx !== -1 && correctIdx !== -1) {
+      return userIdx === correctIdx;
+    }
+    return false;
+  };
+
+  // Check if option at index is selected (handles both number and number[] userAnswer)
+  const isOptionSelected = (idx: number): boolean => {
+    const ans = activeQuestion?.userAnswer;
+    if (activeQuestion?.type === 'multiple') {
+      // For multiple choice, check if idx is in the array
+      if (Array.isArray(ans)) {
+        // Handle both number[] and string[] arrays
+        return ans.some(a => a === idx || (typeof a === 'string' && parseInt(a, 10) === idx));
+      }
+      return false;
+    }
+    // For single choice, compare directly
+    if (typeof ans === 'number') return ans === idx;
+    if (typeof ans === 'string') return ans === activeQuestion?.options?.[idx] || parseInt(ans, 10) === idx;
+    return false;
+  };
+
+  // Check if option at index is the correct answer
+  const isOptionCorrect = (idx: number): boolean => {
+    const correct = activeQuestion?.correctAnswer;
+    if (activeQuestion?.type === 'multiple') {
+      if (Array.isArray(correct)) {
+        return correct.some(c => c === idx || (typeof c === 'string' && parseInt(c, 10) === idx));
+      }
+      return false;
+    }
+    if (typeof correct === 'number') return correct === idx;
+    if (typeof correct === 'string') return parseInt(correct, 10) === idx;
+    return false;
   };
 
   const checkAnswer = async () => {
     const q = activeQuestion;
-    if (!q.userAnswer) return;
+    if (q.userAnswer === undefined || q.userAnswer === null ||
+        (typeof q.userAnswer === 'string' && q.userAnswer.trim() === '') ||
+        (Array.isArray(q.userAnswer) && q.userAnswer.length === 0)) return;
 
-    // Logic for Multiple Choice (Deterministic)
-    if (q.type !== 'text') {
-      const isCorrect = isAnswerCorrect(q.userAnswer, q.correctAnswer || '', q.options);
-      
+    const questionType = q.type || (q.options && q.options.length > 0 ? 'single' : 'text');
+
+    // Determine validation method based on question type
+    const validationResult = isAnswerCorrect(q.userAnswer, q.correctAnswer, questionType, q.options);
+
+    // If validationResult is not null, we can determine correctness locally
+    if (validationResult !== null) {
       const updatedQuestions = [...currentQuiz.questions];
-      updatedQuestions[activeQuestionIdx] = { ...q, isCorrect };
+      updatedQuestions[activeQuestionIdx] = { ...q, isCorrect: validationResult };
       setCurrentQuiz(prev => ({ ...prev, questions: updatedQuestions }));
-      
-      // Auto-save mistake if incorrect (without explanation initially)
-      if (!isCorrect) {
-          const mistake: MistakeRecord = {
-              id: `${currentQuiz.id}-${q.id}-${Date.now()}`,
-              question: q.question,
-              userAnswer: Array.isArray(q.userAnswer) ? q.userAnswer.join(', ') : q.userAnswer as string,
-              correctAnswer: Array.isArray(q.correctAnswer) ? q.correctAnswer.join(', ') : (q.correctAnswer || "Unknown"),
-              explanation: q.explanation, // might be undefined
-              timestamp: Date.now(),
-              quizTitle: currentQuiz.title
-          };
-          saveMistake(mistake);
-      }
-    } 
-    // Logic for Text Answers (AI Grading required immediately to determine correctness)
-    else {
-      setGradingIds(prev => [...prev, q.id]);
-      try {
-        const result = await gradeQuizQuestion(q.question, q.userAnswer as string, contextContent, aiConfig);
-        const updatedQuestions = [...currentQuiz.questions];
-        
-        updatedQuestions[activeQuestionIdx] = { 
-          ...q, 
-          isCorrect: result.isCorrect, 
-          explanation: result.explanation 
+
+      // Auto-save mistake if incorrect
+      if (!validationResult) {
+        const formatAnswer = (ans: any, opts?: string[]): string => {
+          if (Array.isArray(ans)) {
+            return ans.map(i => typeof i === 'number' && opts ? opts[i] : i).join(', ');
+          }
+          if (typeof ans === 'number' && opts) return opts[ans] || String(ans);
+          return String(ans || '');
         };
-        setCurrentQuiz(prev => ({ ...prev, questions: updatedQuestions }));
-        
-        if (!result.isCorrect) {
-           const mistake: MistakeRecord = {
-              id: `${currentQuiz.id}-${q.id}-${Date.now()}`,
-              question: q.question,
-              userAnswer: q.userAnswer as string,
-              correctAnswer: "(AI Graded)",
-              explanation: result.explanation,
-              timestamp: Date.now(),
-              quizTitle: currentQuiz.title
-          };
-          saveMistake(mistake);
-        }
-      } catch (err) {
-        console.error("Grading failed", err);
-      } finally {
-        setGradingIds(prev => prev.filter(id => id !== q.id));
+
+        const mistake: MistakeRecord = {
+          id: `${currentQuiz.id}-${q.id}-${Date.now()}`,
+          question: q.question,
+          userAnswer: formatAnswer(q.userAnswer, q.options),
+          correctAnswer: formatAnswer(q.correctAnswer, q.options),
+          explanation: q.explanation,
+          timestamp: Date.now(),
+          quizTitle: currentQuiz.title
+        };
+        saveMistake(mistake);
       }
+      return;
+    }
+
+    // AI Grading required for 'text' type questions
+    setGradingIds(prev => [...prev, q.id]);
+
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('AI grading timeout (60s)')), 60000);
+    });
+
+    try {
+      const result = await Promise.race([
+        gradeQuizQuestion(q.question, q.userAnswer as string, contextContent, aiConfig),
+        timeoutPromise
+      ]);
+
+      const updatedQuestions = [...currentQuiz.questions];
+      updatedQuestions[activeQuestionIdx] = {
+        ...q,
+        isCorrect: result.isCorrect,
+        explanation: result.explanation
+      };
+      setCurrentQuiz(prev => ({ ...prev, questions: updatedQuestions }));
+
+      if (!result.isCorrect) {
+        const mistake: MistakeRecord = {
+          id: `${currentQuiz.id}-${q.id}-${Date.now()}`,
+          question: q.question,
+          userAnswer: q.userAnswer as string,
+          correctAnswer: "(AI Graded)",
+          explanation: result.explanation,
+          timestamp: Date.now(),
+          quizTitle: currentQuiz.title
+        };
+        saveMistake(mistake);
+      }
+    } catch (err: any) {
+      console.error("Grading failed", err);
+
+      const updatedQuestions = [...currentQuiz.questions];
+      const errorMsg = err.message?.includes('timeout')
+        ? 'AI grading timed out. Please try again or check your answer manually.'
+        : 'AI grading failed. Please try again.';
+
+      updatedQuestions[activeQuestionIdx] = {
+        ...q,
+        isCorrect: false,
+        explanation: errorMsg
+      };
+      setCurrentQuiz(prev => ({ ...prev, questions: updatedQuestions }));
+    } finally {
+      setGradingIds(prev => prev.filter(id => id !== q.id));
     }
   };
 
@@ -179,9 +351,9 @@ export const QuizPanel: React.FC<QuizPanelProps> = ({ quiz, aiConfig, theme, onC
       setExplainingIds(prev => [...prev, q.id]);
       try {
          const explanation = await generateQuizExplanation(
-             q.question, 
-             Array.isArray(q.correctAnswer) ? q.correctAnswer.join(', ') : (q.correctAnswer || "the correct option"), 
-             Array.isArray(q.userAnswer) ? q.userAnswer.join(', ') : (q.userAnswer as string),
+             q.question,
+             Array.isArray(q.correctAnswer) ? q.correctAnswer.join(', ') : String(q.correctAnswer || "the correct option"),
+             Array.isArray(q.userAnswer) ? q.userAnswer.join(', ') : String(q.userAnswer || ""),
              contextContent,
              aiConfig
          );
@@ -353,23 +525,48 @@ export const QuizPanel: React.FC<QuizPanelProps> = ({ quiz, aiConfig, theme, onC
             <div className="w-full max-w-3xl space-y-8">
                 {/* Question Card */}
                 <div className="space-y-4 animate-fadeIn">
+                    {/* Question Type Badge */}
+                    <div className="flex items-center gap-2">
+                        <span className={`text-xs font-medium px-2 py-1 rounded-full ${
+                            activeQuestion.type === 'single' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' :
+                            activeQuestion.type === 'multiple' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400' :
+                            activeQuestion.type === 'fill_blank' ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400' :
+                            'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                        }`}>
+                            {activeQuestion.type === 'single' ? (language === 'zh' ? '单选题' : 'Single Choice') :
+                             activeQuestion.type === 'multiple' ? (language === 'zh' ? '多选题' : 'Multiple Choice') :
+                             activeQuestion.type === 'fill_blank' ? (language === 'zh' ? '填空题' : 'Fill-in-blank') :
+                             (language === 'zh' ? '问答题' : 'Essay')}
+                        </span>
+                    </div>
+
                     <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100 leading-relaxed">
                         {activeQuestion.question}
                     </h3>
-                    
+
                     {/* Options / Input */}
                     <div className="space-y-3 pt-4">
-                        {(activeQuestion.type === 'single' || activeQuestion.type === 'multiple') && activeQuestion.options?.map((opt, idx) => {
-                             const isSelected = activeQuestion.userAnswer === opt;
-                             const isCorrectAnswer = isAnswerCorrect(opt, activeQuestion.correctAnswer || '', activeQuestion.options);
-                             
+                        {/* Multiple choice hint */}
+                        {activeQuestion.type === 'multiple' && (
+                            <div className="flex items-center gap-2 text-sm text-purple-600 dark:text-purple-400 mb-2">
+                                <CheckSquare size={16} />
+                                <span>{language === 'zh' ? '本题为多选题，请选择所有正确答案' : 'Select all correct answers'}</span>
+                            </div>
+                        )}
+
+                        {/* Choice questions: show option buttons */}
+                        {activeQuestion.options && activeQuestion.options.length > 0 && activeQuestion.options.map((opt, idx) => {
+                             const isSelected = isOptionSelected(idx);
+                             const isCorrectOpt = isOptionCorrect(idx);
+                             const isMultiple = activeQuestion.type === 'multiple';
+
                              let optionClass = "border-paper-200 dark:border-cyber-700 hover:border-cyan-400 dark:hover:border-cyan-500 bg-white dark:bg-cyber-800";
-                             
+
                              if (isSelected) {
                                  optionClass = "border-cyan-500 bg-cyan-50 dark:bg-cyan-900/20 text-cyan-800 dark:text-cyan-200 ring-1 ring-cyan-500";
                              }
                              if (isAnswered) {
-                                 if (isCorrectAnswer) optionClass = "border-green-500 bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200 ring-1 ring-green-500";
+                                 if (isCorrectOpt) optionClass = "border-green-500 bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200 ring-1 ring-green-500";
                                  else if (isSelected && !activeQuestion.isCorrect) optionClass = "border-red-500 bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200";
                                  else optionClass += " opacity-60";
                              }
@@ -377,24 +574,120 @@ export const QuizPanel: React.FC<QuizPanelProps> = ({ quiz, aiConfig, theme, onC
                              return (
                                 <button
                                     key={idx}
-                                    onClick={() => handleOptionSelect(opt)}
+                                    onClick={() => handleOptionSelect(idx)}
                                     disabled={isAnswered}
-                                    className={`w-full text-left p-4 rounded-xl border-2 transition-all duration-200 flex items-center justify-between group ${optionClass}`}
+                                    className={`w-full text-left p-4 rounded-xl border-2 transition-all duration-200 flex items-center gap-3 group ${optionClass}`}
                                 >
-                                    <span className="font-medium text-lg">{opt}</span>
-                                    {isSelected && <CheckCircle2 size={20} className="text-cyan-500" />}
+                                    {/* Visual indicator: checkbox for multiple, circle for single */}
+                                    <div className={`flex-shrink-0 w-6 h-6 rounded-${isMultiple ? 'md' : 'full'} border-2 flex items-center justify-center transition-colors ${
+                                        isSelected
+                                            ? 'border-cyan-500 bg-cyan-500 text-white'
+                                            : 'border-slate-300 dark:border-slate-600'
+                                    }`}>
+                                        {isMultiple ? (
+                                            isSelected && <CheckCircle2 size={14} />
+                                        ) : (
+                                            isSelected && <div className="w-2.5 h-2.5 rounded-full bg-white" />
+                                        )}
+                                    </div>
+                                    <span className="font-medium text-lg flex-1">{opt}</span>
+                                    {isAnswered && isCorrectOpt && <CheckCircle2 size={20} className="text-green-500 flex-shrink-0" />}
                                 </button>
                              );
                         })}
 
-                        {activeQuestion.type === 'text' && (
-                            <textarea
-                                value={activeQuestion.userAnswer as string || ''}
-                                onChange={(e) => handleTextAnswer(e.target.value)}
-                                disabled={isAnswered}
-                                placeholder="Type your answer here..."
-                                className="w-full h-40 p-4 rounded-xl bg-white dark:bg-cyber-800 border-2 border-paper-200 dark:border-cyber-700 focus:border-cyan-500 focus:outline-none text-slate-800 dark:text-slate-200 text-lg resize-none"
-                            />
+                        {/* Fill-in-blank questions: short text input */}
+                        {activeQuestion.type === 'fill_blank' && (!activeQuestion.options || activeQuestion.options.length === 0) && (
+                            <div className="space-y-4">
+                                <div className="p-4 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-lg">
+                                    <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 text-sm">
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                        </svg>
+                                        <span className="font-medium">{language === 'zh' ? '请填写简短答案（1-5个词）' : 'Enter a short answer (1-5 words)'}</span>
+                                    </div>
+                                </div>
+                                <input
+                                    type="text"
+                                    value={activeQuestion.userAnswer as string || ''}
+                                    onChange={(e) => handleTextAnswer(e.target.value)}
+                                    disabled={isAnswered}
+                                    placeholder={language === 'zh' ? '输入答案...' : 'Type answer...'}
+                                    className="w-full p-4 rounded-xl bg-white dark:bg-cyber-800 border-2 border-paper-200 dark:border-cyber-700 focus:border-cyan-500 focus:outline-none text-slate-800 dark:text-slate-200 text-lg"
+                                />
+                                {isAnswered && activeQuestion.correctAnswer && (
+                                    <div className="p-4 bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-800 rounded-lg">
+                                        <div className="text-xs font-bold text-green-600 dark:text-green-400 uppercase tracking-wide mb-1">
+                                            {language === 'zh' ? '正确答案' : 'Correct Answer'}
+                                        </div>
+                                        <p className="text-slate-700 dark:text-slate-300 font-medium">
+                                            {String(activeQuestion.correctAnswer)}
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Text/Essay questions: textarea input */}
+                        {activeQuestion.type === 'text' && (!activeQuestion.options || activeQuestion.options.length === 0) && (
+                            <div className="space-y-4">
+                                <div className="p-4 bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-800 rounded-lg">
+                                    <div className="flex items-center gap-2 text-green-700 dark:text-green-400 text-sm">
+                                        <BookOpen size={16} />
+                                        <span className="font-medium">{language === 'zh' ? '请详细回答以下问题（AI评分）' : 'Please answer in detail (AI graded)'}</span>
+                                    </div>
+                                </div>
+                                <textarea
+                                    value={activeQuestion.userAnswer as string || ''}
+                                    onChange={(e) => handleTextAnswer(e.target.value)}
+                                    disabled={isAnswered}
+                                    placeholder={language === 'zh' ? '在此输入你的答案...' : 'Type your answer here...'}
+                                    className="w-full h-40 p-4 rounded-xl bg-white dark:bg-cyber-800 border-2 border-paper-200 dark:border-cyber-700 focus:border-cyan-500 focus:outline-none text-slate-800 dark:text-slate-200 text-lg resize-none"
+                                />
+                                {isAnswered && activeQuestion.correctAnswer && (
+                                    <div className="p-4 bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-800 rounded-lg">
+                                        <div className="text-xs font-bold text-green-600 dark:text-green-400 uppercase tracking-wide mb-1">
+                                            {language === 'zh' ? '参考要点' : 'Reference Points'}
+                                        </div>
+                                        <p className="text-slate-700 dark:text-slate-300">
+                                            {String(activeQuestion.correctAnswer)}
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Fallback: no type specified but no options - show text input */}
+                        {!activeQuestion.type && (!activeQuestion.options || activeQuestion.options.length === 0) && (
+                            <div className="space-y-4">
+                                <div className="p-4 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-lg">
+                                    <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 text-sm">
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                        </svg>
+                                        <span className="font-medium">{language === 'zh' ? '请在下方输入你的答案' : 'Enter your answer below'}</span>
+                                    </div>
+                                </div>
+                                <textarea
+                                    value={activeQuestion.userAnswer as string || ''}
+                                    onChange={(e) => handleTextAnswer(e.target.value)}
+                                    disabled={isAnswered}
+                                    placeholder={language === 'zh' ? '在此输入你的答案...' : 'Type your answer here...'}
+                                    className="w-full h-32 p-4 rounded-xl bg-white dark:bg-cyber-800 border-2 border-paper-200 dark:border-cyber-700 focus:border-cyan-500 focus:outline-none text-slate-800 dark:text-slate-200 text-lg resize-none"
+                                />
+                                {isAnswered && activeQuestion.correctAnswer && (
+                                    <div className="p-4 bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-800 rounded-lg">
+                                        <div className="text-xs font-bold text-green-600 dark:text-green-400 uppercase tracking-wide mb-1">
+                                            {language === 'zh' ? '参考答案' : 'Reference Answer'}
+                                        </div>
+                                        <p className="text-slate-700 dark:text-slate-300">
+                                            {Array.isArray(activeQuestion.correctAnswer)
+                                                ? activeQuestion.correctAnswer.join(', ')
+                                                : String(activeQuestion.correctAnswer)}
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
                         )}
                     </div>
                 </div>
@@ -447,7 +740,13 @@ export const QuizPanel: React.FC<QuizPanelProps> = ({ quiz, aiConfig, theme, onC
                 {!isAnswered ? (
                     <button
                         onClick={checkAnswer}
-                        disabled={!activeQuestion.userAnswer || isGrading}
+                        disabled={
+                          activeQuestion.userAnswer === undefined ||
+                          activeQuestion.userAnswer === null ||
+                          (typeof activeQuestion.userAnswer === 'string' && activeQuestion.userAnswer.trim() === '') ||
+                          (Array.isArray(activeQuestion.userAnswer) && activeQuestion.userAnswer.length === 0) ||
+                          isGrading
+                        }
                         className="flex items-center gap-2 px-6 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg font-bold shadow-lg shadow-cyan-500/25 transition-all disabled:opacity-50 disabled:shadow-none"
                     >
                         {isGrading ? t.grading : t.checkAnswer}

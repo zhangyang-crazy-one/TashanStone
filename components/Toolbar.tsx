@@ -244,7 +244,14 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                 <Edit3 size={14} className="text-cyan-500" /> {t.editor}
               </button>
               <button
-                onClick={() => { setViewMode(ViewMode.Split); setShowViewMenu(false); }}
+                onClick={() => {
+                  setViewMode(ViewMode.Split);
+                  // 确保分屏模式生效：如果当前是'none'则切换到'horizontal'
+                  if (splitMode === 'none') {
+                    onSplitModeChange?.('horizontal');
+                  }
+                  setShowViewMenu(false);
+                }}
                 className={`w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 flex items-center gap-2 ${viewMode === ViewMode.Split ? 'text-cyan-600 dark:text-cyan-400 font-medium' : 'text-slate-700 dark:text-slate-200'}`}
               >
                 <Columns size={14} className="text-blue-500" /> {t.split}

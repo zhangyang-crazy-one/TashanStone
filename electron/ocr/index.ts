@@ -262,6 +262,36 @@ export class OcrService {
         // 使用系统的 node，而非 Electron 的 node
         const nodePath = process.platform === 'win32' ? 'node.exe' : 'node';
 
+        // 构建 NODE_PATH 环境变量，确保 worker 能找到 native 模块
+        // 在打包后，native 模块位于 app.asar.unpacked/node_modules
+        const nodePathEnv: string[] = [];
+
+        // 1. app.asar.unpacked 目录 (打包后 native 模块位置)
+        if (process.resourcesPath) {
+            const unpackedModules = path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules');
+            if (fs.existsSync(unpackedModules)) {
+                nodePathEnv.push(unpackedModules);
+                logger.info(`[OCR] Added to NODE_PATH: ${unpackedModules}`);
+            }
+        }
+
+        // 2. 开发模式 node_modules
+        const devModules = path.join(app.getAppPath(), 'node_modules');
+        if (fs.existsSync(devModules)) {
+            nodePathEnv.push(devModules);
+        }
+
+        // 3. cwd node_modules
+        const cwdModules = path.join(process.cwd(), 'node_modules');
+        if (fs.existsSync(cwdModules) && cwdModules !== devModules) {
+            nodePathEnv.push(cwdModules);
+        }
+
+        const separator = process.platform === 'win32' ? ';' : ':';
+        const nodePathValue = nodePathEnv.join(separator);
+
+        logger.info(`[OCR] NODE_PATH: ${nodePathValue}`);
+
         return new Promise((resolve, reject) => {
             this.readyPromise = new Promise(res => {
                 this.readyResolve = res;
@@ -270,7 +300,11 @@ export class OcrService {
             try {
                 this.worker = spawn(nodePath, [workerPath], {
                     stdio: ['pipe', 'pipe', 'pipe'],
-                    cwd: process.cwd()
+                    cwd: process.cwd(),
+                    env: {
+                        ...process.env,
+                        NODE_PATH: nodePathValue
+                    }
                 });
 
                 if (!this.worker.stdout || !this.worker.stdin) {

@@ -14,6 +14,17 @@ files:
   - "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}"
   - "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}"
   - "!**/node_modules/.bin"
+  # 显式包含 LanceDB 及其依赖 (解决 apache-arrow 模块解析问题)
+  - node_modules/@lancedb/**/*
+  - node_modules/apache-arrow/**/*
+  - node_modules/@napi-rs/**/*
+  # apache-arrow 的依赖
+  - node_modules/flatbuffers/**/*
+  - node_modules/@swc/helpers/**/*
+  - node_modules/tslib/**/*
+  - node_modules/json-bignum/**/*
+  - node_modules/command-line-args/**/*
+  - node_modules/command-line-usage/**/*
 
 extraResources:
   - from: electron/database/schema.sql
@@ -35,19 +46,40 @@ extraResources:
       - "**/*.onnx"
       - "**/*.txt"
 
+# afterPack hook: 复制 apache-arrow 等纯 JS 模块到 unpacked 目录
+afterPack: scripts/afterPack.cjs
+
 asar: true
 asarUnpack:
+  # 所有 .node 原生模块
   - "**/*.node"
-  - "**/better-sqlite3/**"
-  - "**/node_modules/better-sqlite3/**"
-  - "**/sherpa-onnx/**"
-  - "**/node_modules/sherpa-onnx/**"
-  - "**/onnxruntime-node/**"
-  - "**/node_modules/onnxruntime-node/**"
-  - "**/@ffmpeg-installer/**"
-  - "**/node_modules/@ffmpeg-installer/**"
-  - "**/@ffprobe-installer/**"
-  - "**/node_modules/@ffprobe-installer/**"
+  # better-sqlite3
+  - "**/node_modules/better-sqlite3/**/*"
+  # Sherpa-ONNX 语音识别
+  - "**/node_modules/sherpa-onnx/**/*"
+  - "**/node_modules/sherpa-onnx-win-x64/**/*"
+  # ONNX Runtime (onnxruntime-common 是 esearch-ocr 的依赖)
+  - "**/node_modules/onnxruntime-node/**/*"
+  - "**/node_modules/onnxruntime-common/**/*"
+  # FFmpeg
+  - "**/node_modules/@ffmpeg-installer/**/*"
+  - "**/node_modules/@ffprobe-installer/**/*"
+  # OCR 相关 native 模块
+  - "**/node_modules/canvas/**/*"
+  - "**/node_modules/esearch-ocr/**/*"
+  # LanceDB 相关模块 (包括 peerDependency apache-arrow 及其所有依赖)
+  - "**/node_modules/@lancedb/**/*"
+  - "**/node_modules/@napi-rs/**/*"
+  - "**/node_modules/apache-arrow/**/*"
+  # apache-arrow 的依赖也需要解压
+  - "**/node_modules/flatbuffers/**/*"
+  - "**/node_modules/@swc/**/*"
+  - "**/node_modules/tslib/**/*"
+  - "**/node_modules/json-bignum/**/*"
+  - "**/node_modules/command-line-args/**/*"
+  - "**/node_modules/command-line-usage/**/*"
+  - "**/node_modules/@types/command-line-args/**/*"
+  - "**/node_modules/@types/command-line-usage/**/*"
 
 win:
   target:

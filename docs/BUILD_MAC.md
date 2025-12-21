@@ -60,7 +60,7 @@ brew install python
 
 ```bash
 git clone https://github.com/zhangyang-crazy-one/Zhang_Note.git
-cd Zhang_Note/zhang_reader
+cd Zhang_Note
 ```
 
 ### 2. 安装依赖

@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Send, User, Sparkles, Bot, X, Trash2, Minimize2, Archive, Mic, MicOff, Loader2, Square, Maximize2 } from 'lucide-react';
 import { ChatMessage, AIState } from '../types';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { translations, Language } from '../utils/translations';
 import { RAGResultsCard } from './RAGResultsCard';
 import { ToolCallCard, StreamToolCard, parseToolCallsFromContent, ThinkingCard } from './ToolCallCard';
@@ -15,7 +16,7 @@ const SmartMessageContent: React.FC<{ content: string; isStreaming?: boolean }> 
   if (parts.length === 1 && parts[0].type === 'text') {
     return (
       <div className="chat-markdown-content">
-        <ReactMarkdown>{content}</ReactMarkdown>
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
       </div>
     );
   }
@@ -27,7 +28,7 @@ const SmartMessageContent: React.FC<{ content: string; isStreaming?: boolean }> 
         if (part.type === 'text' && part.content) {
           return (
             <div key={idx} className="chat-markdown-content">
-              <ReactMarkdown>{part.content}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{part.content}</ReactMarkdown>
             </div>
           );
         } else if (part.type === 'tool' && part.toolName) {
@@ -287,6 +288,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                     ) : (
                       <div className="chat-markdown-content">
                         <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
                           components={{
                             // 自定义 pre 渲染，确保滚动生效
                             pre: ({ children, ...props }) => (
@@ -351,6 +353,37 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                             ),
                             h3: ({ children, ...props }) => (
                               <h3 {...props} className="text-sm font-semibold my-1">{children}</h3>
+                            ),
+                            // 表格样式
+                            table: ({ children, ...props }) => (
+                              <div className="overflow-x-auto my-2">
+                                <table {...props} className="min-w-full text-xs border-collapse border border-slate-300 dark:border-slate-600">
+                                  {children}
+                                </table>
+                              </div>
+                            ),
+                            thead: ({ children, ...props }) => (
+                              <thead {...props} className="bg-slate-100 dark:bg-slate-700">
+                                {children}
+                              </thead>
+                            ),
+                            tbody: ({ children, ...props }) => (
+                              <tbody {...props}>{children}</tbody>
+                            ),
+                            tr: ({ children, ...props }) => (
+                              <tr {...props} className="border-b border-slate-300 dark:border-slate-600">
+                                {children}
+                              </tr>
+                            ),
+                            th: ({ children, ...props }) => (
+                              <th {...props} className="px-2 py-1 text-left font-semibold border border-slate-300 dark:border-slate-600">
+                                {children}
+                              </th>
+                            ),
+                            td: ({ children, ...props }) => (
+                              <td {...props} className="px-2 py-1 border border-slate-300 dark:border-slate-600">
+                                {children}
+                              </td>
                             ),
                           }}
                         >

@@ -13,6 +13,40 @@ const path = require('path');
 const fs = require('fs');
 const readline = require('readline');
 
+// === 修复打包后 native 模块加载问题 ===
+// 在打包后，native 模块 (canvas, onnxruntime-node) 位于 app.asar.unpacked/node_modules
+// 需要将该路径添加到 module.paths 以便 require() 能找到它们
+(function setupModulePaths() {
+    // 从 NODE_PATH 环境变量获取额外的模块路径
+    if (process.env.NODE_PATH) {
+        const extraPaths = process.env.NODE_PATH.split(path.delimiter);
+        for (const p of extraPaths) {
+            if (p && !module.paths.includes(p)) {
+                // 将 app.asar.unpacked 路径添加到搜索路径最前面
+                module.paths.unshift(p);
+                console.error(`[OCR Worker] Added module path: ${p}`);
+            }
+        }
+    }
+
+    // 额外尝试：基于 worker 脚本位置推断 app.asar.unpacked 路径
+    // Worker 在: resources/electron/ocr/ocr-worker.cjs
+    // Native 在: resources/app.asar.unpacked/node_modules
+    const workerDir = __dirname;
+    const possiblePaths = [
+        path.join(workerDir, '..', '..', 'app.asar.unpacked', 'node_modules'),
+        path.join(workerDir, '..', '..', '..', 'app.asar.unpacked', 'node_modules'),
+    ];
+
+    for (const p of possiblePaths) {
+        const resolved = path.resolve(p);
+        if (fs.existsSync(resolved) && !module.paths.includes(resolved)) {
+            module.paths.unshift(resolved);
+            console.error(`[OCR Worker] Auto-detected module path: ${resolved}`);
+        }
+    }
+})();
+
 // Polyfill OffscreenCanvas for Node.js using node-canvas
 // This is required by esearch-ocr which uses browser Canvas API
 try {

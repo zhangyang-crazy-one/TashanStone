@@ -37,6 +37,7 @@ interface OutlineItem {
   level: number;
   text: string;
   line: number;
+  slug: string;
 }
 
 // Tree Node Interface
@@ -74,6 +75,19 @@ const DEFAULT_SNIPPETS: Snippet[] = [
   { id: 'link', name: 'Link Reference', category: 'text', content: '[Link Text](https://example.com "Title")\n' },
   { id: 'img', name: 'Image', category: 'template', content: '![Alt Text](image-url.png "Image Title")\n' },
 ];
+
+// Generate slug from text (same as Preview.tsx - supports Chinese)
+const generateSlug = (text: string): string => {
+  if (!text) return '';
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^\w\u4e00-\u9fa5-]/g, '')
+    .replace(/--+/g, '-')
+    .replace(/^-+/, '')
+    .replace(/-+$/, '');
+};
 
 const isExtensionInList = (filename: string, list: string[]) => {
     if (!filename) return false;
@@ -409,10 +423,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       lines.forEach((line, index) => {
         const match = line.match(/^(#{1,6})\s+(.+)$/);
         if (match) {
+          const text = match[2];
           headers.push({
             level: match[1].length,
-            text: match[2],
-            line: index
+            text: text,
+            line: index,
+            slug: generateSlug(text)
           });
         }
       });
@@ -759,8 +775,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <button
                     key={idx}
                     onClick={() => {
-                        const elements = document.querySelectorAll(`h${item.level}`);
-                        if(elements.length > 0) elements[Math.min(idx, elements.length-1)]?.scrollIntoView({behavior: 'smooth'});
+                        const elementId = `heading-${item.slug}`;
+                        const element = document.getElementById(elementId);
+                        if (element) {
+                          element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }
                     }}
                     className="w-full text-left py-1 px-2 rounded hover:bg-paper-200 dark:bg-cyber-900 text-slate-600 dark:text-slate-300 transition-colors flex items-center gap-2 group"
                     style={{ paddingLeft: `${(item.level - 1) * 12 + 4}px` }}

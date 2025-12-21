@@ -347,6 +347,32 @@ try {
             ipcRenderer.invoke('ocr:getStatus')
     },
 
+    // LanceDB vector database
+    lancedb: {
+        init: (): Promise<void> =>
+            ipcRenderer.invoke('lancedb:init'),
+        add: (chunks: any[]): Promise<void> =>
+            ipcRenderer.invoke('lancedb:add', chunks),
+        search: (queryVector: number[], limit?: number): Promise<any[]> =>
+            ipcRenderer.invoke('lancedb:search', queryVector, limit),
+        deleteByFile: (fileId: string): Promise<void> =>
+            ipcRenderer.invoke('lancedb:deleteByFile', fileId),
+        clear: (): Promise<void> =>
+            ipcRenderer.invoke('lancedb:clear'),
+        getAll: (): Promise<any[]> =>
+            ipcRenderer.invoke('lancedb:getAll'),
+        getFileIds: (): Promise<string[]> =>
+            ipcRenderer.invoke('lancedb:getFileIds'),
+        getStats: (): Promise<{ totalFiles: number; totalChunks: number }> =>
+            ipcRenderer.invoke('lancedb:getStats'),
+        getFileNameMapping: (): Promise<Record<string, string[]>> =>
+            ipcRenderer.invoke('lancedb:getFileNameMapping'),
+        cleanDuplicateFileNames: (fileNameToKeepId: Record<string, string>): Promise<number> =>
+            ipcRenderer.invoke('lancedb:cleanDuplicateFileNames', fileNameToKeepId),
+        getFileMetadata: (): Promise<Record<string, number>> =>
+            ipcRenderer.invoke('lancedb:getFileMetadata')
+    },
+
     // Menu event listeners
     onMenuEvent: (channel: string, callback: () => void) => {
         const validChannels = [
@@ -498,6 +524,19 @@ declare global {
                 reinitialize: (config?: { modelDir?: string; backend?: 'directml' | 'cpu' }) => Promise<{ success: boolean; error?: string }>;
                 recognize: (imageData: string) => Promise<{ success: boolean; text?: string; error?: string; duration?: number; backend?: string }>;
                 getStatus: () => Promise<{ available: boolean; initialized: boolean; backend: string; modelVersion: string | null; modelPath: string }>;
+            };
+            lancedb: {
+                init: () => Promise<void>;
+                add: (chunks: any[]) => Promise<void>;
+                search: (queryVector: number[], limit?: number) => Promise<any[]>;
+                deleteByFile: (fileId: string) => Promise<void>;
+                clear: () => Promise<void>;
+                getAll: () => Promise<any[]>;
+                getFileIds: () => Promise<string[]>;
+                getStats: () => Promise<{ totalFiles: number; totalChunks: number }>;
+                getFileNameMapping: () => Promise<Record<string, string[]>>;
+                cleanDuplicateFileNames: (fileNameToKeepId: Record<string, string>) => Promise<number>;
+                getFileMetadata: () => Promise<Record<string, number>>;
             };
             onMenuEvent: (channel: string, callback: () => void) => () => void;
         };

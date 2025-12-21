@@ -14,6 +14,9 @@ export interface MarkdownFile {
   summary?: string; // AI Generated Summary for search previews
   importance?: number; // 0-10 Score automatically assessed by AI
   keyConcepts?: string[]; // Auto-extracted key concepts
+  // Cursor & Scroll Position Memory
+  cursorPosition?: { start: number; end: number };
+  scrollTop?: number;
 }
 
 // ========================
@@ -264,8 +267,12 @@ export interface QuizQuestion {
   type: QuestionType;
   question: string;
   options?: string[];
-  correctAnswer?: string | string[]; // For auto-grading if applicable
-  userAnswer?: string | string[];
+  // Support both numeric index (new) and string (legacy) formats
+  // single: number (0-3) or string ('A', 'Option A')
+  // multiple: number[] ([0, 2]) or string[] (['A', 'C'])
+  // fill_blank/text: string
+  correctAnswer?: number | number[] | string | string[];
+  userAnswer?: number | number[] | string | string[];
   explanation?: string;
   isCorrect?: boolean;
 

@@ -427,6 +427,31 @@ const deleteFileParams = {
   }
 };
 
+const readFileParams = {
+  name: 'read_file',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      path: { type: Type.STRING, description: "File name or path to read" },
+      startLine: { type: Type.NUMBER, description: "Optional: Start line number (1-indexed)" },
+      endLine: { type: Type.NUMBER, description: "Optional: End line number (1-indexed)" }
+    },
+    required: ['path']
+  }
+};
+
+const searchFilesParams = {
+  name: 'search_files',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      keyword: { type: Type.STRING, description: "Keyword to search for in file contents" },
+      filePattern: { type: Type.STRING, description: "Optional: File name pattern to filter (e.g., 'todo', '.md')" }
+    },
+    required: ['keyword']
+  }
+};
+
 // --- Function Declarations for OpenAI / Ollama (JSON Schema format) ---
 
 const OPENAI_TOOLS = [
@@ -471,6 +496,37 @@ const OPENAI_TOOLS = [
           filename: { type: "string", "description": "Name of the file to delete" }
         },
         required: ["filename"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "read_file",
+      description: "Read the content of a specific file. Optionally specify line range to read.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "File name or path to read" },
+          startLine: { type: "number", description: "Optional: Start line number (1-indexed)" },
+          endLine: { type: "number", description: "Optional: End line number (1-indexed)" }
+        },
+        required: ["path"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "search_files",
+      description: "Search for a keyword across all files. Returns matching lines with line numbers.",
+      parameters: {
+        type: "object",
+        properties: {
+          keyword: { type: "string", description: "Keyword to search for in file contents" },
+          filePattern: { type: "string", description: "Optional: File name pattern to filter (e.g., 'todo', '.md')" }
+        },
+        required: ["keyword"]
       }
     }
   }
@@ -1336,7 +1392,14 @@ const callGemini = async (
     // Only add Function Calling tools if Web Search is NOT active AND toolsCallback is present
     else if (toolsCallback && !jsonMode) {
         // Base File Tools
-        const baseTools: FunctionDeclaration[] = [createFileParams, updateFileParams, deleteFileParams, GEMINI_SEARCH_KB_TOOL];
+        const baseTools: FunctionDeclaration[] = [
+          createFileParams,
+          updateFileParams,
+          deleteFileParams,
+          readFileParams,
+          searchFilesParams,
+          GEMINI_SEARCH_KB_TOOL
+        ];
 
         // Dynamic MCP Tools
         const dynamicTools = mcpClient ? mcpClient.getTools() : [];
@@ -1486,10 +1549,18 @@ const callOllama = async (
     }
 
     let iterations = 0;
-    const MAX_ITERATIONS = 10;
+    const TOTAL_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes total timeout
+    const SINGLE_ROUND_TIMEOUT_MS = 60 * 1000; // 60 seconds per round
+    const startTime = Date.now();
 
     try {
-      while (iterations < MAX_ITERATIONS) {
+      while (true) {
+        // Check total timeout
+        if (Date.now() - startTime > TOTAL_TIMEOUT_MS) {
+          console.log('[Ollama] Total timeout reached after', iterations, 'iterations');
+          return messages[messages.length - 1]?.content || "Total timeout reached (10 minutes).";
+        }
+
         const body: any = {
           model: model,
           messages: messages,
@@ -1500,33 +1571,53 @@ const callOllama = async (
 
         if (tools) body.tools = tools;
 
-        const response = await platformFetch(`${baseUrl.replace(/\/$/, '')}/api/chat`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
+        // Add timeout to fetch
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), SINGLE_ROUND_TIMEOUT_MS);
 
-        if (!response.ok) throw new Error(`Ollama Error: ${response.statusText}`);
-        const data = await response.json();
-        const message = data.message;
-        const toolCalls = message.tool_calls;
+        try {
+          const response = await platformFetch(`${baseUrl.replace(/\/$/, '')}/api/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+            signal: controller.signal
+          });
+          clearTimeout(timeoutId);
 
-        messages.push(message);
+          if (!response.ok) throw new Error(`Ollama Error: ${response.statusText}`);
+          const data = await response.json();
+          const message = data.message;
+          const toolCalls = message.tool_calls;
 
-        if (toolCalls && toolCalls.length > 0 && toolsCallback) {
-            for (const tool of toolCalls) {
-                const functionName = tool.function.name;
-                const args = tool.function.arguments;
-                const parsedArgs = typeof args === 'string' ? JSON.parse(args) : args;
-                const result = await toolsCallback(functionName, parsedArgs);
-                messages.push({ role: 'tool', content: JSON.stringify(result) });
-            }
-            iterations++;
-        } else {
-            return message.content || '';
+          messages.push(message);
+
+          // Check for [TASK_COMPLETE] signal in response
+          if (message.content && message.content.includes('[TASK_COMPLETE]')) {
+            console.log('[Ollama] Task complete signal detected after', iterations, 'iterations');
+            return message.content.replace(/\[TASK_COMPLETE\]/g, '').trim();
+          }
+
+          if (toolCalls && toolCalls.length > 0 && toolsCallback) {
+              for (const tool of toolCalls) {
+                  const functionName = tool.function.name;
+                  const args = tool.function.arguments;
+                  const parsedArgs = typeof args === 'string' ? JSON.parse(args) : args;
+                  const result = await toolsCallback(functionName, parsedArgs);
+                  messages.push({ role: 'tool', content: JSON.stringify(result) });
+              }
+              iterations++;
+          } else {
+              return message.content || '';
+          }
+        } catch (fetchError: any) {
+          clearTimeout(timeoutId);
+          if (fetchError.name === 'AbortError') {
+            console.log('[Ollama] Single round timeout after', iterations, 'iterations');
+            return messages[messages.length - 1]?.content || "Single round timeout (60 seconds).";
+          }
+          throw fetchError;
         }
       }
-      return messages[messages.length - 1].content || "Maximum iterations reached.";
     } catch (error) { throw new Error("Failed to communicate with Ollama."); }
 };
   
@@ -1577,10 +1668,18 @@ const callOpenAICompatible = async (
     }
 
     let iterations = 0;
-    const MAX_ITERATIONS = 10;
+    const TOTAL_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes total timeout
+    const SINGLE_ROUND_TIMEOUT_MS = 60 * 1000; // 60 seconds per round
+    const startTime = Date.now();
 
     try {
-      while (iterations < MAX_ITERATIONS) {
+      while (true) {
+        // Check total timeout
+        if (Date.now() - startTime > TOTAL_TIMEOUT_MS) {
+          console.log('[OpenAI] Total timeout reached after', iterations, 'iterations');
+          return messages[messages.length - 1]?.content || "Total timeout reached (10 minutes).";
+        }
+
         const body: any = {
           model: config.model,
           messages: messages,
@@ -1593,42 +1692,62 @@ const callOpenAICompatible = async (
            body.tool_choice = "auto";
         }
 
-        const response = await platformFetch(endpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${config.apiKey || ''}`
-          },
-          body: JSON.stringify(body),
-        });
+        // Add timeout to fetch
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), SINGLE_ROUND_TIMEOUT_MS);
 
-        if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
-        const data = await response.json();
-        const choice = data.choices?.[0];
-        if (!choice) throw new Error("No choices in response");
+        try {
+          const response = await platformFetch(endpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${config.apiKey || ''}`
+            },
+            body: JSON.stringify(body),
+            signal: controller.signal
+          });
+          clearTimeout(timeoutId);
 
-        const message = choice.message;
-        messages.push(message);
+          if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
+          const data = await response.json();
+          const choice = data.choices?.[0];
+          if (!choice) throw new Error("No choices in response");
 
-        if (message.tool_calls && message.tool_calls.length > 0 && toolsCallback) {
-            for (const toolCall of message.tool_calls) {
-                const fnName = toolCall.function.name;
-                const argsStr = toolCall.function.arguments;
-                const args = typeof argsStr === 'string' ? JSON.parse(argsStr) : argsStr;
-                const result = await toolsCallback(fnName, args);
+          const message = choice.message;
+          messages.push(message);
 
-                messages.push({
-                    role: 'tool',
-                    tool_call_id: toolCall.id,
-                    content: JSON.stringify(result)
-                });
-            }
-            iterations++;
-        } else {
-            return message.content || '';
+          // Check for [TASK_COMPLETE] signal in response
+          if (message.content && message.content.includes('[TASK_COMPLETE]')) {
+            console.log('[OpenAI] Task complete signal detected after', iterations, 'iterations');
+            return message.content.replace(/\[TASK_COMPLETE\]/g, '').trim();
+          }
+
+          if (message.tool_calls && message.tool_calls.length > 0 && toolsCallback) {
+              for (const toolCall of message.tool_calls) {
+                  const fnName = toolCall.function.name;
+                  const argsStr = toolCall.function.arguments;
+                  const args = typeof argsStr === 'string' ? JSON.parse(argsStr) : argsStr;
+                  const result = await toolsCallback(fnName, args);
+
+                  messages.push({
+                      role: 'tool',
+                      tool_call_id: toolCall.id,
+                      content: JSON.stringify(result)
+                  });
+              }
+              iterations++;
+          } else {
+              return message.content || '';
+          }
+        } catch (fetchError: any) {
+          clearTimeout(timeoutId);
+          if (fetchError.name === 'AbortError') {
+            console.log('[OpenAI] Single round timeout after', iterations, 'iterations');
+            return messages[messages.length - 1]?.content || "Single round timeout (60 seconds).";
+          }
+          throw fetchError;
         }
       }
-      return messages[messages.length - 1].content || "Maximum iterations reached.";
     } catch (error: any) { throw new Error(`Failed to connect to AI provider: ${error.message}`); }
 };
 
@@ -1702,6 +1821,31 @@ const callAnthropic = async (
                 }
             },
             {
+                name: 'read_file',
+                description: 'Read the content of a specific file. Optionally specify line range.',
+                input_schema: {
+                    type: 'object',
+                    properties: {
+                        path: { type: 'string', description: "File name or path" },
+                        startLine: { type: 'number', description: "Optional: Start line (1-indexed)" },
+                        endLine: { type: 'number', description: "Optional: End line (1-indexed)" }
+                    },
+                    required: ['path']
+                }
+            },
+            {
+                name: 'search_files',
+                description: 'Search for a keyword across all files.',
+                input_schema: {
+                    type: 'object',
+                    properties: {
+                        keyword: { type: 'string', description: "Keyword to search" },
+                        filePattern: { type: 'string', description: "Optional: File name pattern" }
+                    },
+                    required: ['keyword']
+                }
+            },
+            {
                 name: 'search_knowledge_base',
                 description: "Search the user's indexed notes and documents.",
                 input_schema: {
@@ -1725,10 +1869,18 @@ const callAnthropic = async (
     }
 
     let iterations = 0;
-    const MAX_ITERATIONS = 10;
+    const TOTAL_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes total timeout
+    const SINGLE_ROUND_TIMEOUT_MS = 60 * 1000; // 60 seconds per round
+    const startTime = Date.now();
 
     try {
-      while (iterations < MAX_ITERATIONS) {
+      while (true) {
+        // Check total timeout
+        if (Date.now() - startTime > TOTAL_TIMEOUT_MS) {
+          console.log('[Anthropic] Total timeout reached after', iterations, 'iterations');
+          return "Total timeout reached (10 minutes).";
+        }
+
         const requestBody: any = {
           model: config.model || 'claude-sonnet-4-20250514',
           max_tokens: 4096,
@@ -1743,61 +1895,80 @@ const callAnthropic = async (
           requestBody.tools = tools;
         }
 
-        const response = await platformFetch(endpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': config.apiKey || '',
-            'anthropic-version': '2023-06-01'
-          },
-          body: JSON.stringify(requestBody),
-        });
+        // Add timeout to fetch
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), SINGLE_ROUND_TIMEOUT_MS);
 
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(`Anthropic API Error: ${response.status} ${errorData.error?.message || response.statusText}`);
-        }
-
-        const data = await response.json();
-
-        // Check for tool use
-        const toolUseBlocks = data.content?.filter((block: any) => block.type === 'tool_use') || [];
-        const textBlocks = data.content?.filter((block: any) => block.type === 'text') || [];
-
-        if (toolUseBlocks.length > 0 && toolsCallback) {
-          // Add assistant message with tool use to history
-          messages.push({
-            role: 'assistant',
-            content: data.content
+        try {
+          const response = await platformFetch(endpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-key': config.apiKey || '',
+              'anthropic-version': '2023-06-01'
+            },
+            body: JSON.stringify(requestBody),
+            signal: controller.signal
           });
+          clearTimeout(timeoutId);
 
-          // Execute tools and build tool results
-          const toolResults: any[] = [];
-          for (const toolUse of toolUseBlocks) {
-            const result = await toolsCallback(toolUse.name, toolUse.input);
-            toolResults.push({
-              type: 'tool_result',
-              tool_use_id: toolUse.id,
-              content: JSON.stringify(result)
-            });
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(`Anthropic API Error: ${response.status} ${errorData.error?.message || response.statusText}`);
           }
 
-          // Add tool results as user message
-          messages.push({
-            role: 'user',
-            content: toolResults
-          });
+          const data = await response.json();
 
-          iterations++;
-          // Continue loop
-        } else {
-          // Extract text from response
+          // Check for tool use
+          const toolUseBlocks = data.content?.filter((block: any) => block.type === 'tool_use') || [];
+          const textBlocks = data.content?.filter((block: any) => block.type === 'text') || [];
+
+          // Check for [TASK_COMPLETE] signal in text response
           const responseText = textBlocks.map((b: any) => b.text).join('');
-          return responseText;
+          if (responseText.includes('[TASK_COMPLETE]')) {
+            console.log('[Anthropic] Task complete signal detected after', iterations, 'iterations');
+            return responseText.replace(/\[TASK_COMPLETE\]/g, '').trim();
+          }
+
+          if (toolUseBlocks.length > 0 && toolsCallback) {
+            // Add assistant message with tool use to history
+            messages.push({
+              role: 'assistant',
+              content: data.content
+            });
+
+            // Execute tools and build tool results
+            const toolResults: any[] = [];
+            for (const toolUse of toolUseBlocks) {
+              const result = await toolsCallback(toolUse.name, toolUse.input);
+              toolResults.push({
+                type: 'tool_result',
+                tool_use_id: toolUse.id,
+                content: JSON.stringify(result)
+              });
+            }
+
+            // Add tool results as user message
+            messages.push({
+              role: 'user',
+              content: toolResults
+            });
+
+            iterations++;
+            // Continue loop
+          } else {
+            // Extract text from response
+            return responseText;
+          }
+        } catch (fetchError: any) {
+          clearTimeout(timeoutId);
+          if (fetchError.name === 'AbortError') {
+            console.log('[Anthropic] Single round timeout after', iterations, 'iterations');
+            return "Single round timeout (60 seconds).";
+          }
+          throw fetchError;
         }
       }
-
-      return "Maximum iterations reached.";
     } catch (error: any) {
       throw new Error(`Anthropic API Error: ${error.message}`);
     }
@@ -2043,30 +2214,156 @@ const sanitizeMindmap = (code: string): string => {
   return sanitizedLines.join('\n');
 };
 
+// Quiz question validation and normalization helper
+const validateAndFixQuestion = (q: any, index: number, prefix: string): QuizQuestion | null => {
+    // Skip if no question text
+    if (!q || !q.question || q.question.trim().length === 0) {
+        return null;
+    }
+
+    // Normalize type field
+    const validTypes = ['single', 'multiple', 'fill_blank', 'text'];
+    let type = q.type?.toLowerCase() || 'single';
+    if (!validTypes.includes(type)) {
+        // Infer type from structure
+        if (q.options && Array.isArray(q.options) && q.options.length >= 2) {
+            type = Array.isArray(q.correctAnswer) ? 'multiple' : 'single';
+        } else {
+            type = 'text';
+        }
+    }
+
+    // For choice questions, validate options array
+    if (type === 'single' || type === 'multiple') {
+        if (!q.options || !Array.isArray(q.options) || q.options.length < 2) {
+            // Convert to text question if options are invalid
+            type = 'text';
+        }
+    }
+
+    // Normalize correctAnswer to numeric index for choice questions
+    let correctAnswer = q.correctAnswer;
+    if ((type === 'single' || type === 'multiple') && q.options?.length > 0) {
+        correctAnswer = normalizeAnswerToIndex(q.correctAnswer, q.options, type);
+    }
+
+    return {
+        id: `${prefix}-${index}`,
+        type: type as 'single' | 'multiple' | 'text' | 'fill_blank',
+        question: q.question.trim(),
+        options: (type === 'single' || type === 'multiple') ? q.options : undefined,
+        correctAnswer,
+        explanation: q.explanation
+    };
+};
+
+// Convert various answer formats to numeric index
+const normalizeAnswerToIndex = (answer: any, options: string[], type: string): number | number[] => {
+    const letterToIndex: { [key: string]: number } = { 'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4, 'F': 5 };
+    const chineseToIndex: { [key: string]: number } = { '一': 0, '二': 1, '三': 2, '四': 3 };
+
+    const parseOne = (val: any): number => {
+        // Already a number
+        if (typeof val === 'number') {
+            return Math.min(Math.max(0, Math.floor(val)), options.length - 1);
+        }
+
+        const str = String(val).trim().toUpperCase();
+
+        // Letter format: "A", "B", "C", "D"
+        if (letterToIndex[str] !== undefined) {
+            return letterToIndex[str];
+        }
+
+        // Numeric string: "0", "1", "2", "3"
+        const num = parseInt(str, 10);
+        if (!isNaN(num) && num >= 0 && num < options.length) {
+            return num;
+        }
+
+        // Chinese format: "一", "二"
+        if (chineseToIndex[str] !== undefined) {
+            return chineseToIndex[str];
+        }
+
+        // Match option text
+        const idx = options.findIndex(opt => opt.trim().toLowerCase() === str.toLowerCase());
+        if (idx !== -1) return idx;
+
+        // Default to 0
+        return 0;
+    };
+
+    if (type === 'multiple') {
+        if (Array.isArray(answer)) {
+            return [...new Set(answer.map(parseOne))].sort();
+        }
+        // Handle comma-separated: "A,C" or "0,2"
+        if (typeof answer === 'string' && answer.includes(',')) {
+            return [...new Set(answer.split(',').map(s => parseOne(s.trim())))].sort();
+        }
+        return [parseOne(answer)];
+    }
+
+    return parseOne(answer);
+};
+
 const generateQuestionsFromChunks = async (content: string, config: AIConfig): Promise<QuizQuestion[]> => {
-    // For short content (< 500 chars), generate directly without chunking
+    const langPrompt = config.language === 'zh'
+        ? "用中文生成题目和选项。"
+        : "Generate questions and options in English.";
+
+    // Unified quiz generation prompt with strict format requirements
+    const quizPrompt = (text: string, count: string) => `Task: Generate ${count} quiz questions from the given text.
+
+CRITICAL RULES - MUST FOLLOW:
+
+1. Generate a MIX of 4 question types with this distribution:
+   - "single": 40% - Single choice (4 options, ONE correct answer)
+   - "multiple": 20% - Multiple choice (4 options, 2-3 correct answers)
+   - "fill_blank": 20% - Fill-in-the-blank (exact short answer, 1-5 words)
+   - "text": 20% - Essay question (requires paragraph answer)
+
+2. JSON Structure for EACH question:
+{
+  "type": "single" | "multiple" | "fill_blank" | "text",
+  "question": "Question text here",
+  "options": ["Option A", "Option B", "Option C", "Option D"],
+  "correctAnswer": 0 | [0,2] | "exact answer" | "key points"
+}
+
+3. correctAnswer Format (IMPORTANT - USE NUMERIC INDEX 0-3):
+   - "single": Integer 0-3 (0=first option, 1=second option, etc.)
+   - "multiple": Array of integers, e.g. [0, 2] means first and third options
+   - "fill_blank": Exact string answer (1-5 words)
+   - "text": Key points string for grading reference
+
+4. MANDATORY REQUIREMENTS:
+   - For "single" and "multiple" types: ALWAYS include "options" array with exactly 4 items
+   - For "fill_blank": Answer should be a short, specific term from the text
+   - For "text": Answer should list key points that a good answer should cover
+
+5. ${langPrompt}
+
+Text Content:
+"${text}"
+
+Output: Valid JSON Array (no markdown, no code blocks, just pure JSON array)`;
+
+    // For short content (< 500 chars), generate directly
     if (content.length < 500) {
-        const langPrompt = config.language === 'zh' ? "Provide questions in Chinese." : "Provide questions in English.";
-        const prompt = `Task: Create 2-5 quiz questions from this short text. Include a mix of question types.
-Text: "${content}"
-Rules: ${langPrompt}
-Output: JSON Array with objects containing: question, type (single/text), options (for single type), correctAnswer.`;
+        const prompt = quizPrompt(content, "2-4");
+        const systemPrompt = "You are an expert Quiz Designer. Create diverse, insightful questions. Return ONLY a valid JSON array, no other text.";
+
         try {
-            const jsonStr = await generateAIResponse(prompt, config, "You are a Quiz Designer. Create insightful questions even from short content. Return JSON Array.", true);
+            const jsonStr = await generateAIResponse(prompt, config, systemPrompt, true);
             const parsed = JSON.parse(extractJson(jsonStr));
             const questions = Array.isArray(parsed) ? parsed : [];
-            const validQuestions = questions
-                .map((q: any, i: number) => ({
-                    id: `gen-q-short-${i}`,
-                    type: q.type || 'single',
-                    question: q.question,
-                    options: q.options,
-                    correctAnswer: q.correctAnswer,
-                    explanation: q.explanation
-                }))
-                .filter((q: any) => q.question && q.question.trim().length > 0);
 
-            // 如果没有有效题目，抛出详细错误
+            const validQuestions = questions
+                .map((q: any, i: number) => validateAndFixQuestion(q, i, 'gen-q-short'))
+                .filter((q): q is QuizQuestion => q !== null);
+
             if (validQuestions.length === 0) {
                 throw new Error("AI generated response but no valid questions were found. The content may be too short or not suitable for quiz generation.");
             }
@@ -2080,37 +2377,33 @@ Output: JSON Array with objects containing: question, type (single/text), option
     // For longer content, use chunking approach
     const idealChunkSize = Math.max(500, Math.min(2000, Math.ceil(content.length / 15)));
     const chunks = chunkText(content, idealChunkSize, 100).slice(0, 15);
-    const langPrompt = config.language === 'zh' ? "Provide questions in Chinese." : "Provide questions in English.";
-    const systemPrompt = "You are a Quiz Designer. Create 1-3 questions. Return JSON Array.";
+    const systemPrompt = "You are an expert Quiz Designer. Create diverse questions with proper type distribution. Return ONLY a valid JSON array.";
 
     const questionsPromises = chunks.map(async (chunk, index) => {
-        const prompt = `Task: Create questions from this text.\nText: "${chunk}"\nRules: ${langPrompt}\nOutput: JSON Array.`;
+        const prompt = quizPrompt(chunk, "1-3");
         try {
-            await delay(index * 100); 
+            await delay(index * 100);
             const jsonStr = await generateAIResponse(prompt, config, systemPrompt, true);
             const parsed = JSON.parse(extractJson(jsonStr));
             return Array.isArray(parsed) ? parsed : [];
-        } catch (e) { return []; }
+        } catch (e) {
+            console.error(`Chunk ${index} quiz generation failed:`, e);
+            return [];
+        }
     });
 
     const results = await Promise.all(questionsPromises);
     const flatQuestions: QuizQuestion[] = [];
+
     results.forEach((batch, batchIdx) => {
         batch.forEach((q: any, qIdx: number) => {
-            if (q && q.question && q.question.trim().length > 0) {
-                flatQuestions.push({
-                    id: `gen-q-${batchIdx}-${qIdx}`,
-                    type: q.type || 'single',
-                    question: q.question,
-                    options: q.options,
-                    correctAnswer: q.correctAnswer,
-                    explanation: q.explanation
-                });
+            const validated = validateAndFixQuestion(q, qIdx, `gen-q-${batchIdx}`);
+            if (validated) {
+                flatQuestions.push(validated);
             }
         });
     });
 
-    // 如果没有生成任何题目，抛出详细错误
     if (flatQuestions.length === 0) {
         throw new Error(`Failed to generate quiz questions. Possible reasons: AI response was invalid, content is not suitable for quiz generation, or API call failed. Please check your AI configuration and try again.`);
     }
@@ -2206,6 +2499,37 @@ export const gradeQuizQuestion = async (question: string, userAnswer: string, co
 };
 
 export const generateQuizExplanation = async (question: string, correctAnswer: string, userAnswer: string, context: string, config: AIConfig): Promise<string> => {
-  const prompt = `Explain answer.\nQuestion: ${question}\nCorrect: ${correctAnswer}\nUser: ${userAnswer}\nContext: ${context.substring(0, 50000)}`;
-  return generateAIResponse(prompt, config, "Helpful Tutor.");
+  const isZh = config.language === 'zh';
+
+  const prompt = isZh
+    ? `为以下测验题目提供解释：
+
+问题：${question}
+正确答案：${correctAnswer}
+用户答案：${userAnswer}
+
+请按以下格式回答（简洁明了，不超过150字）：
+1. 首先明确说出正确答案是什么
+2. 简要解释为什么这个答案是正确的
+3. 如果用户答错了，指出错误原因
+
+参考资料：${context.substring(0, 30000)}`
+    : `Provide explanation for this quiz question:
+
+Question: ${question}
+Correct Answer: ${correctAnswer}
+User's Answer: ${userAnswer}
+
+Format your response (concise, max 150 words):
+1. First, clearly state what the correct answer is
+2. Briefly explain why this is the correct answer
+3. If the user was wrong, point out why their answer was incorrect
+
+Reference: ${context.substring(0, 30000)}`;
+
+  const systemPrompt = isZh
+    ? "你是一位简洁明了的老师。先给出正确答案，再简短解释。不要罗嗦。"
+    : "You are a concise tutor. State the correct answer first, then explain briefly. Be direct.";
+
+  return generateAIResponse(prompt, config, systemPrompt);
 };

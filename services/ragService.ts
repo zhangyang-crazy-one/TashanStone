@@ -114,39 +114,55 @@ export class VectorStore {
      */
     private isElectron(): boolean {
         return typeof window !== 'undefined' &&
-               window.electronAPI?.db?.vectors !== undefined;
+               window.electronAPI?.lancedb !== undefined;
     }
 
     /**
-     * 初始化向量存储（从数据库加载）
+     * 初始化向量存储（从 LanceDB 加载）
      * 必须在使用 VectorStore 前调用
      */
     async initialize(): Promise<void> {
         if (this.initialized) return;
 
-        // 如果在 Electron 环境，从数据库加载向量
+        // 如果在 Electron 环境，从 LanceDB 加载向量
         if (this.isElectron()) {
             try {
-                console.log('[VectorStore] Initializing from database...');
+                console.log('[VectorStore] Initializing from LanceDB...');
+
+                // 初始化 LanceDB
+                await window.electronAPI.lancedb.init();
 
                 // 加载所有向量块
-                const chunks = await window.electronAPI.db.vectors.getAll();
-                this.chunks = chunks;
+                const chunks = await window.electronAPI.lancedb.getAll();
 
-                // 重建 fileSignatures Map
-                const meta = await window.electronAPI.db.vectors.getMeta();
-                meta.forEach((m: any) => {
-                    this.fileSignatures.set(m.fileId, m.lastModified);
-                });
+                // 转换 LanceDB 格式到内存格式
+                this.chunks = chunks.map((lanceChunk: any) => ({
+                    id: lanceChunk.id,
+                    fileId: lanceChunk.fileId,
+                    text: lanceChunk.content,
+                    embedding: lanceChunk.vector,
+                    metadata: {
+                        start: 0,
+                        end: 0,
+                        fileName: lanceChunk.fileName
+                    }
+                }));
 
-                const stats = await window.electronAPI.db.vectors.getStats();
-                console.log('[VectorStore] Initialized from database', {
+                // 从 LanceDB 获取 fileId -> lastModified 映射，用于增量索引判断
+                const fileMetadata = await window.electronAPI.lancedb.getFileMetadata();
+                for (const [fileId, lastModified] of Object.entries(fileMetadata)) {
+                    this.fileSignatures.set(fileId, lastModified);
+                }
+
+                const stats = await window.electronAPI.lancedb.getStats();
+                console.log('[VectorStore] Initialized from LanceDB', {
                     totalFiles: stats.totalFiles,
-                    totalChunks: stats.totalChunks
+                    totalChunks: stats.totalChunks,
+                    fileSignaturesLoaded: this.fileSignatures.size
                 });
             } catch (e) {
-                console.warn('[VectorStore] Failed to load vectors from database:', e);
-                // 出错时继续，使用空的内存存储
+                console.warn('[VectorStore] Failed to load vectors from LanceDB:', e);
+                // 出错时继续,使用空的内存存储
             }
         } else {
             console.log('[VectorStore] Running in Web mode, using in-memory storage');
@@ -156,19 +172,12 @@ export class VectorStore {
     }
 
     /**
-     * 检查文件是否需要索引（支持异步数据库查询）
+     * 检查文件是否需要索引
+     * 注意: LanceDB 模式下简化判断,只检查内存中的 fileSignatures
      */
     async needsIndexing(file: MarkdownFile): Promise<boolean> {
-        // 在 Electron 环境下，查询数据库
-        if (this.isElectron()) {
-            try {
-                return await window.electronAPI.db.vectors.needsIndexing(file.id, file.lastModified);
-            } catch (e) {
-                console.warn('[VectorStore] needsIndexing query failed, fallback to memory check:', e);
-            }
-        }
-
-        // Web 模式或查询失败时，使用内存判断
+        // 在 Electron 环境下,检查内存中的签名
+        // 由于 LanceDB 不直接存储 lastModified,我们依赖内存状态
         return this.fileSignatures.get(file.id) !== file.lastModified;
     }
 
@@ -185,7 +194,7 @@ export class VectorStore {
     }
 
     /**
-     * 主索引方法（添加持久化支持）
+     * 主索引方法（使用 LanceDB 持久化）
      */
     async indexFile(file: MarkdownFile, config: AIConfig): Promise<boolean> {
         // 跳过已索引且有效的文件
@@ -195,27 +204,25 @@ export class VectorStore {
 
         this.isProcessing = true;
         try {
-            // Remove old chunks
+            // Remove old chunks from memory and LanceDB
             this.chunks = this.chunks.filter(c => c.fileId !== file.id);
+            if (this.isElectron()) {
+                await window.electronAPI.lancedb.deleteByFile(file.id);
+            }
 
             // Create new chunks
             const newChunks = splitTextIntoChunks(file);
 
-            // Embed chunks (Batching is ideal, but let's do sequential for safety with rate limits)
+            // Embed chunks (sequential with rate limiting)
             let chunkIndex = 0;
             for (const chunk of newChunks) {
                 try {
-                    // Rate limit guard (simple delay)
+                    // Rate limit guard
                     await new Promise(r => setTimeout(r, 200));
                     chunk.embedding = await getEmbedding(chunk.text, config);
-
-                    // 添加 chunkIndex 和 fileLastModified 属性
-                    (chunk as any).chunkIndex = chunkIndex++;
-                    (chunk as any).fileLastModified = file.lastModified;
+                    chunkIndex++;
                 } catch (e) {
                     console.warn(`Failed to embed chunk in ${file.name}`, e);
-                    // We keep the chunk without embedding? Or skip?
-                    // Better to skip if vector search is the goal.
                 }
             }
 
@@ -224,31 +231,25 @@ export class VectorStore {
             this.chunks.push(...validChunks);
             this.fileSignatures.set(file.id, file.lastModified);
 
-            // 持久化到数据库（Electron 模式）
+            // 持久化到 LanceDB (Electron 模式)
             if (this.isElectron() && validChunks.length > 0) {
                 try {
-                    // 转换 chunks 为 VectorChunk 格式
-                    const vectorChunks = validChunks.map((chunk, idx) => ({
+                    // 转换为 LanceDB VectorChunk 格式，包含 lastModified 用于增量索引判断
+                    const lanceChunks = validChunks.map((chunk, idx) => ({
                         id: chunk.id,
                         fileId: chunk.fileId,
+                        fileName: chunk.metadata.fileName,
+                        content: chunk.text,
+                        vector: chunk.embedding || [],
                         chunkIndex: idx,
-                        text: chunk.text,
-                        embedding: chunk.embedding || null,
-                        metadata: chunk.metadata,
-                        fileLastModified: file.lastModified
+                        lastModified: file.lastModified  // 存储文件的 lastModified 时间戳
                     }));
 
-                    await window.electronAPI.db.vectors.save(
-                        file.id,
-                        vectorChunks,
-                        file.lastModified,
-                        config.model,
-                        config.provider
-                    );
-                    console.log(`[VectorStore] Persisted ${validChunks.length} chunks for file ${file.name}`);
+                    await window.electronAPI.lancedb.add(lanceChunks);
+                    console.log(`[VectorStore] Persisted ${validChunks.length} chunks to LanceDB for file ${file.name}`);
                 } catch (e) {
-                    console.error('[VectorStore] Failed to persist chunks to database:', e);
-                    // 即使持久化失败，内存中的向量仍然可用
+                    console.error('[VectorStore] Failed to persist chunks to LanceDB:', e);
+                    // 即使持久化失败,内存中的向量仍然可用
                 }
             }
 
@@ -258,7 +259,7 @@ export class VectorStore {
         }
     }
 
-    // Enhanced search with structured results
+    // Enhanced search with structured results (使用 LanceDB 向量搜索)
     async searchWithResults(query: string, config: AIConfig, topK: number = MAX_CHUNKS_PER_QUERY): Promise<RAGSearchResponse> {
         const startTime = Date.now();
 
@@ -272,14 +273,49 @@ export class VectorStore {
                 return { context: "", results: [], queryTime: Date.now() - startTime };
             }
 
-            // Score chunks
-            const scored = this.chunks.map(chunk => ({
-                chunk,
-                score: chunk.embedding ? cosineSimilarity(queryEmbedding, chunk.embedding) : -1
-            }));
+            let scored: { chunk: Chunk; score: number }[];
 
-            // Sort and Top K, filter by minimum threshold
-            scored.sort((a, b) => b.score - a.score);
+            // 在 Electron 模式下使用 LanceDB 的向量搜索
+            if (this.isElectron()) {
+                try {
+                    // 使用 LanceDB 的向量搜索 (返回的 score 是距离,需要转换为相似度)
+                    const lanceResults = await window.electronAPI.lancedb.search(queryEmbedding, topK);
+
+                    // 转换 LanceDB 结果为内部格式
+                    scored = lanceResults.map((lanceChunk: any) => {
+                        // LanceDB 返回 L2 距离,转换为相似度分数 (距离越小越相似)
+                        // 使用简单的反比转换: score = 1 / (1 + distance)
+                        const distance = lanceChunk._distance || 0;
+                        const score = 1 / (1 + distance);
+
+                        return {
+                            chunk: {
+                                id: lanceChunk.id,
+                                fileId: lanceChunk.fileId,
+                                text: lanceChunk.content,
+                                embedding: lanceChunk.vector,
+                                metadata: {
+                                    start: 0,
+                                    end: 0,
+                                    fileName: lanceChunk.fileName
+                                }
+                            },
+                            score
+                        };
+                    });
+
+                    console.log('[VectorStore] LanceDB search completed', { resultCount: scored.length });
+                } catch (e) {
+                    console.error('[VectorStore] LanceDB search failed, falling back to memory search:', e);
+                    // 失败时回退到内存搜索
+                    scored = this.searchInMemory(queryEmbedding, topK);
+                }
+            } else {
+                // Web 模式使用内存搜索
+                scored = this.searchInMemory(queryEmbedding, topK);
+            }
+
+            // Filter by minimum threshold
             const topResults = scored
                 .filter(r => r.score >= MIN_SIMILARITY_THRESHOLD)
                 .slice(0, topK);
@@ -303,6 +339,17 @@ export class VectorStore {
         }
     }
 
+    // 内存向量搜索 (fallback)
+    private searchInMemory(queryEmbedding: number[], topK: number): { chunk: Chunk; score: number }[] {
+        const scored = this.chunks.map(chunk => ({
+            chunk,
+            score: chunk.embedding ? cosineSimilarity(queryEmbedding, chunk.embedding) : -1
+        }));
+
+        scored.sort((a, b) => b.score - a.score);
+        return scored;
+    }
+
     // Legacy search method for backward compatibility
     async search(query: string, config: AIConfig, topK: number = MAX_CHUNKS_PER_QUERY): Promise<string> {
         const response = await this.searchWithResults(query, config, topK);
@@ -324,21 +371,148 @@ export class VectorStore {
     }
 
     /**
-     * 清空向量存储（同时清空数据库）
+     * 从 LanceDB 获取实时统计数据（Electron 模式）
+     */
+    async getStatsFromDB(): Promise<RAGStats> {
+        if (this.isElectron()) {
+            try {
+                const stats = await window.electronAPI.lancedb.getStats();
+                return {
+                    totalFiles: stats.totalFiles,
+                    indexedFiles: stats.totalFiles,
+                    totalChunks: stats.totalChunks,
+                    isIndexing: this.isProcessing
+                };
+            } catch (e) {
+                console.error('[VectorStore] Failed to get stats from LanceDB:', e);
+            }
+        }
+        // Fallback to memory stats
+        return this.getStats();
+    }
+
+    /**
+     * 删除指定文件的向量数据
+     */
+    async deleteByFile(fileId: string): Promise<void> {
+        // 清理内存中的chunks
+        this.chunks = this.chunks.filter(c => c.fileId !== fileId);
+        this.fileSignatures.delete(fileId);
+
+        // 清理 LanceDB (Electron模式)
+        if (this.isElectron()) {
+            try {
+                await window.electronAPI.lancedb.deleteByFile(fileId);
+                console.log(`[VectorStore] Deleted vectors for file ${fileId} from LanceDB`);
+            } catch (e) {
+                console.error('[VectorStore] Failed to delete vectors from LanceDB:', e);
+            }
+        }
+    }
+
+    /**
+     * 清空向量存储（同时清空 LanceDB）
      */
     async clear(): Promise<void> {
         this.chunks = [];
         this.fileSignatures.clear();
         this.lastSearchResponse = null;
 
-        // 清空数据库（Electron 模式）
+        // 清空 LanceDB (Electron 模式)
         if (this.isElectron()) {
             try {
-                await window.electronAPI.db.vectors.clear();
-                console.log('[VectorStore] Database vectors cleared');
+                await window.electronAPI.lancedb.clear();
+                console.log('[VectorStore] LanceDB vectors cleared');
             } catch (e) {
-                console.error('[VectorStore] Failed to clear database vectors:', e);
+                console.error('[VectorStore] Failed to clear LanceDB vectors:', e);
             }
+        }
+    }
+
+    /**
+     * 同步清理：删除 LanceDB 中已不存在于文件系统的陈旧数据
+     * 同时清理相同 fileName 但不同 fileId 的重复数据（保留当前文件系统中的版本）
+     * @param currentFiles 当前文件系统中的文件列表（用于获取 fileName → fileId 映射）
+     * @returns 删除的陈旧文件数量
+     */
+    async syncWithFileSystem(currentFiles: { id: string; name: string }[]): Promise<number> {
+        const currentFileIds = currentFiles.map(f => f.id);
+
+        if (!this.isElectron()) {
+            // Web 模式下只清理内存
+            const staleIds = [...this.fileSignatures.keys()].filter(id => !currentFileIds.includes(id));
+            staleIds.forEach(id => {
+                this.chunks = this.chunks.filter(c => c.fileId !== id);
+                this.fileSignatures.delete(id);
+            });
+            console.log(`[VectorStore] Cleaned ${staleIds.length} stale files from memory`);
+            return staleIds.length;
+        }
+
+        try {
+            let totalCleaned = 0;
+
+            // Step 1: 清理不存在于文件系统的 fileId
+            const lanceFileIds = await window.electronAPI.lancedb.getFileIds();
+            const staleFileIds = lanceFileIds.filter((id: string) => !currentFileIds.includes(id));
+
+            if (staleFileIds.length > 0) {
+                console.log(`[VectorStore] Found ${staleFileIds.length} stale fileIds in LanceDB, cleaning...`);
+
+                for (const fileId of staleFileIds) {
+                    await window.electronAPI.lancedb.deleteByFile(fileId);
+                    this.chunks = this.chunks.filter(c => c.fileId !== fileId);
+                    this.fileSignatures.delete(fileId);
+                }
+
+                console.log(`[VectorStore] Cleaned ${staleFileIds.length} stale fileIds from LanceDB`);
+                totalCleaned += staleFileIds.length;
+            }
+
+            // Step 2: 清理重复文件名的旧版本数据
+            // 构建当前文件系统的 fileName → fileId 映射
+            const currentFileNameToId: Record<string, string> = {};
+            for (const file of currentFiles) {
+                currentFileNameToId[file.name] = file.id;
+            }
+
+            // 获取 LanceDB 中的 fileName → fileId[] 映射
+            const lanceFileNameMapping = await window.electronAPI.lancedb.getFileNameMapping();
+
+            // 找出需要清理的重复文件名
+            const duplicatesToClean: Record<string, string> = {};
+            for (const [fileName, fileIds] of Object.entries(lanceFileNameMapping)) {
+                if (fileIds.length > 1) {
+                    // 有重复，需要保留当前文件系统中的版本
+                    const keepId = currentFileNameToId[fileName];
+                    if (keepId && fileIds.includes(keepId)) {
+                        duplicatesToClean[fileName] = keepId;
+                        console.log(`[VectorStore] Found duplicate fileName "${fileName}" with ${fileIds.length} versions, keeping fileId: ${keepId}`);
+                    }
+                }
+            }
+
+            if (Object.keys(duplicatesToClean).length > 0) {
+                const cleanedCount = await window.electronAPI.lancedb.cleanDuplicateFileNames(duplicatesToClean);
+                console.log(`[VectorStore] Cleaned ${cleanedCount} duplicate fileName entries from LanceDB`);
+                totalCleaned += cleanedCount;
+
+                // 同步清理内存
+                for (const [fileName, keepId] of Object.entries(duplicatesToClean)) {
+                    this.chunks = this.chunks.filter(c => {
+                        if (c.metadata.fileName === fileName && c.fileId !== keepId) {
+                            this.fileSignatures.delete(c.fileId);
+                            return false;
+                        }
+                        return true;
+                    });
+                }
+            }
+
+            return totalCleaned;
+        } catch (e) {
+            console.error('[VectorStore] Failed to sync with file system:', e);
+            return 0;
         }
     }
 }

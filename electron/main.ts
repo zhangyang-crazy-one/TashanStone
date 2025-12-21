@@ -6,6 +6,8 @@ import { initializeDatabase, closeDatabase } from './database/index.js';
 import { MigrationManager, migrations } from './database/migrations.js';
 import { registerAllHandlers } from './ipc/index.js';
 import { registerMCPHandlers } from './mcp/handlers.js';
+import { registerLanceDBHandlers } from './ipc/lancedbHandlers.js';
+import { initLanceDB } from './lancedb/index.js';
 import { mcpManager } from './mcp/index.js';
 import { logger } from './utils/logger.js';
 import { themeRepository } from './database/repositories/themeRepository.js';
@@ -286,9 +288,22 @@ app.whenReady().then(() => {
     // Initialize built-in themes
     themeRepository.initializeBuiltinThemes(DEFAULT_THEMES);
 
+    // Initialize LanceDB (使用立即执行的异步函数)
+    (async () => {
+        try {
+            logger.info('Initializing LanceDB');
+            await initLanceDB();
+            logger.info('LanceDB initialized successfully');
+        } catch (error) {
+            logger.error('Failed to initialize LanceDB', error);
+            // LanceDB 初始化失败不阻止应用启动
+        }
+    })();
+
     // Register IPC handlers
     registerAllHandlers();
     registerMCPHandlers();
+    registerLanceDBHandlers();
 
     // Window control IPC handlers
     ipcMain.handle('window:minimize', () => {

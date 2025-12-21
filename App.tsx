@@ -128,10 +128,26 @@ const App: React.FC = () => {
         // Robust sanitization to prevent crashes
         if (Array.isArray(parsed)) {
           const validFiles = parsed.filter(f => f && typeof f === 'object' && f.id && f.name);
-          if (validFiles.length > 0) return validFiles;
+          if (validFiles.length > 0) {
+            // Deduplicate by name - keep only the latest version of each file
+            const deduped = new Map<string, MarkdownFile>();
+            for (const file of validFiles) {
+              const key = file.path || file.name;
+              const existing = deduped.get(key);
+              // Keep the one with the latest lastModified, or the first one if timestamps match
+              if (!existing || (file.lastModified > existing.lastModified)) {
+                deduped.set(key, file);
+              }
+            }
+            const dedupedFiles = Array.from(deduped.values());
+            if (dedupedFiles.length !== validFiles.length) {
+              console.log(`[App] Deduplicated files: ${validFiles.length} -> ${dedupedFiles.length}`);
+            }
+            return dedupedFiles;
+          }
         }
       }
-    } catch (e) { 
+    } catch (e) {
       console.error("Failed to load files from storage, using default", e);
     }
     return [DEFAULT_FILE];
@@ -315,6 +331,9 @@ const App: React.FC = () => {
   const filesRef = useRef(files);
   const activeFileIdRef = useRef(activeFileId);
   const editorRef = useRef<HTMLTextAreaElement>(null);
+
+  // 同步存储光标位置的 ref（解决 React 18 异步状态批处理导致的竞态条件）
+  const cursorPositionsRef = useRef<Map<string, { start: number; end: number }>>(new Map());
   
   // RAG Service
   const [vectorStore] = useState(() => new VectorStore());
@@ -563,7 +582,7 @@ const App: React.FC = () => {
     setFiles(newFiles);
   };
 
-  const handleDeleteFile = (id: string) => {
+  const handleDeleteFile = async (id: string) => {
     if (files.length <= 1) return;
     const fileToDelete = files.find(f => f.id === id);
     const fileName = fileToDelete?.name || 'this file';
@@ -571,7 +590,10 @@ const App: React.FC = () => {
     showConfirmDialog(
       t.deleteFileTitle,
       `${t.deleteFileMessage.replace('this file', fileName)}`,
-      () => {
+      async () => {
+        // 删除向量库中的数据
+        await vectorStore.deleteByFile(id);
+
         const newFiles = files.filter(f => f.id !== id);
         setFiles(newFiles);
         if (activeFileId === id) setActiveFileId(newFiles[0].id);
@@ -590,7 +612,7 @@ const App: React.FC = () => {
            const fileHist = prev[activeFileId] || { past: [], future: [] };
            const newPast = [...fileHist.past, activeFile.content];
            if (newPast.length > MAX_HISTORY) newPast.shift();
-           
+
            return {
              ...prev,
              [activeFileId]: {
@@ -603,10 +625,30 @@ const App: React.FC = () => {
       lastEditTimeRef.current = now;
     }
 
-    const updated = files.map(f => 
+    const updated = files.map(f =>
       f.id === activeFileId ? { ...f, content, lastModified: Date.now() } : f
     );
     setFiles(updated);
+  };
+
+  // 保存光标位置
+  const handleCursorChange = (fileId: string, position: { start: number; end: number }) => {
+    // 1. 同步更新 ref（立即生效，不受 React 批处理影响）
+    cursorPositionsRef.current.set(fileId, position);
+    // 2. 异步更新 state（用于持久化）
+    setFiles(prev => prev.map(f =>
+      f.id === fileId ? { ...f, cursorPosition: position } : f
+    ));
+  };
+
+  // 获取光标位置（优先从同步 ref 读取）
+  const getCursorPosition = (fileId: string): { start: number; end: number } | undefined => {
+    // 优先从 ref 读取（同步，最新）
+    const refPosition = cursorPositionsRef.current.get(fileId);
+    if (refPosition) return refPosition;
+    // 回退到 file state
+    const file = filesRef.current.find(f => f.id === fileId);
+    return file?.cursorPosition;
   };
 
   const handleUndo = () => {
@@ -736,6 +778,24 @@ const App: React.FC = () => {
     ));
   };
 
+  // Sync viewMode with pane.mode - when user clicks Editor/Preview in toolbar
+  // we need to update the active pane's mode accordingly
+  useEffect(() => {
+    if (viewMode === ViewMode.Editor || viewMode === ViewMode.Preview) {
+      const targetMode = viewMode === ViewMode.Editor ? 'editor' : 'preview';
+      const activePane = openPanes.find(p => p.id === activePaneId);
+
+      // Only update if pane mode differs from viewMode
+      if (activePane && activePane.mode !== targetMode) {
+        setOpenPanes(prev => prev.map(p =>
+          p.id === activePaneId
+            ? { ...p, mode: targetMode }
+            : p
+        ));
+      }
+    }
+  }, [viewMode]); // Only run when viewMode changes
+
   const selectPane = (paneId: string) => {
     setActivePaneId(paneId);
     // 同步更新 activeFileId
@@ -756,10 +816,10 @@ const App: React.FC = () => {
 
   const handleIndexKnowledgeBase = async (forceList?: MarkdownFile[]) => {
     if (ragStats.isIndexing) return;
-    
+
     // Use provided list or fallback to current state ref (to avoid stale closures)
     const targetFiles = forceList || filesRef.current;
-    
+
     // Deduplicate based on ID just in case
     const uniqueFilesMap = new Map();
     targetFiles.forEach(f => {
@@ -768,20 +828,41 @@ const App: React.FC = () => {
       }
     });
     const validFiles = Array.from(uniqueFilesMap.values());
-    
+
     setRagStats(prev => ({ ...prev, isIndexing: true, totalFiles: validFiles.length }));
-    
-    const filesToIndex = validFiles.slice(0, 20); // Cap at 20 for demo
-    
+
+    // 先同步清理 LanceDB 中的陈旧数据（文件系统中已删除的文件以及重复文件名的旧版本）
+    const currentFilesForSync = validFiles.map(f => ({ id: f.id, name: f.name }));
+    try {
+      const cleanedCount = await vectorStore.syncWithFileSystem(currentFilesForSync);
+      if (cleanedCount > 0) {
+        console.log(`[KnowledgeBase] Cleaned ${cleanedCount} stale files from vector store`);
+      }
+      // 同步后立即从 LanceDB 获取最新统计并更新 UI
+      const dbStats = await vectorStore.getStatsFromDB();
+      setRagStats(prev => ({
+        ...prev,
+        totalFiles: dbStats.totalFiles,
+        indexedFiles: dbStats.indexedFiles,
+        totalChunks: dbStats.totalChunks
+      }));
+    } catch (e) {
+      console.error('[KnowledgeBase] Failed to sync vector store:', e);
+    }
+
+    const filesToIndex = validFiles; // Index all valid files
+
     try {
         for (const file of filesToIndex) {
             if (file.content && file.content.length > 0) {
                 await vectorStore.indexFile(file, aiConfig);
-                setRagStats(prev => ({ 
+                // 使用 LanceDB 实时统计
+                const dbStats = await vectorStore.getStatsFromDB();
+                setRagStats(prev => ({
                     ...prev,
-                    totalFiles: validFiles.length,
-                    indexedFiles: vectorStore.getStats().indexedFiles, 
-                    totalChunks: vectorStore.getStats().totalChunks
+                    totalFiles: dbStats.totalFiles,
+                    indexedFiles: dbStats.indexedFiles,
+                    totalChunks: dbStats.totalChunks
                 }));
             }
         }
@@ -1401,6 +1482,88 @@ const App: React.FC = () => {
           return { success: false, result: { error: 'File not found' }, formatted: JSON.stringify({ success: false, error: 'File not found' }) };
         }
 
+        // 5. read_file - 精确读取文件内容（支持行范围）
+        if (toolName === 'read_file') {
+          const targetFile = filesRef.current.find(f =>
+            f.name === args.path?.replace('.md', '') ||
+            f.name === args.path ||
+            f.path === args.path ||
+            f.path?.endsWith(args.path)
+          );
+
+          if (!targetFile) {
+            const availableFiles = filesRef.current.map(f => f.name || f.path).filter(Boolean);
+            return {
+              success: false,
+              result: { error: 'File not found', availableFiles },
+              formatted: JSON.stringify({ error: 'File not found', availableFiles })
+            };
+          }
+
+          const lines = targetFile.content.split('\n');
+          const startLine = Math.max(0, (args.startLine || 1) - 1);
+          const endLine = Math.min(lines.length, args.endLine || lines.length);
+          const selectedContent = lines.slice(startLine, endLine).join('\n');
+
+          const result = {
+            success: true,
+            fileName: targetFile.name || targetFile.path,
+            content: selectedContent,
+            lineRange: { start: startLine + 1, end: endLine },
+            totalLines: lines.length
+          };
+          return { success: true, result, formatted: JSON.stringify(result, null, 2) };
+        }
+
+        // 6. search_files - 全文搜索（内存实现）
+        if (toolName === 'search_files') {
+          const { keyword, filePattern } = args;
+          if (!keyword) {
+            return {
+              success: false,
+              result: { error: 'Missing keyword parameter' },
+              formatted: JSON.stringify({ error: 'Missing keyword parameter' })
+            };
+          }
+
+          const results: Array<{ fileName: string; matches: Array<{ line: number; content: string }> }> = [];
+
+          for (const file of filesRef.current) {
+            // 如果指定了文件模式，进行过滤
+            const fileName = file.name || file.path || '';
+            if (filePattern && !fileName.includes(filePattern)) continue;
+
+            const lines = file.content.split('\n');
+            const matches: Array<{ line: number; content: string }> = [];
+
+            lines.forEach((line, idx) => {
+              if (line.toLowerCase().includes(keyword.toLowerCase())) {
+                matches.push({
+                  line: idx + 1,
+                  content: line.trim()
+                });
+              }
+            });
+
+            if (matches.length > 0) {
+              results.push({
+                fileName,
+                matches: matches.slice(0, 10) // 每个文件最多10条匹配
+              });
+            }
+          }
+
+          const result = {
+            success: true,
+            keyword,
+            filePattern: filePattern || null,
+            totalFiles: results.length,
+            totalMatches: results.reduce((sum, r) => sum + r.matches.length, 0),
+            results: results.slice(0, 20) // 最多返回20个文件的结果
+          };
+          return { success: true, result, formatted: JSON.stringify(result, null, 2) };
+        }
+
         // ===== 外部 MCP 工具 =====
         try {
           const mcpResult = await window.electronAPI?.mcp?.callTool(toolName, args);
@@ -1424,13 +1587,26 @@ const App: React.FC = () => {
         let fullContent = '';
         let conversationHistory = [...historyForAI];
         let currentPrompt = text;
-        const maxToolRounds = 10;
+
+        // 超时保护配置
+        const MAX_TOTAL_TIME = 10 * 60 * 1000; // 10分钟总超时
+        const ROUND_TIMEOUT = 60 * 1000; // 60秒单轮超时
+        const startTime = Date.now();
         let toolRound = 0;
 
         try {
-          while (toolRound < maxToolRounds) {
+          while (true) {
             toolRound++;
-            console.log(`[Stream] Tool round ${toolRound}/${maxToolRounds}`);
+            const roundStartTime = Date.now();
+
+            // 检查总超时
+            if (Date.now() - startTime > MAX_TOTAL_TIME) {
+              fullContent += '\n\n⏱️ **提示**: 对话已运行10分钟，自动结束以保护系统资源。如需继续，请发送新消息。';
+              console.log('[Stream] Total timeout reached after 10 minutes');
+              break;
+            }
+
+            console.log(`[Stream] Tool round ${toolRound}`);
 
             const stream = generateAIResponseStream(
               currentPrompt,
@@ -1438,10 +1614,22 @@ const App: React.FC = () => {
               `You are ZhangNote AI assistant. You can use tools to help users.
 
 ## Built-in Tools (应用内工具 - 最高优先级)
+
+### File Operations (文件操作)
 - **create_file**: Create a new file in the app (filename, content)
 - **update_file**: Update an existing file (filename, content)
 - **delete_file**: Delete a file (filename)
-- **search_knowledge_base**: Search user's notes (query)
+- **read_file**: Read specific file content with optional line range. Use when user asks to "read", "view", "show", "open" a specific file. Parameters: path (required), startLine (optional), endLine (optional)
+- **search_files**: Search keyword across ALL files. Returns matching lines with line numbers. Use when user asks to "find", "search", "look for" a keyword. Parameters: keyword (required), filePattern (optional)
+
+### Knowledge Base (知识库搜索)
+- **search_knowledge_base**: Semantic search in user's notes using RAG vectors. Use when user asks general questions about their notes or needs relevant context. Parameters: query (required)
+
+## When to Use Which Tool
+- User says "read file X" / "show me X.md" → use **read_file**
+- User says "search for keyword Y" / "find all mentions of Y" → use **search_files**
+- User asks "what do my notes say about..." / "what documents mention..." → use **search_knowledge_base**
+- User says "create a note about..." → use **create_file**
 
 ## Tool Call Format
 When you need to use a tool, output EXACTLY:
@@ -1449,10 +1637,22 @@ When you need to use a tool, output EXACTLY:
 {"tool": "tool_name", "arguments": {"param": "value"}}
 \`\`\`
 
+## Task Completion Signal
+When you have fully completed the user's request and no more tool calls are needed, end your response with:
+[TASK_COMPLETE]
+
+This signal tells the system you are done. Use it when:
+- You have answered the user's question completely
+- All requested operations have been performed
+- No more tool calls are necessary
+
 IMPORTANT:
 - Use create_file/update_file for app files, NOT external MCP tools
+- Use read_file to read specific files by name
+- Use search_files to find keywords across all files
 - Output COMPLETE JSON in tool_call block
-- After tool result, continue your response`,
+- After tool result, continue your response
+- End with [TASK_COMPLETE] when fully done`,
               [],
               undefined,
               conversationHistory
@@ -1494,6 +1694,22 @@ IMPORTANT:
 
             // 流结束后检查完整的 tool_call
             const toolCallMatch = roundContent.match(/```tool_call\s*\n([\s\S]*?)```/);
+
+            // 检测 AI 主动结束信号
+            if (roundContent.includes('[TASK_COMPLETE]')) {
+              console.log('[Stream] AI signaled task completion');
+              const cleanContent = roundContent.replace(/\[TASK_COMPLETE\]/g, '').trim();
+              fullContent += cleanContent;
+              break;
+            }
+
+            // 检查单轮超时
+            const roundDuration = Date.now() - roundStartTime;
+            if (roundDuration > ROUND_TIMEOUT) {
+              console.warn(`[Stream] Round ${toolRound} exceeded timeout (${roundDuration}ms)`);
+              fullContent += roundContent + '\n\n⚠️ **警告**: 本轮响应超时（60秒），已自动结束。';
+              break;
+            }
 
             if (toolCallMatch) {
               try {
@@ -1605,7 +1821,11 @@ IMPORTANT:
         const response = await generateAIResponse(
           text,
           aiConfig,
-          "You are ZhangNote AI assistant. Use the provided tools to help users with their notes.",
+          `You are ZhangNote AI assistant with the following tools:
+- **read_file**: Read specific file content (use when user wants to read/view a file)
+- **search_files**: Search keyword across all files (use when user wants to find/search text)
+- **search_knowledge_base**: Semantic search in notes (use for general questions about notes)
+- **create_file**, **update_file**, **delete_file**: File management`,
           false,
           [],
           nativeToolCallback,
@@ -1908,8 +2128,12 @@ IMPORTANT:
               activePane={activePaneId}
               files={files}
               onContentChange={handlePaneContentChange}
+              onCursorChange={handleCursorChange}
+              getCursorPosition={getCursorPosition}
+              onToggleMode={togglePaneMode}
               splitMode={splitMode}
               language={lang}
+              editorRef={editorRef}
             />
           )}
 
