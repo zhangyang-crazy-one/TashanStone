@@ -40,7 +40,17 @@ interface ChatPanelProps {
   checkpoints?: Checkpoint[];
 }
 
-  // 混合渲染文本和工具卡片
+const SmartMessageContent: React.FC<{ content: string; isStreaming?: boolean }> = ({ content, isStreaming }) => {
+  const parts = parseToolCallsFromContent(content);
+
+  if (parts.length === 1 && parts[0].type === 'text') {
+    return (
+      <div className="chat-markdown-content">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-2">
       {parts.map((part, idx) => {

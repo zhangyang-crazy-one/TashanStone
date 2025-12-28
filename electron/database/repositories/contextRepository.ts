@@ -52,14 +52,23 @@ export class SQLiteCheckpointStorage implements ICheckpointStorage {
       id: session.id,
       session_id: session.session_id,
       summary: session.summary,
-      key_topics: session.key_topics,
-      decisions: session.decisions,
+      key_topics: this.parseJsonSafe(session.key_topics, []),
+      decisions: this.parseJsonSafe(session.decisions, []),
       message_range: {
         start: session.message_start,
         end: session.message_end,
       },
       created_at: session.created_at,
     }));
+  }
+
+  private parseJsonSafe<T>(json: string | T, defaultValue: T): T {
+    if (typeof json !== 'string') return json;
+    try {
+      return JSON.parse(json);
+    } catch {
+      return defaultValue;
+    }
   }
 
   private serializeMessage(msg: ApiMessage): object {

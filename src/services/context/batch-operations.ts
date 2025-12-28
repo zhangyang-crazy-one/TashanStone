@@ -32,8 +32,6 @@ export class BatchCheckpointOperations {
     sessionId: string,
     checkpoints: Array<{ name: string; messages: ApiMessage[]; tokenCount: number }>
   ): Promise<BatchResult<Checkpoint>> {
-    checkpoints: Array<{ name: string; messages: ApiMessage[]; tokenCount: number }>
-  ): Promise<BatchResult<Checkpoint>> {
     const startTime = Date.now();
     const success: Checkpoint[] = [];
     const failed: Array<{ id: string; error: string }> = [];
@@ -44,7 +42,7 @@ export class BatchCheckpointOperations {
     ): Promise<Checkpoint | null> => {
       try {
         const checkpoint: Checkpoint = {
-          id: `cp-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
+          id: `cp-${Date.now()}-${index}-${Math.random().toString(36).substring(2, 11)}`,
           session_id: sessionId,
           name: item.name,
           message_count: item.messages.length,
