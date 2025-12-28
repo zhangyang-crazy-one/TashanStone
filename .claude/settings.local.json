@@ -153,7 +153,13 @@
       "Bash(cmd /c \"dir /b F:\\\\MYproject\\\\Zhang_Note\\\\zhang_reader\\\\docs\")",
       "Bash(del /F \"F:\\\\MYproject\\\\Zhang_Note\\\\zhang_reader\\\\docs\\\\LANCEDB_PACKAGING_ISSUE.md\")",
       "Bash(del /F \"F:\\\\MYproject\\\\Zhang_Note\\\\zhang_reader\\\\docs\\\\OCR_PACKAGING_ISSUE.md\")",
-      "Bash(del /F \"F:\\\\MYproject\\\\Zhang_Note\\\\zhang_reader\\\\docs\\\\LANCEDB_INTEGRATION.md\")"
+      "Bash(del /F \"F:\\\\MYproject\\\\Zhang_Note\\\\zhang_reader\\\\docs\\\\LANCEDB_INTEGRATION.md\")",
+      "Bash(cmd /c \"type C:\\\\Users\\\\74088\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\F--MYproject-Zhang-Note-zhang-reader\\\\tasks\\\\bf95303.output | findstr /i error\")",
+      "Bash(cmd /c \"echo { > F:\\\\MYproject\\\\Zhang_Note\\\\zhang_reader\\\\.claude\\\\settings.json\")",
+      "Bash(powershell -NoProfile -Command \"\n@''\n{\n  \"\"hooks\"\": {\n    \"\"UserPromptSubmit\"\": [{\n      \"\"matcher\"\": \"\"\"\",\n      \"\"hooks\"\": [{\n        \"\"type\"\": \"\"command\"\",\n        \"\"command\"\": \"\"powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/hooks/skill-forced-eval.ps1\"\"\n      }]\n    }],\n    \"\"SessionStart\"\": [{\n      \"\"matcher\"\": \"\"\"\",\n      \"\"hooks\"\": [{\n        \"\"type\"\": \"\"command\"\",\n        \"\"command\"\": \"\"powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/hooks/session-start.ps1\"\"\n      }]\n    }],\n    \"\"PreToolUse\"\": [{\n      \"\"matcher\"\": \"\"\"\",\n      \"\"hooks\"\": [{\n        \"\"type\"\": \"\"command\"\",\n        \"\"command\"\": \"\"powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/hooks/pre-tool-use.ps1\"\"\n      }]\n    }],\n    \"\"Stop\"\": [{\n      \"\"matcher\"\": \"\"\"\",\n      \"\"hooks\"\": [{\n        \"\"type\"\": \"\"command\"\",\n        \"\"command\"\": \"\"powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/hooks/stop.ps1\"\"\n      }]\n    }]\n  },\n  \"\"mcpServers\"\": {}\n}\n''@ | Out-File -FilePath ''F:\\\\MYproject\\\\Zhang_Note\\\\zhang_reader\\\\.claude\\\\settings.json'' -Encoding UTF8\n\")",
+      "Bash(cmd /c \"del F:\\\\MYproject\\\\Zhang_Note\\\\zhang_reader\\\\.claude\\\\hooks\\\\*.js 2>nul && echo Old JS files deleted || echo No JS files to delete\")",
+      "Bash(cmd /c \"dir /b F:\\\\MYproject\\\\Zhang_Note\\\\zhang_reader\\\\.claude\\\\hooks\")",
+      "Bash(powershell -NoProfile -Command \"Remove-Item ''F:\\\\MYproject\\\\Zhang_Note\\\\zhang_reader\\\\.claude\\\\hooks\\\\*.js'' -Force; Get-ChildItem ''F:\\\\MYproject\\\\Zhang_Note\\\\zhang_reader\\\\.claude\\\\hooks''\")"
     ],
     "deny": [],
     "ask": []
