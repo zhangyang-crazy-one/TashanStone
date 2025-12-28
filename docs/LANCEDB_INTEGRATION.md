@@ -2,14 +2,14 @@
 
 ## 概述
 
-ZhangNote 使用 LanceDB 作为向量数据库，用于存储和检索文档的向量嵌入，支持 RAG (Retrieval Augmented Generation) 功能。
+TashanStone 使用 LanceDB 作为向量数据库，用于存储和检索文档的向量嵌入，支持 RAG (Retrieval Augmented Generation) 功能。
 
 ## 架构设计
 
 ### 技术选型
 
 - **@lancedb/lancedb**: 高性能向量数据库，基于 Apache Arrow
-- **存储位置**: `%APPDATA%/zhangnote/lancedb/`
+- **存储位置**: `%APPDATA%/tashanstone/lancedb/`
 - **表结构**: 单表 `vectors` 存储所有文档向量
 
 ### 数据模型
@@ -137,7 +137,7 @@ class VectorStore {
 ### 日志位置
 
 ```
-%APPDATA%/zhangnote/logs/
+%APPDATA%/tashanstone/logs/
 ```
 
 ## 相关文档

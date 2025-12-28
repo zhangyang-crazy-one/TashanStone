@@ -426,9 +426,9 @@ export function registerBackupHandlers(): void {
             // 3. 打开保存对话框
             const result = await dialog.showSaveDialog({
                 title: '导出备份',
-                defaultPath: `zhangnote-backup-${new Date().toISOString().split('T')[0]}.znb`,
+                defaultPath: `tashanstone-backup-${new Date().toISOString().split('T')[0]}.znb`,
                 filters: [
-                    { name: 'ZhangNote 备份文件', extensions: ['znb'] },
+                    { name: 'TashanStone 备份文件', extensions: ['znb'] },
                     { name: '所有文件', extensions: ['*'] }
                 ],
                 properties: ['createDirectory', 'showOverwriteConfirmation']
@@ -473,7 +473,7 @@ export function registerBackupHandlers(): void {
             const result = await dialog.showOpenDialog({
                 title: '选择备份文件',
                 filters: [
-                    { name: 'ZhangNote 备份文件', extensions: ['znb'] },
+                    { name: 'TashanStone 备份文件', extensions: ['znb'] },
                     { name: '所有文件', extensions: ['*'] }
                 ],
                 properties: ['openFile']
@@ -530,7 +530,7 @@ export function registerBackupHandlers(): void {
                 const result = await dialog.showOpenDialog({
                     title: '导入备份',
                     filters: [
-                        { name: 'ZhangNote 备份文件', extensions: ['znb'] },
+                        { name: 'TashanStone 备份文件', extensions: ['znb'] },
                         { name: '所有文件', extensions: ['*'] }
                     ],
                     properties: ['openFile']

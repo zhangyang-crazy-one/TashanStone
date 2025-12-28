@@ -113,7 +113,7 @@ export const translations = {
     delete: "Delete",
     // Auth translations
     auth: {
-      welcome: 'Welcome to ZhangNote',
+      welcome: 'Welcome to TashanStone',
       firstTime: 'Create your account to get started',
       login: 'Enter your password to continue',
       username: 'Username',
@@ -316,7 +316,7 @@ export const translations = {
     delete: "删除",
     // Auth translations
     auth: {
-      welcome: '欢迎使用 ZhangNote',
+      welcome: '欢迎使用 TashanStone',
       firstTime: '创建账户开始使用',
       login: '输入密码继续',
       username: '用户名',

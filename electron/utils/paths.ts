@@ -4,9 +4,9 @@ import fs from 'fs';
 
 /**
  * Get the user data directory for storing app data
- * - Windows: %APPDATA%\ZhangNote
- * - macOS: ~/Library/Application Support/ZhangNote
- * - Linux: ~/.config/ZhangNote
+ * - Windows: %APPDATA%\TashanStone
+ * - macOS: ~/Library/Application Support/TashanStone
+ * - Linux: ~/.config/TashanStone
  */
 export function getUserDataPath(): string {
     return app.getPath('userData');

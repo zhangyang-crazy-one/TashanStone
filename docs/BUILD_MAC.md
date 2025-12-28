@@ -1,6 +1,6 @@
-# ZhangNote macOS 编译指南
+# TashanStone macOS 编译指南
 
-本文档介绍如何在 macOS 上编译 ZhangNote 应用程序。
+本文档介绍如何在 macOS 上编译 TashanStone 应用程序。
 
 ## 系统要求
 
@@ -59,8 +59,8 @@ brew install python
 ### 1. 克隆代码仓库
 
 ```bash
-git clone https://github.com/zhangyang-crazy-one/Zhang_Note.git
-cd Zhang_Note
+git clone https://github.com/tashanstone/tashanstone.git
+cd tashanstone
 ```
 
 ### 2. 安装依赖
@@ -111,10 +111,10 @@ npm run dist:mac
 
 构建完成后，安装包位于 `release/` 目录：
 
-- `ZhangNote-1.6.0-arm64.dmg` - Apple Silicon 版本
-- `ZhangNote-1.6.0-x64.dmg` - Intel 版本
-- `ZhangNote-1.6.0-arm64.zip` - Apple Silicon 便携版
-- `ZhangNote-1.6.0-x64.zip` - Intel 便携版
+- `TashanStone-1.6.0-arm64.dmg` - Apple Silicon 版本
+- `TashanStone-1.6.0-x64.dmg` - Intel 版本
+- `TashanStone-1.6.0-arm64.zip` - Apple Silicon 便携版
+- `TashanStone-1.6.0-x64.zip` - Intel 便携版
 
 > **提示**: 默认构建当前机器架构。如需构建特定架构：
 > ```bash
@@ -128,7 +128,7 @@ npm run dist:mac
 ## 安装应用
 
 1. 双击打开 `.dmg` 文件
-2. 将 ZhangNote 图标拖拽到 Applications 文件夹
+2. 将 TashanStone 图标拖拽到 Applications 文件夹
 3. 首次运行时，右键点击应用 → 选择"打开"（绕过 Gatekeeper 检查）
 
 ## 常见问题
@@ -170,7 +170,7 @@ node-gyp install
 open ~/Library/Logs/DiagnosticReports/
 
 # 从终端启动查看错误信息
-/Applications/ZhangNote.app/Contents/MacOS/ZhangNote
+/Applications/TashanStone.app/Contents/MacOS/TashanStone
 ```
 
 ### Q6: 语音识别功能不工作
@@ -222,10 +222,10 @@ electron-builder 会自动使用证书签名并提交公证。
 
 | 文件 | 说明 |
 |------|------|
-| `ZhangNote-x.x.x-arm64.dmg` | Apple Silicon Mac 安装包 |
-| `ZhangNote-x.x.x-x64.dmg` | Intel Mac 安装包 |
-| `ZhangNote-x.x.x-arm64.zip` | Apple Silicon 便携版 |
-| `ZhangNote-x.x.x-x64.zip` | Intel 便携版 |
+| `TashanStone-x.x.x-arm64.dmg` | Apple Silicon Mac 安装包 |
+| `TashanStone-x.x.x-x64.dmg` | Intel Mac 安装包 |
+| `TashanStone-x.x.x-arm64.zip` | Apple Silicon 便携版 |
+| `TashanStone-x.x.x-x64.zip` | Intel 便携版 |
 | `mac-arm64/` | Apple Silicon 未打包应用 |
 | `mac-x64/` | Intel 未打包应用 |
 

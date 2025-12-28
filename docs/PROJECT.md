@@ -1,4 +1,4 @@
-# ZhangNote (NeonMark Studio)
+# TashanStone
 
 > AI 驱动的 Markdown 编辑器
 
