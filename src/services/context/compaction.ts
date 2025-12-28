@@ -187,12 +187,14 @@ ${conversationText}`;
     const options = {
       preserveRecentRounds: 1,
       minMessagesToKeep: 3,
+      safetyMargin: 0.9,
       ...config,
     };
 
+    const safeTargetTokens = Math.floor(targetTokens * options.safetyMargin);
     const currentTokens = await this.tokenBudget.calculateMessagesTokenCount(messages);
 
-    if (currentTokens <= targetTokens) {
+    if (currentTokens <= safeTargetTokens) {
       const marker: ApiMessage = {
         id: `trunc-${Date.now()}`,
         role: 'system',

@@ -17,6 +17,7 @@ import {
   DEFAULT_CONTEXT_CONFIG,
   ContextMemoryService,
   InMemoryStorage,
+  MessageRole,
 } from "../src/services/context";
 
 // --- Types for MCP ---
@@ -1931,88 +1932,103 @@ const callAnthropic = async (
     const baseUrl = config.baseUrl || 'https://api.anthropic.com';
     const endpoint = `${baseUrl.replace(/\/$/, '')}/v1/messages`;
 
-    const MODEL_LIMITS: Record<string, number> = {
+    const MODEL_TOKEN_LIMITS: Record<string, number> = {
       'claude-3-opus': 200000,
       'claude-3-sonnet': 200000,
       'claude-3-haiku': 200000,
       'claude-3-5-sonnet': 200000,
+      'claude-3-5-sonnet-20241022': 200000,
+      'claude-sonnet-4-20250514': 200000,
       'claude-4-sonnet': 200000,
       'claude-4-haiku': 200000,
+      'claude-opus-4-20250514': 200000,
+      'claude-haiku-4-20250514': 200000,
     };
 
     const MODEL = config.model || 'claude-3-5-sonnet';
-    const MODEL_LIMIT = MODEL_LIMITS[MODEL] || 100000;
+    const MODEL_LIMIT = MODEL_TOKEN_LIMITS[MODEL] || 200000;
     const MAX_OUTPUT_TOKENS = 4096;
-    const MAX_INPUT_TOKENS = MODEL_LIMIT - MAX_OUTPUT_TOKENS;
+    const RESERVED_BUFFER = 1000;
+    const MAX_INPUT_TOKENS = MODEL_LIMIT - MAX_OUTPUT_TOKENS - RESERVED_BUFFER;
 
     const estimateTokens = (text: string): number => {
       return Math.ceil(text.length / 3);
     };
 
-    const truncateHistoryForAnthropic = (
-      history: ChatMessage[],
-      systemPrompt: string,
-      currentPrompt: string,
-      maxTokens: number
-    ): { messages: any[]; truncated: number } => {
-      const systemTokens = estimateTokens(systemPrompt);
-      const currentTokens = estimateTokens(currentPrompt);
-      let availableTokens = maxTokens - systemTokens - currentTokens - 500;
+    const toApiMessage = (msg: ChatMessage): ApiMessage => ({
+      id: msg.id || `msg-${Date.now()}-${Math.random()}`,
+      role: msg.role as MessageRole,
+      content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
+      timestamp: msg.timestamp || Date.now(),
+    });
 
-      const result: any[] = [];
-
-      for (let i = history.length - 1; i >= 0; i--) {
-        const msg = history[i];
-        const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
-        const msgTokens = estimateTokens(content);
-
-        if (availableTokens - msgTokens < 0) {
-          return {
-            messages: [
-              {
-                role: 'user',
-                content: `[上下文截断 - 已省略 ${i + 1} 条早期消息]\n\n---\n\n${currentPrompt}`
-              }
-            ],
-            truncated: i + 1
-          };
-        }
-
-        availableTokens -= msgTokens;
-
-        if (msg.role === 'user') {
-          result.unshift({ role: 'user', content });
-        } else if (msg.role === 'assistant') {
-          result.unshift({ role: 'assistant', content });
-        }
-      }
-
-      return { messages: result, truncated: 0 };
+    const contextConfig: ContextConfig = {
+      max_tokens: MODEL_LIMIT,
+      reserved_output_tokens: MAX_OUTPUT_TOKENS,
+      compact_threshold: 0.75,
+      prune_threshold: 0.85,
+      truncate_threshold: 0.95,
+      messages_to_keep: 10,
+      buffer_percentage: 0.1,
+      checkpoint_interval: 50,
     };
 
-    const messages: any[] = [];
-
-    let messagesToSend: any[];
-    let truncatedCount = 0;
+    const sessionId = `anthropic-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const contextManager = createContextManager(sessionId, contextConfig);
 
     if (conversationHistory && conversationHistory.length > 0) {
-      const truncationResult = truncateHistoryForAnthropic(
-        conversationHistory,
-        systemInstruction || '',
-        prompt,
-        MAX_INPUT_TOKENS
-      );
-      messagesToSend = truncationResult.messages;
-      truncatedCount = truncationResult.truncated;
-    } else {
-      messagesToSend = [];
+      const apiMessages = conversationHistory.map(toApiMessage);
+      contextManager.addMessages(apiMessages);
+    }
+
+    const manageResult = await contextManager.manageContext(systemInstruction || '');
+    const { messages: managedMessages, usage, action, saved_tokens } = manageResult;
+
+    if (saved_tokens && saved_tokens > 0) {
+      console.log(`[ContextManager] ${action} saved ~${saved_tokens} tokens`);
+    }
+
+    const buildApiMessages = (msgs: ApiMessage[]): any[] => {
+      return msgs.map(msg => ({
+        role: msg.role === 'tool' ? 'user' : msg.role,
+        content: msg.content,
+      }));
+    };
+
+    let messagesToSend = buildApiMessages(managedMessages);
+
+    const finalCheck = estimateTokens(
+      JSON.stringify(messagesToSend) + (systemInstruction || '') + prompt
+    );
+
+    if (finalCheck > MAX_INPUT_TOKENS) {
+      console.warn(`[Anthropic] 二次验证失败，强制保留最后消息`);
+      const criticalLimit = MAX_INPUT_TOKENS - estimateTokens(prompt) - estimateTokens(systemInstruction || '') - 500;
+
+      const truncatedMessages: ApiMessage[] = [];
+      let currentTokens = 0;
+
+      for (let i = managedMessages.length - 1; i >= 0; i--) {
+        const msg = managedMessages[i];
+        const msgTokens = estimateTokens(msg.content);
+
+        if (currentTokens + msgTokens > criticalLimit) {
+          truncatedMessages.unshift({
+            ...msg,
+            content: `[截断 - 省略早期消息] ${msg.content}`,
+          });
+          break;
+        }
+
+        truncatedMessages.unshift(msg);
+        currentTokens += msgTokens;
+      }
+
+      messagesToSend = buildApiMessages(truncatedMessages);
+      console.warn(`[Anthropic] 紧急截断后保留 ${truncatedMessages.length} 条消息`);
     }
 
     messagesToSend.push({ role: 'user', content: prompt });
-
-    if (truncatedCount > 0) {
-      console.warn(`[Anthropic] 上下文过长，已截断 ${truncatedCount} 条早期消息`);
-    }
 
     // Build tools array for Anthropic format
     let tools: any[] | undefined = undefined;
@@ -2119,7 +2135,7 @@ const callAnthropic = async (
         const requestBody: any = {
           model: config.model || 'claude-sonnet-4-20250514',
           max_tokens: 4096,
-          messages
+          messages: messagesToSend
         };
 
         if (systemInstruction) {
@@ -2173,7 +2189,7 @@ const callAnthropic = async (
 
           if (toolUseBlocks.length > 0 && toolsCallback) {
             // Add assistant message with tool use to history
-            messages.push({
+            messagesToSend.push({
               role: 'assistant',
               content: data.content
             });
@@ -2190,7 +2206,7 @@ const callAnthropic = async (
             }
 
             // Add tool results as user message
-            messages.push({
+            messagesToSend.push({
               role: 'user',
               content: toolResults
             });
@@ -2211,7 +2227,51 @@ const callAnthropic = async (
         }
       }
     } catch (error: any) {
-      throw new Error(`Anthropic API Error: ${error.message}`);
+      const errorMsg = error.message || String(error);
+      
+      if (errorMsg.includes('context window exceeds limit') || errorMsg.includes('上下文窗口')) {
+        console.warn('[Anthropic] 触发紧急截断重试');
+        
+        try {
+          const emergencyMessages = conversationHistory?.slice(-2) || [];
+          const emergencyApiMessages = emergencyMessages.map(toApiMessage);
+          
+          const emergencyContextManager = createContextManager(`emergency-${sessionId}`, contextConfig);
+          emergencyContextManager.addMessages(emergencyApiMessages);
+          
+          const { messages: managedEmergencyMessages } = await emergencyContextManager.manageContext(systemInstruction || '');
+          let emergencyMessagesToSend = buildApiMessages(managedEmergencyMessages);
+          emergencyMessagesToSend.push({ role: 'user', content: prompt });
+          
+          const response = await platformFetch(endpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-key': config.apiKey || '',
+              'anthropic-version': '2023-06-01'
+            },
+            body: JSON.stringify({
+              model: MODEL,
+              max_tokens: MAX_OUTPUT_TOKENS,
+              messages: emergencyMessagesToSend,
+              system: systemInstruction,
+            }),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(`[紧急重试] Anthropic API Error: ${response.status} ${errorData.error?.message || response.statusText}`);
+          }
+
+          const data = await response.json();
+          const textBlocks = data.content?.filter((block: any) => block.type === 'text') || [];
+          return textBlocks.map((b: any) => b.text).join('');
+        } catch (retryError: any) {
+          throw new Error(`上下文窗口超出限制且紧急重试失败: ${retryError.message}`);
+        }
+      }
+      
+      throw new Error(`Anthropic API Error: ${errorMsg}`);
     }
 };
 
