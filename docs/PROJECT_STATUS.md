@@ -7,9 +7,9 @@
 | 指标 | 值 |
 |------|-----|
 | 项目阶段 | 功能迭代中 |
-| 整体进度 | 核心功能 100% / 上下文工程 70% |
-| 代码行数 | ~24,000+ |
-| 组件数量 | 20 个 React 组件 |
+| 整体进度 | 核心功能 100% / 上下文工程 85% |
+| 代码行数 | ~24,500+ |
+| 组件数量 | 25 个 React 组件 |
 | 新增服务 | 9 个上下文工程模块 |
 
 ## 已完成模块
@@ -34,7 +34,7 @@
 | 阶段一 | 核心上下文工程 | 100% | ✅ 完成 |
 | 阶段二 | 会话存储与检查点 | 100% | ✅ 完成 |
 | 阶段三 | 三层记忆系统 | 100% | ✅ 完成 |
-| 阶段四 | UI 集成 | 0% | 🔜 待开始 |
+| 阶段四 | UI 集成 | 100% | ✅ 完成 |
 | 阶段五 | 性能优化 | 0% | 🔜 待开始 |
 
 ### 上下文工程完成项
@@ -53,6 +53,9 @@
 - [x] Preload 桥接 - context API 暴露给渲染进程
 - [x] 长期记忆存储 (long-term-memory.ts) - LanceDB 集成
 - [x] 上下文记忆服务 (ContextMemoryService) - 三层记忆统一管理
+- [x] UI 组件集成 - TokenUsageIndicator, CompactButton, CheckpointDrawer
+- [x] ChatPanel 集成 - 上下文工程 UI 与主对话面板集成
+- [x] AI 设置扩展 - 上下文工程配置选项卡
 
 ### 上下文工程目标
 
@@ -104,15 +107,26 @@
 - 自动升级 - 短期→中期→长期记忆
 - 上下文重建 - 智能合并各层记忆
 
-### 立即开始：阶段四 UI 集成
+### 阶段四完成 ✅
+
+UI 集成已完成，包括：
+- TokenUsageIndicator - Token 使用率圆形指示器
+- CompactButton - 手动压缩按钮（支持 Prune/Compact/Truncate）
+- CompactActionMenu - 压缩操作菜单
+- CheckpointDrawer - 检查点历史侧边栏
+- CheckpointButton - 检查点按钮
+- ContextActionBadge - 上下文操作状态徽章
+- ChatPanel 集成 - 所有上下文工程 UI 组件
+- AISettingsModal 集成 - 上下文工程配置选项卡
+
+### 立即开始：阶段五 性能优化
 
 | 步骤 | 任务 | 说明 |
 |------|------|------|
-| 1 | Token 使用率组件 | 显示当前 Token 使用百分比 |
-| 2 | 上下文操作状态 | 显示最近压缩/检查点状态 |
-| 3 | 手动压缩按钮 | 手动触发 Prune/Compact |
-| 4 | 检查点历史面板 | 查看和恢复检查点 |
-| 5 | AI 设置扩展 | 上下文工程配置区 |
+| 1 | Prompt Caching | 实现系统提示缓存，减少重复 Token |
+| 2 | 流式优化 | 优化流式响应处理 |
+| 3 | 内存优化 | 长期记忆压缩存储 |
+| 4 | 批量操作 | 检查点批量创建/恢复 |
 
 ### 文件结构
 
@@ -126,6 +140,13 @@ src/services/context/
 ├── token-budget.ts       # Token 预算 ✅
 ├── checkpoint.ts         # 检查点 ✅
 └── types.ts              # 类型定义 ✅
+
+components/context/
+├── index.ts              # 导出入口 ✅
+├── TokenUsageIndicator.tsx  # Token 使用率显示 ✅
+├── ContextActionBadge.tsx   # 上下文操作状态 ✅
+├── CompactButton.tsx        # 压缩按钮 ✅
+└── CheckpointDrawer.tsx     # 检查点面板 ✅
 ```
 
 ### 后续计划

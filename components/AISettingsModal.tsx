@@ -33,7 +33,7 @@ interface AISettingsModalProps {
   ) => void;
 }
 
-type Tab = 'ai' | 'appearance' | 'prompts' | 'mcp' | 'keyboard' | 'security';
+type Tab = 'ai' | 'appearance' | 'prompts' | 'mcp' | 'keyboard' | 'security' | 'context';
 
 const RECOMMENDED_MODELS: Record<string, {id: string, name: string}[]> = {
   gemini: [
@@ -405,15 +405,22 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                 <Wrench size={18} />
                 MCP / Tools
              </button>
-             <button
-              onClick={() => setActiveTab('security')}
-              className={`text-sm font-bold flex items-center gap-2 pb-1 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'security' ? 'text-amber-600 dark:text-amber-400 border-amber-500' : 'text-slate-500 border-transparent hover:text-slate-700 dark:hover:text-slate-300'}`}
-             >
-                <Shield size={18} />
-                {t.backup.title || "Backup"}
-             </button>
-             <button
-              onClick={() => setActiveTab('appearance')}
+              <button
+               onClick={() => setActiveTab('security')}
+               className={`text-sm font-bold flex items-center gap-2 pb-1 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'security' ? 'text-amber-600 dark:text-amber-400 border-amber-500' : 'text-slate-500 border-transparent hover:text-slate-700 dark:hover:text-slate-300'}`}
+              >
+                 <Shield size={18} />
+                 {t.backup.title || "Backup"}
+              </button>
+              <button
+               onClick={() => setActiveTab('context')}
+               className={`text-sm font-bold flex items-center gap-2 pb-1 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'context' ? 'text-blue-600 dark:text-blue-400 border-blue-500' : 'text-slate-500 border-transparent hover:text-slate-700 dark:hover:text-slate-300'}`}
+              >
+                 <Cpu size={18} />
+                 Context
+              </button>
+              <button
+               onClick={() => setActiveTab('appearance')}
               className={`text-sm font-bold flex items-center gap-2 pb-1 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'appearance' ? 'text-violet-600 dark:text-violet-400 border-violet-500' : 'text-slate-500 border-transparent hover:text-slate-700 dark:hover:text-slate-300'}`}
              >
                 <Palette size={18} />
@@ -1124,6 +1131,232 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Context Engineering Tab */}
+          {activeTab === 'context' && (
+            <div className="space-y-6 max-w-2xl mx-auto">
+              <div className="bg-[rgb(var(--bg-panel))] p-4 rounded-xl border border-[rgb(var(--border-main))] shadow-sm">
+                <h3 className="text-base font-bold text-[rgb(var(--text-primary))] mb-2 flex items-center gap-2 font-[var(--font-header)]">
+                  <Cpu size={20} className="text-blue-500" />
+                  {currentUiLang === 'zh' ? '上下文工程' : 'Context Engineering'}
+                </h3>
+                <p className="text-sm text-[rgb(var(--text-secondary))] font-[var(--font-primary)]">
+                  {currentUiLang === 'zh'
+                    ? '管理 AI 对话上下文优化设置，包括 Token 预算、压缩阈值和检查点'
+                    : 'Manage AI conversation context optimization settings including token budgets, compression thresholds, and checkpoints'}
+                </p>
+              </div>
+
+              {/* Context Engine Toggle */}
+              <div className="bg-[rgb(var(--bg-panel))] p-5 rounded-xl border border-[rgb(var(--border-main))] space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-sm font-bold text-[rgb(var(--text-primary))] font-[var(--font-header)]">
+                      {currentUiLang === 'zh' ? '启用上下文工程' : 'Enable Context Engineering'}
+                    </h4>
+                    <p className="text-xs text-[rgb(var(--text-secondary))] mt-1">
+                      {currentUiLang === 'zh'
+                        ? '自动管理对话上下文，防止 Token 超限'
+                        : 'Automatically manage conversation context to prevent token limits'}
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!tempConfig.contextEngine?.enabled}
+                      onChange={(e) => setTempConfig({
+                        ...tempConfig,
+                        contextEngine: {
+                          ...tempConfig.contextEngine,
+                          enabled: e.target.checked
+                        }
+                      })}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-[rgb(var(--neutral-300))] peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[rgba(var(--primary-500)/0.3)] rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-[rgb(var(--border-main))] after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[rgb(var(--primary-500))]"></div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Context Engine Settings */}
+              {tempConfig.contextEngine?.enabled && (
+                <>
+                  {/* Max Tokens */}
+                  <div className="bg-[rgb(var(--bg-panel))] p-5 rounded-xl border border-[rgb(var(--border-main))] space-y-4">
+                    <div>
+                      <label className="block text-sm font-bold text-[rgb(var(--text-primary))] mb-3 font-[var(--font-header)]">
+                        {currentUiLang === 'zh' ? '最大 Token 限制' : 'Max Token Limit'}
+                      </label>
+                      <div className="space-y-2">
+                        <input
+                          type="range"
+                          min="50000"
+                          max="500000"
+                          step="10000"
+                          value={tempConfig.contextEngine?.maxTokens || 200000}
+                          onChange={(e) => setTempConfig({
+                            ...tempConfig,
+                            contextEngine: {
+                              ...tempConfig.contextEngine,
+                              maxTokens: parseInt(e.target.value)
+                            }
+                          })}
+                          className="w-full h-2 bg-[rgb(var(--bg-element))] rounded-lg appearance-none cursor-pointer accent-[rgb(var(--primary-500))]"
+                        />
+                        <div className="flex justify-between text-xs text-[rgb(var(--text-secondary))]">
+                          <span>50K</span>
+                          <span className="font-medium text-[rgb(var(--primary-500))]">
+                            {((tempConfig.contextEngine?.maxTokens || 200000) / 1000).toFixed(0)}K
+                          </span>
+                          <span>500K</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Thresholds */}
+                  <div className="bg-[rgb(var(--bg-panel))] p-5 rounded-xl border border-[rgb(var(--border-main))] space-y-4">
+                    <h4 className="text-sm font-bold text-[rgb(var(--text-primary))] font-[var(--font-header)]">
+                      {currentUiLang === 'zh' ? '压缩触发阈值' : 'Compression Thresholds'}
+                    </h4>
+
+                    <div className="space-y-4">
+                      <div>
+                        <div className="flex justify-between text-sm mb-2">
+                          <span className="text-[rgb(var(--text-secondary))]">{currentUiLang === 'zh' ? 'Prune 阈值' : 'Prune Threshold'}</span>
+                          <span className="text-blue-400 font-medium">{Math.round((tempConfig.contextEngine?.pruneThreshold || 0.70) * 100)}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.5"
+                          max="0.8"
+                          step="0.05"
+                          value={tempConfig.contextEngine?.pruneThreshold || 0.70}
+                          onChange={(e) => setTempConfig({
+                            ...tempConfig,
+                            contextEngine: {
+                              ...tempConfig.contextEngine,
+                              pruneThreshold: parseFloat(e.target.value)
+                            }
+                          })}
+                          className="w-full h-2 bg-[rgb(var(--bg-element))] rounded-lg appearance-none cursor-pointer accent-blue-500"
+                        />
+                        <p className="text-xs text-[rgb(var(--text-secondary))] mt-1">
+                          {currentUiLang === 'zh' ? '触发工具输出裁剪的 Token 使用率' : 'Token usage to trigger tool output pruning'}
+                        </p>
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between text-sm mb-2">
+                          <span className="text-[rgb(var(--text-secondary))]">{currentUiLang === 'zh' ? 'Compact 阈值' : 'Compact Threshold'}</span>
+                          <span className="text-purple-400 font-medium">{Math.round((tempConfig.contextEngine?.compactThreshold || 0.85) * 100)}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.7"
+                          max="0.95"
+                          step="0.05"
+                          value={tempConfig.contextEngine?.compactThreshold || 0.85}
+                          onChange={(e) => setTempConfig({
+                            ...tempConfig,
+                            contextEngine: {
+                              ...tempConfig.contextEngine,
+                              compactThreshold: parseFloat(e.target.value)
+                            }
+                          })}
+                          className="w-full h-2 bg-[rgb(var(--bg-element))] rounded-lg appearance-none cursor-pointer accent-purple-500"
+                        />
+                        <p className="text-xs text-[rgb(var(--text-secondary))] mt-1">
+                          {currentUiLang === 'zh' ? '触发 LLM 摘要生成的 Token 使用率' : 'Token usage to trigger LLM summary generation'}
+                        </p>
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between text-sm mb-2">
+                          <span className="text-[rgb(var(--text-secondary))]">{currentUiLang === 'zh' ? 'Truncate 阈值' : 'Truncate Threshold'}</span>
+                          <span className="text-orange-400 font-medium">{Math.round((tempConfig.contextEngine?.truncateThreshold || 0.95) * 100)}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.85"
+                          max="1.0"
+                          step="0.02"
+                          value={tempConfig.contextEngine?.truncateThreshold || 0.95}
+                          onChange={(e) => setTempConfig({
+                            ...tempConfig,
+                            contextEngine: {
+                              ...tempConfig.contextEngine,
+                              truncateThreshold: parseFloat(e.target.value)
+                            }
+                          })}
+                          className="w-full h-2 bg-[rgb(var(--bg-element))] rounded-lg appearance-none cursor-pointer accent-orange-500"
+                        />
+                        <p className="text-xs text-[rgb(var(--text-secondary))] mt-1">
+                          {currentUiLang === 'zh' ? '触发强制截断的 Token 使用率' : 'Token usage to trigger forced truncation'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Checkpoint Interval */}
+                  <div className="bg-[rgb(var(--bg-panel))] p-5 rounded-xl border border-[rgb(var(--border-main))] space-y-4">
+                    <div>
+                      <label className="block text-sm font-bold text-[rgb(var(--text-primary))] mb-3 font-[var(--font-header)]">
+                        {currentUiLang === 'zh' ? '自动检查点间隔' : 'Auto Checkpoint Interval'}
+                      </label>
+                      <div className="flex items-center gap-4">
+                        <input
+                          type="number"
+                          min="5"
+                          max="100"
+                          value={tempConfig.contextEngine?.checkpointInterval || 20}
+                          onChange={(e) => setTempConfig({
+                            ...tempConfig,
+                            contextEngine: {
+                              ...tempConfig.contextEngine,
+                              checkpointInterval: parseInt(e.target.value) || 20
+                            }
+                          })}
+                          className="w-20 px-3 py-2 bg-[rgb(var(--bg-element))] border border-[rgb(var(--border-main))] rounded-lg text-[rgb(var(--text-primary))] text-center focus:outline-none focus:border-[rgb(var(--primary-500))]"
+                        />
+                        <span className="text-sm text-[rgb(var(--text-secondary))]">
+                          {currentUiLang === 'zh' ? '条消息后自动创建检查点' : 'messages between auto checkpoints'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Messages to Keep */}
+                  <div className="bg-[rgb(var(--bg-panel))] p-5 rounded-xl border border-[rgb(var(--border-main))] space-y-4">
+                    <div>
+                      <label className="block text-sm font-bold text-[rgb(var(--text-primary))] mb-3 font-[var(--font-header)]">
+                        {currentUiLang === 'zh' ? '保留消息数量' : 'Messages to Keep'}
+                      </label>
+                      <div className="flex items-center gap-4">
+                        <input
+                          type="number"
+                          min="1"
+                          max="20"
+                          value={tempConfig.contextEngine?.messagesToKeep || 3}
+                          onChange={(e) => setTempConfig({
+                            ...tempConfig,
+                            contextEngine: {
+                              ...tempConfig.contextEngine,
+                              messagesToKeep: parseInt(e.target.value) || 3
+                            }
+                          })}
+                          className="w-20 px-3 py-2 bg-[rgb(var(--bg-element))] border border-[rgb(var(--border-main))] rounded-lg text-[rgb(var(--text-primary))] text-center focus:outline-none focus:border-[rgb(var(--primary-500))]"
+                        />
+                        <span className="text-sm text-[rgb(var(--text-secondary))]">
+                          {currentUiLang === 'zh' ? '条最近消息（压缩时保留）' : 'recent messages to keep during compression'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           )}
 

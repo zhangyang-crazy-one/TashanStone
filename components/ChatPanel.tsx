@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, User, Sparkles, Bot, X, Trash2, Minimize2, Archive, Mic, MicOff, Loader2, Square, Maximize2 } from 'lucide-react';
+import { Send, User, Sparkles, Bot, X, Trash2, Minimize2, Archive, Mic, MicOff, Loader2, Square, Maximize2, Clock } from 'lucide-react';
 import { ChatMessage, AIState } from '../types';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -7,19 +7,38 @@ import { translations, Language } from '../utils/translations';
 import { RAGResultsCard } from './RAGResultsCard';
 import { ToolCallCard, StreamToolCard, parseToolCallsFromContent, ThinkingCard } from './ToolCallCard';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
+import { TokenUsageIndicator, CompactActionMenu, CheckpointDrawer, CheckpointButton } from './context';
 
-// 智能内容渲染器 - 解析工具调用并渲染
-const SmartMessageContent: React.FC<{ content: string; isStreaming?: boolean }> = ({ content, isStreaming }) => {
-  const parts = parseToolCallsFromContent(content);
+interface Checkpoint {
+  id: string;
+  name: string;
+  message_count: number;
+  token_count: number;
+  summary: string;
+  created_at: number;
+}
 
-  // 如果没有工具调用，直接渲染 Markdown
-  if (parts.length === 1 && parts[0].type === 'text') {
-    return (
-      <div className="chat-markdown-content">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-      </div>
-    );
-  }
+interface ChatPanelProps {
+  isOpen: boolean;
+  onClose: () => void;
+  messages: ChatMessage[];
+  onSendMessage: (text: string) => void;
+  onClearChat: () => void;
+  onCompactChat?: () => void;
+  onPruneChat?: () => void;
+  onTruncateChat?: () => void;
+  onCreateCheckpoint?: (name: string) => Promise<void>;
+  onRestoreCheckpoint?: (checkpointId: string) => Promise<void>;
+  onDeleteCheckpoint?: (checkpointId: string) => Promise<void>;
+  aiState: AIState;
+  language?: Language;
+  isStreaming?: boolean;
+  onStopStreaming?: () => void;
+  showToast?: (message: string, isError?: boolean) => void;
+  tokenUsage?: number;
+  maxTokens?: number;
+  checkpoints?: Checkpoint[];
+}
 
   // 混合渲染文本和工具卡片
   return (
@@ -76,15 +95,24 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   onSendMessage,
   onClearChat,
   onCompactChat,
+  onPruneChat,
+  onTruncateChat,
+  onCreateCheckpoint,
+  onRestoreCheckpoint,
+  onDeleteCheckpoint,
   aiState,
   language = 'en',
   isStreaming = false,
   onStopStreaming,
-  showToast
+  showToast,
+  tokenUsage = 0,
+  maxTokens = 200000,
+  checkpoints = [],
 }) => {
   const [input, setInput] = useState('');
   const [interimTranscript, setInterimTranscript] = useState('');
   const [compactMode, setCompactMode] = useState(false);
+  const [showCheckpointDrawer, setShowCheckpointDrawer] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const t = translations[language];
 
@@ -142,6 +170,17 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           <div className="flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-100">
             <Sparkles size={18} className="text-violet-500" />
             <span>{t.aiCompanion}</span>
+            {tokenUsage > 0 && maxTokens > 0 && (
+              <div className="ml-2">
+                <TokenUsageIndicator
+                  promptTokens={tokenUsage}
+                  completionTokens={0}
+                  totalTokens={tokenUsage}
+                  limit={maxTokens}
+                  showDetails={false}
+                />
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-1">
             <button
@@ -151,15 +190,22 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             >
               {compactMode ? <Maximize2 size={16} /> : <Minimize2 size={16} />}
             </button>
-            {onCompactChat && (
-              <button
-                onClick={onCompactChat}
-                className={`p-1 transition-colors mr-1 ${messages.length > 3 ? 'text-slate-400 hover:text-cyan-500' : 'text-slate-300 dark:text-slate-600 cursor-not-allowed'}`}
-                title={messages.length > 3 ? "Compact Context (Summarize History)" : "Compact Context (Requires > 3 messages)"}
-                disabled={aiState.isThinking || messages.length <= 3}
-              >
-                <Archive size={18} />
-              </button>
+            {(onCompactChat || onPruneChat || onTruncateChat) && messages.length > 3 && !aiState.isThinking && (
+              <CompactActionMenu
+                onCompact={onCompactChat || (() => {})}
+                onPrune={onPruneChat}
+                onTruncate={onTruncateChat}
+                tokenUsage={tokenUsage}
+                maxTokens={maxTokens}
+              />
+            )}
+            {(onCreateCheckpoint || onRestoreCheckpoint || onDeleteCheckpoint) && (
+              <CheckpointButton
+                onClick={() => setShowCheckpointDrawer(true)}
+                checkpointCount={checkpoints.length}
+                disabled={aiState.isThinking}
+                size="sm"
+              />
             )}
             <button
               onClick={onClearChat}
@@ -510,6 +556,15 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             )}
           </form>
         </div>
+
+        <CheckpointDrawer
+          isOpen={showCheckpointDrawer}
+          onClose={() => setShowCheckpointDrawer(false)}
+          checkpoints={checkpoints}
+          onRestore={onRestoreCheckpoint || (async () => {})}
+          onDelete={onDeleteCheckpoint || (async () => {})}
+          onCreate={onCreateCheckpoint || (async () => {})}
+        />
       </div>
     </div>
   );
