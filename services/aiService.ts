@@ -276,14 +276,21 @@ export class VirtualMCPClient {
 export class RealMCPClient {
   private isAvailable: boolean = false;
   private tools: MCPTool[] = [];
-  private maxRetries = 3;
-  private retryDelayMs = 500;
+  private maxRetries = 8; // 增加重试次数，npx 首次运行可能需要较长时间
+  private baseDelayMs = 1000; // 基础延迟 1 秒
+  private static toolsCache: MCPTool[] | null = null; // 工具缓存，避免重复发现
+  private static lastDiscoveryTime: number = 0;
+  private static discoveryInProgress: boolean = false;
 
   constructor(configStr: string) {
     this.isAvailable = mcpService.isAvailable();
     if (this.isAvailable) {
       console.log('[RealMCP] Using Electron MCP client');
-      // 配置加载将在 connect() 中进行
+      // 如果有缓存的工具，直接使用
+      if (RealMCPClient.toolsCache && RealMCPClient.toolsCache.length > 0) {
+        this.tools = RealMCPClient.toolsCache;
+        console.log(`[RealMCP] Using cached tools: ${this.tools.length} tools available`);
+      }
     } else {
       console.warn('[RealMCP] Not available, falling back to VirtualMCPClient');
     }
@@ -295,42 +302,77 @@ export class RealMCPClient {
       return;
     }
 
-    // 使用重试机制确保工具映射表已就绪
+    // 如果有最近发现的缓存工具（5分钟内），直接使用
+    const cacheAge = Date.now() - RealMCPClient.lastDiscoveryTime;
+    if (RealMCPClient.toolsCache && RealMCPClient.toolsCache.length > 0 && cacheAge < 300000) {
+      this.tools = RealMCPClient.toolsCache;
+      console.log(`[RealMCP] Using cached tools (${Math.round(cacheAge / 1000)}s old): ${this.tools.length} tools`);
+      return;
+    }
+
+    // 避免并发发现
+    if (RealMCPClient.discoveryInProgress) {
+      console.log('[RealMCP] Tool discovery already in progress, waiting...');
+      // 等待最多 30 秒
+      for (let i = 0; i < 30; i++) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        if (!RealMCPClient.discoveryInProgress && RealMCPClient.toolsCache) {
+          this.tools = RealMCPClient.toolsCache;
+          return;
+        }
+      }
+    }
+
+    RealMCPClient.discoveryInProgress = true;
+
+    // 使用指数退避重试机制
     for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
       try {
-        console.log(`[RealMCP] Attempting to connect (attempt ${attempt}/${this.maxRetries})`);
+        // 指数退避: 1s, 2s, 4s, 8s, 8s, 8s, 8s, 8s (最大 8 秒)
+        const delay = Math.min(this.baseDelayMs * Math.pow(2, attempt - 1), 8000);
+
+        console.log(`[RealMCP] Attempting to connect (attempt ${attempt}/${this.maxRetries}, next delay: ${delay}ms)`);
 
         // 获取工具列表
         this.tools = await mcpService.getTools();
 
         if (this.tools.length > 0) {
-          console.log(`[RealMCP] Connected successfully, discovered ${this.tools.length} tools:`,
+          console.log(`[RealMCP] ✓ Connected successfully, discovered ${this.tools.length} MCP tools:`,
             this.tools.map(t => t.name).join(', ')
           );
+          // 更新缓存
+          RealMCPClient.toolsCache = this.tools;
+          RealMCPClient.lastDiscoveryTime = Date.now();
+          RealMCPClient.discoveryInProgress = false;
           return;
         } else {
-          console.warn(`[RealMCP] Connection attempt ${attempt}: No tools available yet`);
+          console.warn(`[RealMCP] Connection attempt ${attempt}: No MCP tools available yet (npx may still be downloading)`);
 
           if (attempt < this.maxRetries) {
-            // 等待后重试
-            await new Promise(resolve => setTimeout(resolve, this.retryDelayMs * attempt));
+            await new Promise(resolve => setTimeout(resolve, delay));
           }
         }
       } catch (error) {
         console.error(`[RealMCP] Connection attempt ${attempt} failed:`, error);
 
         if (attempt < this.maxRetries) {
-          await new Promise(resolve => setTimeout(resolve, this.retryDelayMs * attempt));
+          const delay = Math.min(this.baseDelayMs * Math.pow(2, attempt - 1), 8000);
+          await new Promise(resolve => setTimeout(resolve, delay));
         } else {
           this.isAvailable = false;
+          RealMCPClient.discoveryInProgress = false;
           throw error;
         }
       }
     }
 
-    // 如果所有重试都失败
+    RealMCPClient.discoveryInProgress = false;
+
+    // 如果所有重试都失败，但不阻塞 - 后台继续尝试
     if (this.tools.length === 0) {
-      console.warn('[RealMCP] Failed to discover tools after all retries. MCP may not be ready.');
+      console.warn('[RealMCP] ⚠ Failed to discover MCP tools after all retries. Will use internal tools only.');
+      console.log('[RealMCP] Starting background tool discovery...');
+      this.startBackgroundDiscovery();
       // 不设置 isAvailable = false，允许后续调用时再次尝试
     }
   }
@@ -395,6 +437,40 @@ export class RealMCPClient {
         error: error instanceof Error ? error.message : 'Unknown error'
       };
     }
+  }
+
+  /**
+   * 后台持续尝试发现工具
+   * 当初始连接失败时启动，每 10 秒尝试一次
+   */
+  private startBackgroundDiscovery() {
+    const backgroundInterval = setInterval(async () => {
+      if (RealMCPClient.toolsCache && RealMCPClient.toolsCache.length > 0) {
+        // 已经发现工具，停止后台发现
+        clearInterval(backgroundInterval);
+        return;
+      }
+
+      try {
+        console.log('[RealMCP] Background discovery attempt...');
+        const tools = await mcpService.getTools();
+        if (tools.length > 0) {
+          this.tools = tools;
+          RealMCPClient.toolsCache = tools;
+          RealMCPClient.lastDiscoveryTime = Date.now();
+          console.log(`[RealMCP] ✓ Background discovery succeeded: ${tools.length} tools`);
+          clearInterval(backgroundInterval);
+        }
+      } catch (error) {
+        console.warn('[RealMCP] Background discovery failed:', error);
+      }
+    }, 10000); // 每 10 秒尝试一次
+
+    // 5 分钟后停止后台发现
+    setTimeout(() => {
+      clearInterval(backgroundInterval);
+      console.log('[RealMCP] Background discovery stopped after 5 minutes');
+    }, 300000);
   }
 
   /**
@@ -1239,10 +1315,58 @@ export async function* generateAIResponseStream(
   );
 
   const mcpPromptAddition = mcpToolDescriptions
-    ? `\n\n## Available MCP Tools\nYou have access to the following MCP tools. When you need to use a tool, output a tool call in this exact JSON format:\n\`\`\`tool_call\n{"tool": "tool_name", "arguments": {...}}\n\`\`\`\n\nAvailable tools:\n${mcpToolDescriptions}${toolGuide}`
+    ? `\n\n## Your Available Tools\n\nYou are equipped with ${rawTools.length} external tools that you CAN and SHOULD use when appropriate. These tools are already connected and ready to use.\n\nWhen you need to use a tool, output a tool call in this exact JSON format:\n\`\`\`tool_call\n{"tool": "tool_name", "arguments": {...}}\n\`\`\`\n\n**Available Tools:**\n${mcpToolDescriptions}${toolGuide}\n\n**Important:** You HAVE these tools - they are not hypothetical. Do NOT say "I don't have access to..." for tools listed above.`
     : '';
 
-  const finalSystemInstruction = (systemInstruction || "") + mcpPromptAddition + langInstruction;
+  const toolDistinctionGuide = config.language === 'zh'
+    ? `
+
+---
+
+**⚠️ 重要：工具使用规则**
+
+你有两类不同的工具：
+
+1. **应用内文件工具**（create_file, update_file, read_file, search_files, delete_file）：
+   - 只能操作应用内部的笔记文件
+   - 当前可用文件：用户的 Markdown 笔记
+   - 用于：创建/编辑用户笔记
+
+2. **MCP 外部工具**（navigate_page, take_snapshot, evaluate_script 等）：
+   - 操作外部浏览器、网页、外部文件系统
+   - 与应用内文件完全隔离
+   - 用于：网页浏览、数据抓取
+
+**规则**：
+- 不要尝试用 read_file 读取通过 MCP 工具获取的数据
+- 如果需要保存抓取的数据，使用 create_file 创建新笔记
+- MCP 工具的输出已经在对话中，不需要再次"读取"
+`
+    : `
+
+---
+
+**⚠️ Important: Tool Usage Rules**
+
+You have TWO types of tools:
+
+1. **App Internal File Tools** (create_file, update_file, read_file, search_files, delete_file):
+   - Only operate on internal note files within the app
+   - Available files: User's Markdown notes
+   - Use for: Creating/editing user notes
+
+2. **MCP External Tools** (navigate_page, take_snapshot, evaluate_script, etc.):
+   - Operate on external browser, webpages, external filesystem
+   - Completely isolated from app files
+   - Use for: Web browsing, data scraping
+
+**Rules**:
+- Do NOT use read_file to read data obtained via MCP tools
+- If you need to save scraped data, use create_file to create a new note
+- MCP tool outputs are already in the conversation, no need to "read" again
+`;
+
+  const finalSystemInstruction = (systemInstruction || "") + mcpPromptAddition + toolDistinctionGuide + langInstruction;
 
   // Route to appropriate streaming function
   if (config.provider === 'gemini') {
@@ -1316,10 +1440,58 @@ export const generateAIResponse = async (
   );
 
   const mcpPromptAddition = mcpToolDescriptions
-    ? `\n\n## Available MCP Tools\nYou have access to the following MCP tools:\n${mcpToolDescriptions}${toolGuide2}\n\nUse function calling to invoke these tools.`
+    ? `\n\n## Your Available Tools\n\nYou are equipped with ${rawTools2.length} external tools that you CAN and SHOULD use when appropriate. These tools are already connected and ready to use.\n\n**Available Tools:**\n${mcpToolDescriptions}${toolGuide2}\n\n**Important:**\n- You HAVE these tools - they are not hypothetical. When a task requires browser control, web navigation, or other tool capabilities, USE them.\n- Simply call the tool by name with the required parameters. The system will execute it and return results.\n- Do NOT say "I don't have access to..." for tools listed above - you DO have access.`
     : '';
 
-  const finalSystemInstruction = (systemInstruction || "") + mcpPromptAddition + langInstruction;
+  const toolDistinctionGuide = config.language === 'zh'
+    ? `
+
+---
+
+**⚠️ 重要：工具使用规则**
+
+你有两类不同的工具：
+
+1. **应用内文件工具**（create_file, update_file, read_file, search_files, delete_file）：
+   - 只能操作应用内部的笔记文件
+   - 当前可用文件：用户的 Markdown 笔记
+   - 用于：创建/编辑用户笔记
+
+2. **MCP 外部工具**（navigate_page, take_snapshot, evaluate_script 等）：
+   - 操作外部浏览器、网页、外部文件系统
+   - 与应用内文件完全隔离
+   - 用于：网页浏览、数据抓取
+
+**规则**：
+- 不要尝试用 read_file 读取通过 MCP 工具获取的数据
+- 如果需要保存抓取的数据，使用 create_file 创建新笔记
+- MCP 工具的输出已经在对话中，不需要再次"读取"
+`
+    : `
+
+---
+
+**⚠️ Important: Tool Usage Rules**
+
+You have TWO types of tools:
+
+1. **App Internal File Tools** (create_file, update_file, read_file, search_files, delete_file):
+   - Only operate on internal note files within the app
+   - Available files: User's Markdown notes
+   - Use for: Creating/editing user notes
+
+2. **MCP External Tools** (navigate_page, take_snapshot, evaluate_script, etc.):
+   - Operate on external browser, webpages, external filesystem
+   - Completely isolated from app files
+   - Use for: Web browsing, data scraping
+
+**Rules**:
+- Do NOT use read_file to read data obtained via MCP tools
+- If you need to save scraped data, use create_file to create a new note
+- MCP tool outputs are already in the conversation, no need to "read" again
+`;
+
+  const finalSystemInstruction = (systemInstruction || "") + mcpPromptAddition + toolDistinctionGuide + langInstruction;
 
   // Create Unified Tool Callback
   // IMPORTANT: 所有工具调用都必须经过 toolsCallback 以便 UI 能显示实时反馈
@@ -1988,11 +2160,82 @@ const callAnthropic = async (
       console.log(`[ContextManager] ${action} saved ~${saved_tokens} tokens`);
     }
 
+    /**
+     * 构建符合 Anthropic API 要求的消息数组
+     * 规则：
+     * 1. system 角色不能在 messages 中（使用顶层 system 参数）
+     * 2. 消息必须严格交替：user -> assistant -> user -> assistant...
+     * 3. 第一条消息必须是 user
+     * 4. tool 角色需要转换为 user 角色的 tool_result，并合并到上一个 user 消息
+     */
     const buildApiMessages = (msgs: ApiMessage[]): any[] => {
-      return msgs.map(msg => ({
-        role: msg.role === 'tool' ? 'user' : msg.role,
-        content: msg.content,
-      }));
+      // 1. 过滤掉 system 消息
+      const filtered = msgs.filter(msg => msg.role !== 'system');
+
+      if (filtered.length === 0) {
+        return [];
+      }
+
+      const result: any[] = [];
+      let lastRole: string | null = null;
+
+      for (const msg of filtered) {
+        let role = msg.role;
+        let content = msg.content;
+
+        // tool 角色转换为 user（工具调用结果）
+        if (role === 'tool') {
+          role = 'user';
+          // 如果上一条也是 user，合并内容
+          if (lastRole === 'user' && result.length > 0) {
+            const lastMsg = result[result.length - 1];
+            lastMsg.content = lastMsg.content + '\n\n[Tool Result]:\n' + content;
+            continue;
+          }
+        }
+
+        // 检查是否会产生连续相同角色
+        if (role === lastRole) {
+          // 合并连续相同角色的消息
+          if (result.length > 0) {
+            const lastMsg = result[result.length - 1];
+            lastMsg.content = lastMsg.content + '\n\n' + content;
+            continue;
+          }
+        }
+
+        // 确保第一条消息是 user
+        if (result.length === 0 && role === 'assistant') {
+          // 插入一个占位 user 消息
+          result.push({ role: 'user', content: '[继续之前的对话]' });
+        }
+
+        result.push({ role, content });
+        lastRole = role;
+      }
+
+      // 最终验证：确保消息交替
+      const validated: any[] = [];
+      for (let i = 0; i < result.length; i++) {
+        const msg = result[i];
+        if (i === 0) {
+          // 第一条必须是 user
+          if (msg.role !== 'user') {
+            validated.push({ role: 'user', content: '[对话开始]' });
+          }
+          validated.push(msg);
+        } else {
+          const lastValidated = validated[validated.length - 1];
+          if (msg.role === lastValidated.role) {
+            // 合并连续相同角色
+            lastValidated.content = lastValidated.content + '\n\n' + msg.content;
+          } else {
+            validated.push(msg);
+          }
+        }
+      }
+
+      return validated;
     };
 
     let messagesToSend = buildApiMessages(managedMessages);
@@ -2010,6 +2253,9 @@ const callAnthropic = async (
 
       for (let i = managedMessages.length - 1; i >= 0; i--) {
         const msg = managedMessages[i];
+        // 跳过 system 消息
+        if (msg.role === 'system') continue;
+
         const msgTokens = estimateTokens(msg.content);
 
         if (currentTokens + msgTokens > criticalLimit) {
@@ -2028,7 +2274,19 @@ const callAnthropic = async (
       console.warn(`[Anthropic] 紧急截断后保留 ${truncatedMessages.length} 条消息`);
     }
 
-    messagesToSend.push({ role: 'user', content: prompt });
+    // 检查最后一条消息是否是 assistant，如果是则直接添加 user 消息
+    // 如果是 user，则需要确保不会产生连续 user
+    if (messagesToSend.length > 0) {
+      const lastMsg = messagesToSend[messagesToSend.length - 1];
+      if (lastMsg.role === 'user') {
+        // 合并到最后一条 user 消息
+        lastMsg.content = lastMsg.content + '\n\n' + prompt;
+      } else {
+        messagesToSend.push({ role: 'user', content: prompt });
+      }
+    } else {
+      messagesToSend.push({ role: 'user', content: prompt });
+    }
 
     // Build tools array for Anthropic format
     let tools: any[] | undefined = undefined;
@@ -2119,6 +2377,80 @@ const callAnthropic = async (
         tools = [...baseToolsAnthropic, ...mappedDynamic];
     }
 
+    // 发送前验证消息格式
+    const validateMessages = (msgs: any[]): { valid: boolean; error?: string } => {
+      if (!msgs || msgs.length === 0) {
+        return { valid: false, error: '消息数组为空' };
+      }
+
+      // 检查第一条消息必须是 user
+      if (msgs[0].role !== 'user') {
+        return { valid: false, error: `第一条消息必须是 user，当前是 ${msgs[0].role}` };
+      }
+
+      // 检查消息交替
+      for (let i = 1; i < msgs.length; i++) {
+        if (msgs[i].role === msgs[i - 1].role) {
+          return {
+            valid: false,
+            error: `消息 ${i} 和 ${i - 1} 角色相同 (${msgs[i].role})，违反交替规则`
+          };
+        }
+        // 检查角色有效性
+        if (!['user', 'assistant'].includes(msgs[i].role)) {
+          return {
+            valid: false,
+            error: `消息 ${i} 角色无效: ${msgs[i].role}，只允许 user 或 assistant`
+          };
+        }
+      }
+
+      return { valid: true };
+    };
+
+    // 验证并修复消息
+    const validation = validateMessages(messagesToSend);
+    if (!validation.valid) {
+      console.warn(`[Anthropic] 消息验证失败: ${validation.error}`);
+      console.warn('[Anthropic] 当前消息结构:', messagesToSend.map((m, i) => `${i}: ${m.role}`).join(' -> '));
+
+      // 尝试修复：重新构建干净的消息数组
+      const fixedMessages: any[] = [];
+      for (const msg of messagesToSend) {
+        if (!['user', 'assistant'].includes(msg.role)) continue;
+
+        if (fixedMessages.length === 0) {
+          if (msg.role === 'user') {
+            fixedMessages.push(msg);
+          } else {
+            fixedMessages.push({ role: 'user', content: '[对话开始]' });
+            fixedMessages.push(msg);
+          }
+        } else {
+          const lastRole = fixedMessages[fixedMessages.length - 1].role;
+          if (msg.role === lastRole) {
+            // 合并相同角色
+            fixedMessages[fixedMessages.length - 1].content += '\n\n' + msg.content;
+          } else {
+            fixedMessages.push(msg);
+          }
+        }
+      }
+
+      if (fixedMessages.length === 0) {
+        fixedMessages.push({ role: 'user', content: prompt });
+      }
+
+      messagesToSend = fixedMessages;
+      console.log('[Anthropic] 消息已修复，新结构:', messagesToSend.map((m, i) => `${i}: ${m.role}`).join(' -> '));
+    }
+
+    // 调试日志
+    console.log('[Anthropic] 准备发送请求:');
+    console.log('[Anthropic]   - 消息数量:', messagesToSend.length);
+    console.log('[Anthropic]   - 消息角色序列:', messagesToSend.map(m => m.role).join(' -> '));
+    console.log('[Anthropic]   - 工具数量:', tools?.length || 0);
+
     let iterations = 0;
     const TOTAL_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes total timeout
     const SINGLE_ROUND_TIMEOUT_MS = 60 * 1000; // 60 seconds per round
@@ -2166,11 +2498,26 @@ const callAnthropic = async (
           if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
             const errorMessage = errorData.error?.message || response.statusText;
-            
+
+            // 详细错误日志
+            console.error('[Anthropic] API 错误:', response.status, errorMessage);
+            console.error('[Anthropic] 请求体预览:', {
+              model: requestBody.model,
+              max_tokens: requestBody.max_tokens,
+              messages_count: requestBody.messages?.length,
+              messages_roles: requestBody.messages?.map((m: any) => m.role),
+              has_system: !!requestBody.system,
+              tools_count: requestBody.tools?.length
+            });
+
             if (response.status === 400 && errorMessage.includes('context window exceeds limit')) {
               throw new Error(`上下文窗口超出限制 (${MODEL_LIMIT} tokens)。请尝试清除对话历史或减少消息长度。当前消息可能过长。`);
             }
-            
+
+            if (response.status === 400 && errorMessage.includes('invalid chat setting')) {
+              throw new Error(`消息格式错误: ${errorMessage}。当前消息序列: ${messagesToSend.map(m => m.role).join(' -> ')}`);
+            }
+
             throw new Error(`Anthropic API Error: ${response.status} ${errorMessage}`);
           }
 

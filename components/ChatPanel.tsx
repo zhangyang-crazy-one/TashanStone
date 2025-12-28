@@ -7,7 +7,7 @@ import { translations, Language } from '../utils/translations';
 import { RAGResultsCard } from './RAGResultsCard';
 import { ToolCallCard, StreamToolCard, parseToolCallsFromContent, ThinkingCard } from './ToolCallCard';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
-import { TokenUsageIndicator, CompactActionMenu, CheckpointDrawer, CheckpointButton } from './context';
+import { CheckpointDrawer } from './context';
 
 interface Checkpoint {
   id: string;
@@ -161,61 +161,92 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
       `}
     >
       <div className="flex flex-col h-full">
-        {/* Header */}
-        <div className="h-16 flex items-center justify-between px-4 border-b border-paper-200 dark:border-cyber-700">
-          <div className="flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-100">
-            <Sparkles size={18} className="text-violet-500" />
-            <span>{t.aiCompanion}</span>
-            {tokenUsage > 0 && maxTokens > 0 && (
-              <div className="ml-2">
-                <TokenUsageIndicator
-                  promptTokens={tokenUsage}
-                  completionTokens={0}
-                  totalTokens={tokenUsage}
-                  limit={maxTokens}
-                  showDetails={false}
-                />
+        {/* Header - Compact Clean Design */}
+        <div className="relative bg-gradient-to-r from-violet-500/5 via-transparent to-cyan-500/5 dark:from-violet-600/10 dark:to-cyan-600/10 border-b border-violet-200/30 dark:border-violet-700/30">
+          <div className="h-12 flex items-center justify-between px-3">
+            {/* Left: Icon + Title + Token */}
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-7 h-7 bg-gradient-to-br from-violet-500 to-cyan-500 rounded-lg flex items-center justify-center shrink-0 shadow-sm shadow-violet-500/20">
+                <Sparkles size={14} className="text-white" />
               </div>
-            )}
-          </div>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setCompactMode(!compactMode)}
-              className="p-1 text-slate-400 hover:text-cyan-500 transition-colors mr-1"
-              title={compactMode ? t.expandView : t.compactView}
-            >
-              {compactMode ? <Maximize2 size={16} /> : <Minimize2 size={16} />}
-            </button>
-            {(onCompactChat || onPruneChat || onTruncateChat) && messages.length > 3 && !aiState.isThinking && (
-              <CompactActionMenu
-                onCompact={onCompactChat || (async () => {})}
-                onPrune={onPruneChat}
-                onTruncate={onTruncateChat}
-                tokenUsage={tokenUsage}
-                maxTokens={maxTokens}
-              />
-            )}
-            {(onCreateCheckpoint || onRestoreCheckpoint || onDeleteCheckpoint) && (
-              <CheckpointButton
-                onClick={() => setShowCheckpointDrawer(true)}
-                checkpointCount={checkpoints.length}
-                disabled={aiState.isThinking}
-                size="sm"
-              />
-            )}
-            <button
-              onClick={onClearChat}
-              className="p-1 text-slate-400 hover:text-red-500 transition-colors mr-1"
-              title={t.clearHistory}
-            >
-              <Trash2 size={18} />
-            </button>
-            <button
-              onClick={onClose}
-              className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
-            >
-              <X size={20} />
-            </button>
+              <span className="text-sm font-semibold text-violet-600 dark:text-violet-400 truncate">
+                {t.aiCompanion}
+              </span>
+              {tokenUsage > 0 && maxTokens > 0 && (
+                <div className="flex items-center gap-1 shrink-0">
+                  <div className="h-1.5 w-12 bg-slate-200/50 dark:bg-slate-700/50 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        tokenUsage / maxTokens > 0.9 ? 'bg-red-500' :
+                        tokenUsage / maxTokens > 0.7 ? 'bg-amber-500' :
+                        'bg-emerald-500'
+                      }`}
+                      style={{ width: `${Math.min((tokenUsage / maxTokens) * 100, 100)}%` }}
+                    />
+                  </div>
+                  <span className={`text-[10px] font-medium ${
+                    tokenUsage / maxTokens > 0.9 ? 'text-red-500' :
+                    tokenUsage / maxTokens > 0.7 ? 'text-amber-500' :
+                    'text-emerald-500'
+                  }`}>
+                    {Math.round((tokenUsage / maxTokens) * 100)}%
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Right: Action Buttons */}
+            <div className="flex items-center gap-1 shrink-0">
+              {/* Compact Context Button */}
+              {(onCompactChat || onPruneChat || onTruncateChat) && messages.length > 3 && !aiState.isThinking && (
+                <button
+                  onClick={onCompactChat}
+                  className="p-1.5 rounded-md text-violet-400 hover:text-violet-500 hover:bg-violet-100/50 dark:hover:bg-violet-900/30 transition-all"
+                  title={language === 'zh' ? '压缩上下文' : 'Compact Context'}
+                >
+                  <Archive size={15} />
+                </button>
+              )}
+
+              {/* Checkpoint Button */}
+              {(onCreateCheckpoint || onRestoreCheckpoint || onDeleteCheckpoint) && (
+                <button
+                  onClick={() => setShowCheckpointDrawer(true)}
+                  disabled={aiState.isThinking}
+                  className="p-1.5 rounded-md text-cyan-400 hover:text-cyan-500 hover:bg-cyan-100/50 dark:hover:bg-cyan-900/30 transition-all disabled:opacity-50"
+                  title={language === 'zh' ? '检查点' : 'Checkpoints'}
+                >
+                  <Clock size={15} />
+                </button>
+              )}
+
+              {/* Compact Mode Toggle */}
+              <button
+                onClick={() => setCompactMode(!compactMode)}
+                className="p-1.5 rounded-md text-slate-400 hover:text-violet-500 hover:bg-violet-100/50 dark:hover:bg-violet-900/30 transition-all"
+                title={compactMode ? t.expandView : t.compactView}
+              >
+                {compactMode ? <Maximize2 size={15} /> : <Minimize2 size={15} />}
+              </button>
+
+              {/* Clear */}
+              <button
+                onClick={onClearChat}
+                className="p-1.5 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-100/50 dark:hover:bg-red-900/30 transition-all"
+                title={t.clearHistory}
+              >
+                <Trash2 size={15} />
+              </button>
+
+              {/* Close */}
+              <button
+                onClick={onClose}
+                className="p-1.5 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100/50 dark:hover:bg-slate-700/50 transition-all"
+                title={language === 'zh' ? '关闭' : 'Close'}
+              >
+                <X size={15} />
+              </button>
+            </div>
           </div>
         </div>
 

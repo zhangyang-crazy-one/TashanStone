@@ -170,7 +170,10 @@
       "Bash(powershell -NoProfile -Command:*)",
       "mcp__chrome-devtools__list_network_requests",
       "mcp__chrome-devtools__get_network_request",
-      "Bash(cmd /c \"taskkill /F /PID 25116\")"
+      "Bash(cmd /c \"taskkill /F /PID 25116\")",
+      "Bash(cmd /c \"taskkill /F /PID 33216\")",
+      "Skill(mcp-tools)",
+      "Skill(react-frontend)"
     ],
     "deny": [],
     "ask": []
