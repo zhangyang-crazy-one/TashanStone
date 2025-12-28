@@ -491,5 +491,82 @@ export const migrations: Migration[] = [
             `);
             logger.warn('Note layouts table dropped');
         }
+    },
+    // Version 9: 上下文工程 - 消息压缩标记、检查点、中期记忆
+    {
+        version: 9,
+        description: 'Add context engineering tables: checkpoints, compacted_sessions, message compression markers',
+        up: (db) => {
+            db.exec(`
+                -- 扩展 chat_messages 表，添加压缩和截断标记字段
+                ALTER TABLE chat_messages ADD COLUMN is_summary INTEGER DEFAULT 0;
+                ALTER TABLE chat_messages ADD COLUMN condense_id TEXT;
+                ALTER TABLE chat_messages ADD COLUMN condense_parent TEXT;
+                ALTER TABLE chat_messages ADD COLUMN is_truncation_marker INTEGER DEFAULT 0;
+                ALTER TABLE chat_messages ADD COLUMN truncation_id TEXT;
+                ALTER TABLE chat_messages ADD COLUMN truncation_parent TEXT;
+                ALTER TABLE chat_messages ADD COLUMN checkpoint_id TEXT;
+                ALTER TABLE chat_messages ADD COLUMN token_count INTEGER;
+
+                -- 检查点表
+                CREATE TABLE IF NOT EXISTS chat_checkpoints (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    message_count INTEGER NOT NULL,
+                    token_count INTEGER NOT NULL,
+                    summary TEXT NOT NULL,
+                    messages_snapshot TEXT NOT NULL,
+                    created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000)
+                );
+
+                -- 索引: 按会话ID查询检查点
+                CREATE INDEX IF NOT EXISTS idx_checkpoints_session ON chat_checkpoints(session_id);
+                -- 索引: 按创建时间查询
+                CREATE INDEX IF NOT EXISTS idx_checkpoints_created ON chat_checkpoints(created_at DESC);
+
+                -- 中期记忆摘要表
+                CREATE TABLE IF NOT EXISTS compacted_sessions (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    summary TEXT NOT NULL,
+                    key_topics TEXT,
+                    decisions TEXT,
+                    message_start INTEGER NOT NULL,
+                    message_end INTEGER NOT NULL,
+                    created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000)
+                );
+
+                -- 索引: 按会话ID查询
+                CREATE INDEX IF NOT EXISTS idx_compacted_session ON compacted_sessions(session_id);
+                -- 索引: 按创建时间查询
+                CREATE INDEX IF NOT EXISTS idx_compacted_created ON compacted_sessions(created_at DESC);
+            `);
+            logger.info('Context engineering tables created successfully');
+        },
+        down: (db) => {
+            db.exec(`
+                -- 删除中期记忆摘要表
+                DROP INDEX IF EXISTS idx_compacted_created;
+                DROP INDEX IF EXISTS idx_compacted_session;
+                DROP TABLE IF EXISTS compacted_sessions;
+
+                -- 删除检查点表
+                DROP INDEX IF EXISTS idx_checkpoints_created;
+                DROP INDEX IF EXISTS idx_checkpoints_session;
+                DROP TABLE IF EXISTS chat_checkpoints;
+
+                -- 移除 chat_messages 的压缩标记列
+                ALTER TABLE chat_messages DROP COLUMN token_count;
+                ALTER TABLE chat_messages DROP COLUMN checkpoint_id;
+                ALTER TABLE chat_messages DROP COLUMN truncation_parent;
+                ALTER TABLE chat_messages DROP COLUMN truncation_id;
+                ALTER TABLE chat_messages DROP COLUMN is_truncation_marker;
+                ALTER TABLE chat_messages DROP COLUMN condense_parent;
+                ALTER TABLE chat_messages DROP COLUMN condense_id;
+                ALTER TABLE chat_messages DROP COLUMN is_summary;
+            `);
+            logger.warn('Context engineering tables and columns dropped');
+        }
     }
 ];

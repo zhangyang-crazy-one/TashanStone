@@ -10,6 +10,7 @@ import {
 } from './types';
 import { TokenBudget } from './token-budget';
 import { Compaction } from './compaction';
+import { CheckpointStorage } from './checkpoint';
 
 export interface ManageResult {
   messages: ApiMessage[];
@@ -26,6 +27,8 @@ export class ContextManager {
   private messages: ApiMessage[] = [];
   private sessionId: string;
   private lastCheckpointIndex: number = 0;
+  private checkpointStorage: CheckpointStorage | null = null;
+  private autoSaveEnabled: boolean = false;
   private onCheckpointCreated?: (checkpoint: Checkpoint) => void;
   private onContextUpdated?: (messages: ApiMessage[]) => void;
 
@@ -33,6 +36,8 @@ export class ContextManager {
     sessionId?: string,
     config?: Partial<ContextConfig>,
     options?: {
+      checkpointStorage?: CheckpointStorage;
+      autoSave?: boolean;
       onCheckpointCreated?: (checkpoint: Checkpoint) => void;
       onContextUpdated?: (messages: ApiMessage[]) => void;
     }
@@ -41,8 +46,20 @@ export class ContextManager {
     this.config = { ...DEFAULT_CONTEXT_CONFIG, ...config };
     this.tokenBudget = new TokenBudget(this.config);
     this.compaction = new Compaction(this.tokenBudget);
+    this.checkpointStorage = options?.checkpointStorage ?? null;
+    this.autoSaveEnabled = options?.autoSave ?? false;
     this.onCheckpointCreated = options?.onCheckpointCreated;
     this.onContextUpdated = options?.onContextUpdated;
+  }
+
+  enablePersistence(storage: CheckpointStorage, autoSave: boolean = true): void {
+    this.checkpointStorage = storage;
+    this.autoSaveEnabled = autoSave;
+  }
+
+  disablePersistence(): void {
+    this.checkpointStorage = null;
+    this.autoSaveEnabled = false;
   }
 
   setConfig(config: Partial<ContextConfig>): void {
@@ -65,11 +82,13 @@ export class ContextManager {
   addMessage(message: ApiMessage): void {
     this.messages.push(message);
     this.onContextUpdated?.(this.messages);
+    this.checkAutoSave();
   }
 
   addMessages(newMessages: ApiMessage[]): void {
     this.messages.push(...newMessages);
     this.onContextUpdated?.(this.messages);
+    this.checkAutoSave();
   }
 
   getMessages(): ApiMessage[] {
@@ -174,6 +193,7 @@ export class ContextManager {
     const result = await this.compaction.prune(this.messages);
     this.messages = result.pruned_messages;
     this.onContextUpdated?.(this.messages);
+    this.checkAutoSave();
     return result;
   }
 
@@ -188,6 +208,7 @@ export class ContextManager {
     );
     this.messages = result.retained_messages;
     this.onContextUpdated?.(this.messages);
+    this.checkAutoSave();
     return result;
   }
 
@@ -196,6 +217,7 @@ export class ContextManager {
     const result = await this.compaction.truncate(this.messages, target);
     this.messages = result.truncated_messages;
     this.onContextUpdated?.(this.messages);
+    this.checkAutoSave();
     return result;
   }
 
@@ -216,6 +238,10 @@ export class ContextManager {
     this.lastCheckpointIndex = messageCount;
     this.onCheckpointCreated?.(checkpoint);
 
+    if (this.checkpointStorage) {
+      await this.checkpointStorage.saveCheckpoint(checkpoint, this.messages);
+    }
+
     return checkpoint;
   }
 
@@ -232,12 +258,39 @@ export class ContextManager {
   }
 
   async restoreFromCheckpoint(
-    checkpoint: Checkpoint,
-    storedMessages: ApiMessage[]
-  ): Promise<void> {
-    this.messages = storedMessages;
-    this.sessionId = checkpoint.session_id;
+    checkpointId: string
+  ): Promise<boolean> {
+    if (!this.checkpointStorage) {
+      console.warn('[ContextManager] No checkpoint storage available');
+      return false;
+    }
+
+    const result = await this.checkpointStorage.getCheckpoint(checkpointId);
+    if (!result) {
+      console.warn('[ContextManager] Checkpoint not found:', checkpointId);
+      return false;
+    }
+
+    this.messages = result.messages;
+    this.sessionId = result.checkpoint.session_id;
+    this.lastCheckpointIndex = 0;
     this.onContextUpdated?.(this.messages);
+
+    return true;
+  }
+
+  async listCheckpoints(): Promise<Checkpoint[]> {
+    if (!this.checkpointStorage) {
+      return [];
+    }
+    return this.checkpointStorage.listCheckpoints(this.sessionId);
+  }
+
+  async deleteCheckpoint(checkpointId: string): Promise<boolean> {
+    if (!this.checkpointStorage) {
+      return false;
+    }
+    return this.checkpointStorage.deleteCheckpoint(checkpointId);
   }
 
   cleanupOrphanedTags(): ApiMessage[] {
@@ -265,12 +318,22 @@ export class ContextManager {
     const sinceLastCheckpoint = this.messages.length - this.lastCheckpointIndex;
     return sinceLastCheckpoint >= this.config.checkpoint_interval;
   }
+
+  private checkAutoSave(): void {
+    if (this.autoSaveEnabled && this.checkpointStorage && this.shouldCreateCheckpoint()) {
+      this.createCheckpoint('Auto-save').catch(err => {
+        console.error('[ContextManager] Auto-save checkpoint failed:', err);
+      });
+    }
+  }
 }
 
 export function createContextManager(
   sessionId?: string,
   config?: Partial<ContextConfig>,
   options?: {
+    checkpointStorage?: CheckpointStorage;
+    autoSave?: boolean;
     onCheckpointCreated?: (checkpoint: Checkpoint) => void;
     onContextUpdated?: (messages: ApiMessage[]) => void;
   }

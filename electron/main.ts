@@ -7,6 +7,7 @@ import { MigrationManager, migrations } from './database/migrations.js';
 import { registerAllHandlers } from './ipc/index.js';
 import { registerMCPHandlers } from './mcp/handlers.js';
 import { registerLanceDBHandlers } from './ipc/lancedbHandlers.js';
+import { registerContextHandlers } from './ipc/contextHandlers.js';
 import { initLanceDB } from './lancedb/index.js';
 import { mcpManager } from './mcp/index.js';
 import { logger } from './utils/logger.js';
@@ -304,6 +305,7 @@ app.whenReady().then(() => {
     registerAllHandlers();
     registerMCPHandlers();
     registerLanceDBHandlers();
+    registerContextHandlers();
 
     // Window control IPC handlers
     ipcMain.handle('window:minimize', () => {

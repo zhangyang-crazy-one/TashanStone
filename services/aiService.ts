@@ -2718,3 +2718,98 @@ ${conversationText}`;
 
   return { compactedMessages, summary };
 }
+
+// ========================
+// Context Persistence (Phase 2)
+// ========================
+
+interface CheckpointStorage {
+  saveCheckpoint(checkpoint: Checkpoint, messages: ApiMessage[]): Promise<void>;
+  getCheckpoint(checkpointId: string): Promise<{ checkpoint: Checkpoint; messages: ApiMessage[] } | null>;
+  listCheckpoints(sessionId: string): Promise<Checkpoint[]>;
+  deleteCheckpoint(checkpointId: string): Promise<boolean>;
+  saveCompactedSession(session: CompactedSession): Promise<void>;
+  getCompactedSessions(sessionId: string): Promise<CompactedSession[]>;
+}
+
+let globalCheckpointStorage: CheckpointStorage | null = null;
+
+export function setGlobalCheckpointStorage(storage: CheckpointStorage): void {
+  globalCheckpointStorage = storage;
+}
+
+export function getGlobalCheckpointStorage(): CheckpointStorage | null {
+  return globalCheckpointStorage;
+}
+
+export function enableContextPersistence(
+  sessionId: string,
+  autoSave: boolean = true
+): void {
+  const manager = getContextManager(sessionId);
+  if (globalCheckpointStorage) {
+    manager.enablePersistence(globalCheckpointStorage, autoSave);
+  }
+}
+
+export function disableContextPersistence(sessionId: string): void {
+  const manager = sessionContextManagers.get(sessionId);
+  if (manager) {
+    manager.disablePersistence();
+  }
+}
+
+export async function restoreContextFromCheckpoint(
+  sessionId: string,
+  checkpointId: string
+): Promise<boolean> {
+  const manager = getContextManager(sessionId);
+  return manager.restoreFromCheckpoint(checkpointId);
+}
+
+export async function getContextCheckpoints(
+  sessionId: string
+): Promise<Checkpoint[]> {
+  const manager = getContextManager(sessionId);
+  return manager.listCheckpoints();
+}
+
+export async function deleteContextCheckpoint(
+  checkpointId: string
+): Promise<boolean> {
+  const storage = globalCheckpointStorage;
+  if (!storage) return false;
+  return storage.deleteCheckpoint(checkpointId);
+}
+
+export async function saveCompactedSession(
+  sessionId: string,
+  summary: string,
+  keyTopics: string[],
+  decisions: string[],
+  messageStart: number,
+  messageEnd: number
+): Promise<void> {
+  const storage = globalCheckpointStorage;
+  if (!storage) return;
+
+  const session: CompactedSession = {
+    id: `mid-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    session_id: sessionId,
+    summary,
+    key_topics: keyTopics,
+    decisions: decisions,
+    message_range: { start: messageStart, end: messageEnd },
+    created_at: Date.now(),
+  };
+
+  await storage.saveCompactedSession(session);
+}
+
+export async function getCompactedSessions(
+  sessionId: string
+): Promise<CompactedSession[]> {
+  const storage = globalCheckpointStorage;
+  if (!storage) return [];
+  return storage.getCompactedSessions(sessionId);
+}

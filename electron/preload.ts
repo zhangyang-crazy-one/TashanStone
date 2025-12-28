@@ -371,9 +371,41 @@ try {
             ipcRenderer.invoke('lancedb:cleanDuplicateFileNames', fileNameToKeepId),
         getFileMetadata: (): Promise<Record<string, number>> =>
             ipcRenderer.invoke('lancedb:getFileMetadata')
-    },
+        },
 
-    // Menu event listeners
+        // Context Engineering (Phase 2)
+        context: {
+            getMessages: (sessionId: string): Promise<{ success: boolean; messages?: any[]; error?: string }> =>
+                ipcRenderer.invoke('context:getMessages', sessionId),
+            addMessage: (sessionId: string, message: any): Promise<{ success: boolean; error?: string }> =>
+                ipcRenderer.invoke('context:addMessage', sessionId, message),
+            addMessages: (sessionId: string, messages: any[]): Promise<{ success: boolean; error?: string }> =>
+                ipcRenderer.invoke('context:addMessages', sessionId, messages),
+            clear: (sessionId: string): Promise<{ success: boolean; error?: string }> =>
+                ipcRenderer.invoke('context:clear', sessionId),
+            updateMessageCompression: (messageId: string, updates: any): Promise<{ success: boolean; error?: string }> =>
+                ipcRenderer.invoke('context:updateMessageCompression', messageId, updates),
+            markMessagesAsCompacted: (messageIds: string[], summaryId: string): Promise<{ success: boolean; error?: string }> =>
+                ipcRenderer.invoke('context:markMessagesAsCompacted', messageIds, summaryId),
+            createCheckpoint: (sessionId: string, name: string, messages: any[]): Promise<{ success: boolean; checkpoint?: any; error?: string }> =>
+                ipcRenderer.invoke('context:createCheckpoint', sessionId, name, messages),
+            getCheckpoints: (sessionId: string): Promise<{ success: boolean; checkpoints?: any[]; error?: string }> =>
+                ipcRenderer.invoke('context:getCheckpoints', sessionId),
+            getCheckpoint: (checkpointId: string): Promise<{ success: boolean; checkpoint?: any; messages?: any[]; error?: string }> =>
+                ipcRenderer.invoke('context:getCheckpoint', checkpointId),
+            restoreCheckpoint: (checkpointId: string): Promise<{ success: boolean; checkpoint?: any; messages?: any[]; error?: string }> =>
+                ipcRenderer.invoke('context:restoreCheckpoint', checkpointId),
+            deleteCheckpoint: (checkpointId: string): Promise<{ success: boolean; error?: string }> =>
+                ipcRenderer.invoke('context:deleteCheckpoint', checkpointId),
+            saveCompactedSession: (session: any): Promise<{ success: boolean; error?: string }> =>
+                ipcRenderer.invoke('context:saveCompactedSession', session),
+            getCompactedSessions: (sessionId: string): Promise<{ success: boolean; sessions?: any[]; error?: string }> =>
+                ipcRenderer.invoke('context:getCompactedSessions', sessionId),
+            deleteCompactedSessions: (sessionId: string): Promise<{ success: boolean; deleted?: number; error?: string }> =>
+                ipcRenderer.invoke('context:deleteCompactedSessions', sessionId)
+        },
+
+        // Menu event listeners
     onMenuEvent: (channel: string, callback: () => void) => {
         const validChannels = [
             'menu:newFile',
@@ -537,7 +569,25 @@ declare global {
                 getFileNameMapping: () => Promise<Record<string, string[]>>;
                 cleanDuplicateFileNames: (fileNameToKeepId: Record<string, string>) => Promise<number>;
                 getFileMetadata: () => Promise<Record<string, number>>;
-            };
+            },
+
+            // Context Engineering (Phase 2)
+            context: {
+                getMessages: (sessionId: string) => Promise<{ success: boolean; messages?: any[]; error?: string }>;
+                addMessage: (sessionId: string, message: any) => Promise<{ success: boolean; error?: string }>;
+                addMessages: (sessionId: string, messages: any[]) => Promise<{ success: boolean; error?: string }>;
+                clear: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
+                updateMessageCompression: (messageId: string, updates: any) => Promise<{ success: boolean; error?: string }>;
+                markMessagesAsCompacted: (messageIds: string[], summaryId: string) => Promise<{ success: boolean; error?: string }>;
+                createCheckpoint: (sessionId: string, name: string, messages: any[]) => Promise<{ success: boolean; checkpoint?: any; error?: string }>;
+                getCheckpoints: (sessionId: string) => Promise<{ success: boolean; checkpoints?: any[]; error?: string }>;
+                getCheckpoint: (checkpointId: string) => Promise<{ success: boolean; checkpoint?: any; messages?: any[]; error?: string }>;
+                restoreCheckpoint: (checkpointId: string) => Promise<{ success: boolean; checkpoint?: any; messages?: any[]; error?: string }>;
+                deleteCheckpoint: (checkpointId: string) => Promise<{ success: boolean; error?: string }>;
+                saveCompactedSession: (session: any) => Promise<{ success: boolean; error?: string }>;
+                getCompactedSessions: (sessionId: string) => Promise<{ success: boolean; sessions?: any[]; error?: string }>;
+                deleteCompactedSessions: (sessionId: string) => Promise<{ success: boolean; deleted?: number; error?: string }>;
+            },
             onMenuEvent: (channel: string, callback: () => void) => () => void;
         };
     }
