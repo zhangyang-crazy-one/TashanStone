@@ -1,21 +1,21 @@
 {
-  "name": "zhangnote",
+  "name": "tashanstone",
   "private": true,
   "version": "1.6.0",
-  "description": "ZhangNote - AI-powered Markdown Editor",
+  "description": "TashanStone - AI-powered Markdown Editor",
   "author": {
-    "name": "ZhangNote Team",
-    "email": "zhangnote@example.com"
+    "name": "TashanStone Team",
+    "email": "tashanstone@example.com"
   },
-  "homepage": "https://github.com/zhangnote/zhangnote",
+  "homepage": "https://github.com/tashanstone/tashanstone",
   "license": "Apache-2.0",
   "type": "module",
-  "main": "dist-electron/main.js",
+  "main": "dist-electron/electron/main.js",
   "scripts": {
     "dev": "vite",
-    "dev:electron": "concurrently -k \"vite\" \"wait-on tcp:3000 && electron .\"",
+    "dev:electron": "concurrently -k \"vite --port 5173 --strictPort\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
     "build": "tsc && vite build",
-    "build:electron": "cross-env ELECTRON=true npm run build && tsc -p electron/tsconfig.json && tsc -p electron/tsconfig.preload.json && node -e \"require('fs').renameSync('dist-electron/preload.js','dist-electron/preload.cjs')\"",
+    "build:electron": "cross-env ELECTRON=true npm run build && tsc -p electron/tsconfig.json && tsc -p electron/tsconfig.preload.json && node -e \"require('fs').renameSync('dist-electron/electron/preload.js','dist-electron/electron/preload.cjs')\"",
     "preview": "vite preview",
     "dist": "npm run build:electron && electron-builder",
     "dist:win": "npm run build:electron && electron-builder --win",

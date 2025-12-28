@@ -397,6 +397,25 @@ const App: React.FC = () => {
     localStorage.setItem('neon-split-mode', splitMode);
   }, [splitMode]);
 
+  // Auto-create default pane when openPanes is empty but files exist
+  // This ensures the editor always has something to display
+  useEffect(() => {
+    if (openPanes.length === 0 && files.length > 0) {
+      const defaultFile = files.find(f => f.id === activeFileId) || files[0];
+      if (defaultFile) {
+        const newPaneId = generateId();
+        const newPane: EditorPane = {
+          id: newPaneId,
+          fileId: defaultFile.id,
+          mode: 'editor'
+        };
+        setOpenPanes([newPane]);
+        setActivePaneId(newPaneId);
+        console.log('[App] Created default editor pane for:', defaultFile.name);
+      }
+    }
+  }, [openPanes.length, files.length, activeFileId]);
+
   // Initialize VectorStore and MCP on startup
   useEffect(() => {
     const initServices = async () => {

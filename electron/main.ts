@@ -135,7 +135,8 @@ function getIconPath(): string {
     const iconName = process.platform === 'win32' ? 'icon.ico' : 'icon.png';
     if (isDev) {
         // In dev mode, use the build directory
-        return path.join(__dirname, '..', 'build', iconName);
+        // __dirname is dist-electron/electron/, so go up 2 levels to reach project root
+        return path.join(__dirname, '..', '..', 'build', iconName);
     } else {
         // In production, icons are in resources
         return path.join(process.resourcesPath, iconName);
@@ -237,10 +238,12 @@ function createWindow(): void {
 
     // Load the app
     if (isDev) {
-        mainWindow.loadURL('http://localhost:3000');
+        // Support dynamic Vite port via environment variable
+        const viteUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:3000';
+        mainWindow.loadURL(viteUrl);
         mainWindow.webContents.openDevTools();
     } else {
-        mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+        mainWindow.loadFile(path.join(__dirname, '../../dist/index.html'));
     }
 
     mainWindow.on('closed', () => {

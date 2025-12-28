@@ -3,6 +3,15 @@
 /* Enable dark mode via class strategy */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Base layout - ensure full height for Electron */
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
 /* Electron window drag region */
 .app-drag-region {
   -webkit-app-region: drag;

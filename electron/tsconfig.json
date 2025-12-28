@@ -1,24 +1,28 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "lib": ["ES2022"],
     "outDir": "../dist-electron",
-    "rootDir": ".",
+    "rootDir": "..",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "declaration": true,
-    "declarationMap": true,
+    "declaration": false,
+    "declarationMap": false,
     "sourceMap": true,
-    "baseUrl": ".",
+    "baseUrl": "..",
     "paths": {
-      "@/*": ["../*"]
+      "@/*": ["./*"]
     }
   },
-  "include": ["./**/*.ts"],
+  "include": [
+    "./**/*.ts",
+    "../src/services/context/types.ts",
+    "../src/services/context/checkpoint.ts"
+  ],
   "exclude": ["node_modules", "preload.ts"]
 }

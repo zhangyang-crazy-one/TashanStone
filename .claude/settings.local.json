@@ -161,7 +161,16 @@
       "Bash(cmd /c \"dir /b F:\\\\MYproject\\\\Zhang_Note\\\\zhang_reader\\\\.claude\\\\hooks\")",
       "Bash(powershell -NoProfile -Command \"Remove-Item ''F:\\\\MYproject\\\\Zhang_Note\\\\zhang_reader\\\\.claude\\\\hooks\\\\*.js'' -Force; Get-ChildItem ''F:\\\\MYproject\\\\Zhang_Note\\\\zhang_reader\\\\.claude\\\\hooks''\")",
       "Skill(bug-debug)",
-      "Bash(cmd /c \"dir /b F:\\\\MYproject\\\\Zhang_Note\\\\TashaStone\\\\.claude\\\\hooks\")"
+      "Bash(cmd /c \"dir /b F:\\\\MYproject\\\\Zhang_Note\\\\TashaStone\\\\.claude\\\\hooks\")",
+      "Bash(cmd /c \"dir /b F:\\\\MYproject\\\\Zhang_Note\\\\TashaStone\\\\.claude\\\\hooks 2>&1\")",
+      "Bash(cmd /c \"dir /b F:\\\\MYproject\\\\Zhang_Note\\\\TashaStone\\\\dist-electron 2>&1\")",
+      "Bash(cmd /c \"if exist F:\\\\MYproject\\\\Zhang_Note\\\\TashaStone\\\\dist-electron \\(echo EXISTS\\) else \\(echo NOT_EXISTS\\)\")",
+      "Bash(cmd /c \"dir F:\\\\MYproject\\\\Zhang_Note\\\\TashaStone\\\\dist-electron\")",
+      "Bash(cmd /c \"if exist F:\\\\MYproject\\\\Zhang_Note\\\\TashaStone\\\\dist-electron\\\\ipc rmdir /s /q F:\\\\MYproject\\\\Zhang_Note\\\\TashaStone\\\\dist-electron\\\\ipc && echo Cleaned\")",
+      "Bash(powershell -NoProfile -Command:*)",
+      "mcp__chrome-devtools__list_network_requests",
+      "mcp__chrome-devtools__get_network_request",
+      "Bash(cmd /c \"taskkill /F /PID 25116\")"
     ],
     "deny": [],
     "ask": []

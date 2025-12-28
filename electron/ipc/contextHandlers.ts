@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron';
-import { chatRepository, ChatMessage } from '../database/repositories/chatRepository';
-import { Checkpoint, CompactedSession } from '../database/repositories/chatRepository';
-import { logger } from '../utils/logger';
+import { chatRepository, ChatMessage } from '../database/repositories/chatRepository.js';
+import { Checkpoint, CompactedSession } from '../database/repositories/chatRepository.js';
+import { logger } from '../utils/logger.js';
 
 export interface SerializableCheckpoint {
   id: string;

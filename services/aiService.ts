@@ -1351,53 +1351,95 @@ export const generateAIResponse = async (
 };
 
 const callGemini = async (
-  prompt: string,
-  config: AIConfig,
-  systemInstruction?: string,
-  jsonMode: boolean = false,
-  toolsCallback?: (toolName: string, args: any) => Promise<any>,
-  mcpClient?: IMCPClient,
-  conversationHistory?: ChatMessage[],
-  retries = 3
-): Promise<string> => {
-  try {
-    const client = getClient(config.apiKey);
-    const modelName = config.model;
+    prompt: string,
+    config: AIConfig,
+    systemInstruction?: string,
+    jsonMode: boolean = false,
+    toolsCallback?: (toolName: string, args: any) => Promise<any>,
+    mcpClient?: IMCPClient,
+    conversationHistory?: ChatMessage[],
+    retries = 3
+  ): Promise<string> => {
+    try {
+      const client = getClient(config.apiKey);
+      const modelName = config.model;
 
-    const generateConfig: any = {
-      systemInstruction: systemInstruction,
-    };
+      const generateConfig: any = {
+        systemInstruction: systemInstruction,
+      };
 
-    if (jsonMode) {
-      generateConfig.responseMimeType = 'application/json';
-    }
-
-    // Build contents array from conversation history
-    const contents: any[] = [];
-
-    if (conversationHistory && conversationHistory.length > 0) {
-      for (const msg of conversationHistory) {
-        if (msg.role === 'user') {
-          contents.push({
-            role: 'user',
-            parts: [{ text: msg.content }]
-          });
-        } else if (msg.role === 'assistant') {
-          contents.push({
-            role: 'model',
-            parts: [{ text: msg.content }]
-          });
-        }
-        // system messages are handled via systemInstruction
-        // tool messages will be handled in the multi-turn loop below
+      if (jsonMode) {
+        generateConfig.responseMimeType = 'application/json';
       }
-    }
 
-    // Add current prompt
-    contents.push({
-      role: 'user',
-      parts: [{ text: prompt }]
-    });
+      const MODEL_LIMIT = 1000000;
+      const MAX_OUTPUT_TOKENS = 8192;
+      const MAX_INPUT_TOKENS = MODEL_LIMIT - MAX_OUTPUT_TOKENS - 500;
+
+      const estimateTokens = (text: string): number => {
+        return Math.ceil(text.length / 3);
+      };
+
+      const truncateHistoryForGemini = (
+        history: ChatMessage[],
+        systemPrompt: string,
+        currentPrompt: string,
+        maxTokens: number
+      ): { contents: any[]; truncated: number } => {
+        const systemTokens = estimateTokens(systemPrompt);
+        const currentTokens = estimateTokens(currentPrompt);
+        let availableTokens = maxTokens - systemTokens - currentTokens;
+
+        const contents: any[] = [];
+
+        for (let i = history.length - 1; i >= 0; i--) {
+          const msg = history[i];
+          const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+          const msgTokens = estimateTokens(content);
+
+          if (availableTokens - msgTokens < 0) {
+            return {
+              contents: [{
+                role: 'user',
+                parts: [{ text: `[上下文截断 - 已省略 ${i + 1} 条早期消息]\n\n---\n\n${currentPrompt}` }]
+              }],
+              truncated: i + 1
+            };
+          }
+
+          availableTokens -= msgTokens;
+
+          if (msg.role === 'user') {
+            contents.unshift({ role: 'user', parts: [{ text: content }] });
+          } else if (msg.role === 'assistant') {
+            contents.unshift({ role: 'model', parts: [{ text: content }] });
+          }
+        }
+
+        return { contents, truncated: 0 };
+      };
+
+      let contents: any[];
+      let truncatedCount = 0;
+
+      if (conversationHistory && conversationHistory.length > 0) {
+        const truncationResult = truncateHistoryForGemini(
+          conversationHistory,
+          systemInstruction || '',
+          prompt,
+          MAX_INPUT_TOKENS
+        );
+        contents = truncationResult.contents;
+        truncatedCount = truncationResult.truncated;
+      } else {
+        contents = [];
+      }
+
+      contents.push({ role: 'user', parts: [{ text: prompt }] });
+
+      if (truncatedCount > 0) {
+        console.warn(`[Gemini] 上下文过长，已截断 ${truncatedCount} 条早期消息`);
+      }
 
     // Handle Web Search (Gemini only)
     if (config.enableWebSearch && !jsonMode) {
@@ -1515,36 +1557,92 @@ const callGemini = async (
 };
 
 const callOllama = async (
-  prompt: string,
-  config: AIConfig,
-  systemInstruction?: string,
-  jsonMode: boolean = false,
-  toolsCallback?: (toolName: string, args: any) => Promise<any>,
-  mcpClient?: IMCPClient,
-  conversationHistory?: ChatMessage[]
-): Promise<string> => {
+    prompt: string,
+    config: AIConfig,
+    systemInstruction?: string,
+    jsonMode: boolean = false,
+    toolsCallback?: (toolName: string, args: any) => Promise<any>,
+    mcpClient?: IMCPClient,
+    conversationHistory?: ChatMessage[]
+  ): Promise<string> => {
     const baseUrl = config.baseUrl || 'http://localhost:11434';
     const model = config.model || 'llama3';
 
-    const messages: any[] = [];
+    const MODEL_LIMIT = 8192;
+    const MAX_OUTPUT_TOKENS = 2048;
+    const MAX_INPUT_TOKENS = MODEL_LIMIT - MAX_OUTPUT_TOKENS - 500;
 
-    // Add system instruction
-    if (systemInstruction) messages.push({ role: 'system', content: systemInstruction });
+    const estimateTokens = (text: string): number => {
+      return Math.ceil(text.length / 3);
+    };
 
-    // Add conversation history
-    if (conversationHistory && conversationHistory.length > 0) {
-      for (const msg of conversationHistory) {
-        if (msg.role === 'user') {
-          messages.push({ role: 'user', content: msg.content });
-        } else if (msg.role === 'assistant') {
-          messages.push({ role: 'assistant', content: msg.content });
+    const truncateHistoryForOllama = (
+      history: ChatMessage[],
+      systemPrompt: string,
+      currentPrompt: string,
+      maxTokens: number
+    ): { messages: any[]; truncated: number } => {
+      const systemTokens = systemPrompt ? estimateTokens(systemPrompt) : 0;
+      const currentTokens = estimateTokens(currentPrompt);
+      let availableTokens = maxTokens - systemTokens - currentTokens;
+
+      const messages: any[] = [];
+
+      if (systemPrompt) {
+        messages.push({ role: 'system', content: systemPrompt });
+      }
+
+      for (let i = history.length - 1; i >= 0; i--) {
+        const msg = history[i];
+        const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+        const msgTokens = estimateTokens(content);
+
+        if (availableTokens - msgTokens < 0) {
+          return {
+            messages: [
+              ...(systemPrompt ? [{ role: 'system', content: systemPrompt }] : []),
+              { role: 'user', content: `[上下文截断 - 已省略 ${i + 1} 条早期消息]\n\n---\n\n${currentPrompt}` }
+            ],
+            truncated: i + 1
+          };
         }
-        // system messages already added above
+
+        availableTokens -= msgTokens;
+
+        if (msg.role === 'user') {
+          messages.push({ role: 'user', content });
+        } else if (msg.role === 'assistant') {
+          messages.push({ role: 'assistant', content });
+        }
+      }
+
+      return { messages, truncated: 0 };
+    };
+
+    let messages: any[];
+    let truncatedCount = 0;
+
+    if (conversationHistory && conversationHistory.length > 0) {
+      const truncationResult = truncateHistoryForOllama(
+        conversationHistory,
+        systemInstruction || '',
+        prompt,
+        MAX_INPUT_TOKENS
+      );
+      messages = truncationResult.messages;
+      truncatedCount = truncationResult.truncated;
+    } else {
+      messages = [];
+      if (systemInstruction) {
+        messages.push({ role: 'system', content: systemInstruction });
       }
     }
 
-    // Add current prompt
     messages.push({ role: 'user', content: prompt });
+
+    if (truncatedCount > 0) {
+      console.warn(`[Ollama] 上下文过长，已截断 ${truncatedCount} 条早期消息`);
+    }
 
     // Define tools
     let tools = undefined;
@@ -1647,25 +1745,81 @@ const callOpenAICompatible = async (
     const baseUrl = config.baseUrl || 'https://api.openai.com/v1';
     const endpoint = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
 
-    const messages: any[] = [];
+    const MODEL_LIMIT = 128000;
+    const MAX_OUTPUT_TOKENS = 4096;
+    const MAX_INPUT_TOKENS = MODEL_LIMIT - MAX_OUTPUT_TOKENS - 500;
 
-    // Add system instruction
-    if (systemInstruction) messages.push({ role: 'system', content: systemInstruction });
+    const estimateTokens = (text: string): number => {
+      return Math.ceil(text.length / 3);
+    };
 
-    // Add conversation history
-    if (conversationHistory && conversationHistory.length > 0) {
-      for (const msg of conversationHistory) {
-        if (msg.role === 'user') {
-          messages.push({ role: 'user', content: msg.content });
-        } else if (msg.role === 'assistant') {
-          messages.push({ role: 'assistant', content: msg.content });
+    const truncateHistoryForOpenAI = (
+      history: ChatMessage[],
+      systemPrompt: string,
+      currentPrompt: string,
+      maxTokens: number
+    ): { messages: any[]; truncated: number } => {
+      const systemTokens = systemPrompt ? estimateTokens(systemPrompt) : 0;
+      const currentTokens = estimateTokens(currentPrompt);
+      let availableTokens = maxTokens - systemTokens - currentTokens;
+
+      const messages: any[] = [];
+
+      if (systemPrompt) {
+        messages.push({ role: 'system', content: systemPrompt });
+      }
+
+      for (let i = history.length - 1; i >= 0; i--) {
+        const msg = history[i];
+        const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+        const msgTokens = estimateTokens(content);
+
+        if (availableTokens - msgTokens < 0) {
+          return {
+            messages: [
+              ...(systemPrompt ? [{ role: 'system', content: systemPrompt }] : []),
+              { role: 'user', content: `[上下文截断 - 已省略 ${i + 1} 条早期消息]\n\n---\n\n${currentPrompt}` }
+            ],
+            truncated: i + 1
+          };
         }
-        // system messages already added above
+
+        availableTokens -= msgTokens;
+
+        if (msg.role === 'user') {
+          messages.push({ role: 'user', content });
+        } else if (msg.role === 'assistant') {
+          messages.push({ role: 'assistant', content });
+        }
+      }
+
+      return { messages, truncated: 0 };
+    };
+
+    let messages: any[];
+    let truncatedCount = 0;
+
+    if (conversationHistory && conversationHistory.length > 0) {
+      const truncationResult = truncateHistoryForOpenAI(
+        conversationHistory,
+        systemInstruction || '',
+        prompt,
+        MAX_INPUT_TOKENS
+      );
+      messages = truncationResult.messages;
+      truncatedCount = truncationResult.truncated;
+    } else {
+      messages = [];
+      if (systemInstruction) {
+        messages.push({ role: 'system', content: systemInstruction });
       }
     }
 
-    // Add current prompt
     messages.push({ role: 'user', content: prompt });
+
+    if (truncatedCount > 0) {
+      console.warn(`[OpenAI Compatible] 上下文过长，已截断 ${truncatedCount} 条早期消息`);
+    }
 
     let tools = undefined;
     if (toolsCallback && !jsonMode) {
@@ -1777,21 +1931,88 @@ const callAnthropic = async (
     const baseUrl = config.baseUrl || 'https://api.anthropic.com';
     const endpoint = `${baseUrl.replace(/\/$/, '')}/v1/messages`;
 
-    const messages: any[] = [];
+    const MODEL_LIMITS: Record<string, number> = {
+      'claude-3-opus': 200000,
+      'claude-3-sonnet': 200000,
+      'claude-3-haiku': 200000,
+      'claude-3-5-sonnet': 200000,
+      'claude-4-sonnet': 200000,
+      'claude-4-haiku': 200000,
+    };
 
-    // Add conversation history
-    if (conversationHistory && conversationHistory.length > 0) {
-      for (const msg of conversationHistory) {
+    const MODEL = config.model || 'claude-3-5-sonnet';
+    const MODEL_LIMIT = MODEL_LIMITS[MODEL] || 100000;
+    const MAX_OUTPUT_TOKENS = 4096;
+    const MAX_INPUT_TOKENS = MODEL_LIMIT - MAX_OUTPUT_TOKENS;
+
+    const estimateTokens = (text: string): number => {
+      return Math.ceil(text.length / 3);
+    };
+
+    const truncateHistoryForAnthropic = (
+      history: ChatMessage[],
+      systemPrompt: string,
+      currentPrompt: string,
+      maxTokens: number
+    ): { messages: any[]; truncated: number } => {
+      const systemTokens = estimateTokens(systemPrompt);
+      const currentTokens = estimateTokens(currentPrompt);
+      let availableTokens = maxTokens - systemTokens - currentTokens - 500;
+
+      const result: any[] = [];
+
+      for (let i = history.length - 1; i >= 0; i--) {
+        const msg = history[i];
+        const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+        const msgTokens = estimateTokens(content);
+
+        if (availableTokens - msgTokens < 0) {
+          return {
+            messages: [
+              {
+                role: 'user',
+                content: `[上下文截断 - 已省略 ${i + 1} 条早期消息]\n\n---\n\n${currentPrompt}`
+              }
+            ],
+            truncated: i + 1
+          };
+        }
+
+        availableTokens -= msgTokens;
+
         if (msg.role === 'user') {
-          messages.push({ role: 'user', content: msg.content });
+          result.unshift({ role: 'user', content });
         } else if (msg.role === 'assistant') {
-          messages.push({ role: 'assistant', content: msg.content });
+          result.unshift({ role: 'assistant', content });
         }
       }
+
+      return { messages: result, truncated: 0 };
+    };
+
+    const messages: any[] = [];
+
+    let messagesToSend: any[];
+    let truncatedCount = 0;
+
+    if (conversationHistory && conversationHistory.length > 0) {
+      const truncationResult = truncateHistoryForAnthropic(
+        conversationHistory,
+        systemInstruction || '',
+        prompt,
+        MAX_INPUT_TOKENS
+      );
+      messagesToSend = truncationResult.messages;
+      truncatedCount = truncationResult.truncated;
+    } else {
+      messagesToSend = [];
     }
 
-    // Add current prompt
-    messages.push({ role: 'user', content: prompt });
+    messagesToSend.push({ role: 'user', content: prompt });
+
+    if (truncatedCount > 0) {
+      console.warn(`[Anthropic] 上下文过长，已截断 ${truncatedCount} 条早期消息`);
+    }
 
     // Build tools array for Anthropic format
     let tools: any[] | undefined = undefined;
@@ -1928,7 +2149,13 @@ const callAnthropic = async (
 
           if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
-            throw new Error(`Anthropic API Error: ${response.status} ${errorData.error?.message || response.statusText}`);
+            const errorMessage = errorData.error?.message || response.statusText;
+            
+            if (response.status === 400 && errorMessage.includes('context window exceeds limit')) {
+              throw new Error(`上下文窗口超出限制 (${MODEL_LIMIT} tokens)。请尝试清除对话历史或减少消息长度。当前消息可能过长。`);
+            }
+            
+            throw new Error(`Anthropic API Error: ${response.status} ${errorMessage}`);
           }
 
           const data = await response.json();

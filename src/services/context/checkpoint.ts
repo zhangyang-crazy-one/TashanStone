@@ -1,4 +1,4 @@
-import { Checkpoint, ApiMessage, CompactedSession } from './types';
+import { Checkpoint, ApiMessage, CompactedSession } from './types.js';
 
 export interface CheckpointStorage {
   saveCheckpoint(checkpoint: Checkpoint, messages: ApiMessage[]): Promise<void>;

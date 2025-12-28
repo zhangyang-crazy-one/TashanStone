@@ -1,6 +1,6 @@
-import { chatRepository, ChatMessage, Checkpoint, CompactedSession } from './chatRepository';
-import { CheckpointStorage as ICheckpointStorage } from '../../../src/services/context/checkpoint';
-import { ApiMessage, CompactedSession as ContextCompactedSession } from '../../../src/services/context/types';
+import { chatRepository, ChatMessage, Checkpoint, CompactedSession } from './chatRepository.js';
+import { CheckpointStorage as ICheckpointStorage } from '../../../src/services/context/checkpoint.js';
+import { ApiMessage, CompactedSession as ContextCompactedSession } from '../../../src/services/context/types.js';
 
 export class SQLiteCheckpointStorage implements ICheckpointStorage {
   async saveCheckpoint(checkpoint: Checkpoint, messages: ApiMessage[]): Promise<void> {

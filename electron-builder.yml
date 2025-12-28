@@ -1,7 +1,7 @@
-appId: com.zhangnote.app
-productName: ZhangNote
-executableName: ZhangNote
-copyright: Copyright © 2024 ZhangNote
+appId: com.tashanstone.app
+productName: TashanStone
+executableName: TashanStone
+copyright: Copyright © 2024 TashanStone
 
 directories:
   output: release
@@ -97,7 +97,7 @@ nsis:
   installerHeaderIcon: build/icon.ico
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: ZhangNote
+  shortcutName: TashanStone
   installerLanguages:
     - en_US
     - zh_CN
@@ -144,9 +144,9 @@ linux:
   icon: build/icons
   category: Office
   synopsis: AI-powered Markdown Editor
-  description: ZhangNote is a modern AI-powered Markdown editor with knowledge graph, mind map, and quiz generation features.
+  description: TashanStone is a modern AI-powered Markdown editor with knowledge graph, mind map, and quiz generation features.
   desktop:
-    Name: ZhangNote
+    Name: TashanStone
     Comment: AI-powered Markdown Editor
     Categories: Office;TextEditor;Utility;
     Keywords: markdown;editor;note;ai;knowledge;

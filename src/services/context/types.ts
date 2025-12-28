@@ -1,5 +1,3 @@
-import { ChatMessage } from "../../../types";
-
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
 
 export interface ApiMessage {
