@@ -7,9 +7,10 @@
 | 指标 | 值 |
 |------|-----|
 | 项目阶段 | 功能迭代中 |
-| 整体进度 | 核心功能 100% / 上下文工程 5% |
-| 代码行数 | ~20,000+ |
+| 整体进度 | 核心功能 100% / 上下文工程 35% |
+| 代码行数 | ~21,500+ |
 | 组件数量 | 20 个 React 组件 |
+| 新增服务 | 7 个上下文工程模块 |
 
 ## 已完成模块
 
@@ -30,7 +31,7 @@
 
 | 阶段 | 内容 | 进度 | 状态 |
 |------|------|------|------|
-| 阶段一 | 核心上下文工程 | 5% | 🔄 规划完成 |
+| 阶段一 | 核心上下文工程 | 100% | ✅ 完成 |
 | 阶段二 | 会话存储与检查点 | 0% | 🔜 待开始 |
 | 阶段三 | 三层记忆系统 | 0% | 🔜 待开始 |
 | 阶段四 | UI 集成 | 0% | 🔜 待开始 |
@@ -39,11 +40,13 @@
 ### 上下文工程完成项
 
 - [x] 架构设计文档 (CONTEXT_ENGINEERING.md)
-- [x] 类型定义规划
-- [x] 文件结构规划
-- [x] 核心算法设计 (Prune/Compact/Truncate)
-- [x] 与现有服务整合策略
-- [x] 测试策略规划
+- [x] 类型定义 (types.ts) - ApiMessage, TokenUsage, ContextConfig
+- [x] Token 预算管理 (token-budget.ts) - GPT2Tokenizer 集成
+- [x] 上下文管理器 (manager.ts) - 核心管理类
+- [x] 压缩算法 (compaction.ts) - Prune/Compact/Truncate
+- [x] 检查点系统 (checkpoint.ts) - CheckpointManager
+- [x] 三层记忆 (memory.ts) - Short/Mid/Long term memory
+- [x] AI 服务集成 (aiService.ts) - 会话级 ContextManager
 
 ### 上下文工程目标
 
@@ -86,35 +89,41 @@
 
 ## 下一步计划
 
-### 立即开始：阶段一核心上下文工程
+### 阶段一完成 ✅
+
+核心上下文工程已完成实现，包括：
+- Token 预算计算和阈值检测
+- Prune/Compact/Truncate 三种压缩算法
+- 上下文管理器 ContextManager
+- 会话级上下文管理 API
+
+### 立即开始：阶段二会话存储与检查点
 
 | 步骤 | 任务 | 说明 |
 |------|------|------|
-| 1 | 创建目录结构 | `src/services/context/` |
-| 2 | 实现类型定义 | `types.ts` |
-| 3 | 实现 Token 预算 | `token-budget.ts` |
-| 4 | 实现上下文管理器 | `manager.ts` |
-| 5 | 实现压缩算法 | `compaction.ts` |
-| 6 | 单元测试 | Vitest 测试用例 |
+| 1 | 数据库迁移 | 扩展消息表，添加压缩标记字段，创建检查点表 |
+| 2 | 存储接口扩展 | 扩展 chatRepository 支持压缩标记和检查点 |
+| 3 | 持久化存储 | 实现 CheckpointStorage 接口（SQLite/LanceDB） |
+| 4 | 检查点管理 | 实现检查点创建、恢复、列表功能 |
 
 ### 文件结构
 
 ```
 src/services/context/
 ├── index.ts              # 导出入口
-├── manager.ts            # 上下文管理器
-├── compaction.ts         # 压缩算法
-├── memory.ts             # 记忆层
-├── token-budget.ts       # Token 预算
-├── checkpoint.ts         # 检查点
-└── types.ts              # 类型定义
+├── manager.ts            # 上下文管理器 ✅
+├── compaction.ts         # 压缩算法 ✅
+├── memory.ts             # 记忆层 ✅
+├── token-budget.ts       # Token 预算 ✅
+├── checkpoint.ts         # 检查点 ✅
+└── types.ts              # 类型定义 ✅
 ```
 
 ### 后续计划
 
 1. **阶段二**：会话存储与检查点
     - 数据库迁移
-    - 检查点机制
+    - 检查点持久化
 
 2. **阶段三**：三层记忆系统
     - 短期/中期/长期记忆实现
