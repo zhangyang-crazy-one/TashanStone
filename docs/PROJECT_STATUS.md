@@ -7,10 +7,10 @@
 | 指标 | 值 |
 |------|-----|
 | 项目阶段 | 功能迭代中 |
-| 整体进度 | 核心功能 100% / 上下文工程 55% |
-| 代码行数 | ~23,000+ |
+| 整体进度 | 核心功能 100% / 上下文工程 70% |
+| 代码行数 | ~24,000+ |
 | 组件数量 | 20 个 React 组件 |
-| 新增服务 | 7 个上下文工程模块 |
+| 新增服务 | 9 个上下文工程模块 |
 
 ## 已完成模块
 
@@ -33,7 +33,7 @@
 |------|------|------|------|
 | 阶段一 | 核心上下文工程 | 100% | ✅ 完成 |
 | 阶段二 | 会话存储与检查点 | 100% | ✅ 完成 |
-| 阶段三 | 三层记忆系统 | 0% | 🔜 待开始 |
+| 阶段三 | 三层记忆系统 | 100% | ✅ 完成 |
 | 阶段四 | UI 集成 | 0% | 🔜 待开始 |
 | 阶段五 | 性能优化 | 0% | 🔜 待开始 |
 
@@ -51,6 +51,8 @@
 - [x] 持久化存储 (contextRepository.ts) - SQLite CheckpointStorage
 - [x] IPC 集成 (contextHandlers.ts) - 主进程 IPC 处理
 - [x] Preload 桥接 - context API 暴露给渲染进程
+- [x] 长期记忆存储 (long-term-memory.ts) - LanceDB 集成
+- [x] 上下文记忆服务 (ContextMemoryService) - 三层记忆统一管理
 
 ### 上下文工程目标
 
@@ -93,22 +95,24 @@
 
 ## 下一步计划
 
-### 阶段二完成 ✅
+### 阶段三完成 ✅
 
-会话存储与检查点已完成实现，包括：
-- 数据库迁移（版本9）- 消息表扩展、检查点表、中期记忆表
-- 扩展 chatRepository - 压缩标记、更新消息、检查点CRUD
-- SQLite CheckpointStorage - 持久化检查点和摘要
-- IPC 集成 - 主进程和渲染进程之间的上下文操作
-- 集成到 ContextManager - enablePersistence() / restoreFromCheckpoint()
+三层记忆系统已完成实现，包括：
+- ThreeLayerMemory - 统一三层记忆管理
+- ContextMemoryService - 上下文记忆服务接口
+- LanceDBMemoryStorage - 长期记忆持久化
+- 自动升级 - 短期→中期→长期记忆
+- 上下文重建 - 智能合并各层记忆
 
-### 立即开始：阶段三三层记忆系统
+### 立即开始：阶段四 UI 集成
 
 | 步骤 | 任务 | 说明 |
 |------|------|------|
-| 1 | 短期记忆 | 内存中对话上下文管理 |
-| 2 | 中期记忆 | SQLite 摘要存储集成 |
-| 3 | 长期记忆 | 扩展 RAG 支持对话索引 |
+| 1 | Token 使用率组件 | 显示当前 Token 使用百分比 |
+| 2 | 上下文操作状态 | 显示最近压缩/检查点状态 |
+| 3 | 手动压缩按钮 | 手动触发 Prune/Compact |
+| 4 | 检查点历史面板 | 查看和恢复检查点 |
+| 5 | AI 设置扩展 | 上下文工程配置区 |
 
 ### 文件结构
 
@@ -117,31 +121,23 @@ src/services/context/
 ├── index.ts              # 导出入口 ✅
 ├── manager.ts            # 上下文管理器 ✅
 ├── compaction.ts         # 压缩算法 ✅
-├── memory.ts             # 记忆层 ✅
+├── memory.ts             # 三层记忆管理 ✅
+├── long-term-memory.ts   # 长期记忆存储 ✅
 ├── token-budget.ts       # Token 预算 ✅
 ├── checkpoint.ts         # 检查点 ✅
-├── types.ts              # 类型定义 ✅
-
-electron/database/
-├── migrations.ts         # 数据库迁移 ✅
-├── repositories/
-│   ├── chatRepository.ts # 扩展支持上下文 ✅
-│   └── contextRepository.ts # SQLite 持久化 ✅
-└── ipc/
-    └── contextHandlers.ts # IPC 处理 ✅
+└── types.ts              # 类型定义 ✅
 ```
 
 ### 后续计划
 
-1. **阶段三**：三层记忆系统
-    - 短期记忆管理
-    - 中期记忆持久化
-    - 长期记忆 RAG 集成
-
-2. **阶段四**：UI 集成
-    - Token 显示组件
+1. **阶段四**：UI 集成
+    - Token 使用率指示器
     - 压缩按钮
     - 检查点面板
+
+2. **阶段五**：性能优化
+    - Prompt Caching
+    - 流式优化
 
 ## 相关文档
 

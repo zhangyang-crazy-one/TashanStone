@@ -3,56 +3,128 @@ import {
   CompactedSession,
   IndexedConversation,
   MemoryLayer,
+  Checkpoint,
 } from './types';
+import { TokenBudget } from './token-budget';
 
 export interface MemoryStorage {
   saveMidTerm(sessionId: string, session: CompactedSession): Promise<void>;
   getMidTerm(sessionId: string): Promise<CompactedSession[]>;
-  saveLongTerm(conversation: IndexedConversation): Promise<void>;
-  searchLongTerm(queryEmbedding: number[], limit: number): Promise<IndexedConversation[]>;
   clearMidTerm(sessionId?: string): Promise<void>;
-  clearLongTerm(sessionId?: string): Promise<void>;
 }
 
-export class MemoryManager {
+export interface LongTermMemoryStorage {
+  saveConversation(conversation: IndexedConversation): Promise<void>;
+  searchConversations(queryEmbedding: number[], limit: number, sessionId?: string): Promise<IndexedConversation[]>;
+  getConversationById(id: string): Promise<IndexedConversation | null>;
+  clearConversations(sessionId?: string): Promise<number>;
+  getStats(): Promise<{ totalConversations: number; totalSessions: number }>;
+}
+
+export class ThreeLayerMemory {
   private shortTerm: Map<string, ApiMessage[]> = new Map();
   private storage: MemoryStorage;
+  private longTermStorage: LongTermMemoryStorage | null = null;
+  private tokenBudget: TokenBudget;
+  private sessionMaxTokens: number = 50000;
+  private midTermMaxAge: number = 30 * 24 * 60 * 60 * 1000;
 
-  constructor(storage: MemoryStorage) {
+  constructor(
+    storage: MemoryStorage,
+    options?: {
+      longTermStorage?: LongTermMemoryStorage;
+      maxTokens?: number;
+      midTermMaxAge?: number;
+    }
+  ) {
     this.storage = storage;
+    this.longTermStorage = options?.longTermStorage ?? null;
+    this.tokenBudget = new TokenBudget();
+    this.sessionMaxTokens = options?.maxTokens ?? 50000;
+    this.midTermMaxAge = options?.midTermMaxAge ?? (30 * 24 * 60 * 60 * 1000);
   }
 
-  pushToShortTerm(sessionId: string, message: ApiMessage): void {
+  setLongTermStorage(storage: LongTermMemoryStorage): void {
+    this.longTermStorage = storage;
+  }
+
+  pushMessage(sessionId: string, message: ApiMessage): void {
     const messages = this.shortTerm.get(sessionId) ?? [];
     messages.push(message);
     this.shortTerm.set(sessionId, messages);
+    this.checkAutoPromote(sessionId);
   }
 
-  pushMultipleToShortTerm(sessionId: string, newMessages: ApiMessage[]): void {
-    const messages = this.shortTerm.get(sessionId) ?? [];
-    messages.push(...newMessages);
-    this.shortTerm.set(sessionId, messages);
+  pushMessages(sessionId: string, messages: ApiMessage[]): void {
+    const existing = this.shortTerm.get(sessionId) ?? [];
+    existing.push(...messages);
+    this.shortTerm.set(sessionId, existing);
+    this.checkAutoPromote(sessionId);
   }
 
-  getShortTerm(sessionId: string): ApiMessage[] {
+  getMessages(sessionId: string): ApiMessage[] {
     return this.shortTerm.get(sessionId) ?? [];
   }
 
-  clearShortTerm(sessionId?: string): void {
-    if (sessionId) {
-      this.shortTerm.delete(sessionId);
-    } else {
-      this.shortTerm.clear();
+  getMemoryLayer(sessionId: string): Promise<MemoryLayer> {
+    const shortTerm = this.shortTerm.get(sessionId) ?? [];
+
+    return this.storage.getMidTerm(sessionId).then(midTerm => {
+      return {
+        shortTerm,
+        midTerm: midTerm.filter(m => Date.now() - m.created_at < this.midTermMaxAge),
+        longTerm: [],
+      };
+    });
+  }
+
+  async reconstructContext(
+    sessionId: string,
+    maxTokens?: number
+  ): Promise<ApiMessage[]> {
+    const layer = await this.getMemoryLayer(sessionId);
+    const tokenLimit = maxTokens ?? this.sessionMaxTokens;
+
+    const context: ApiMessage[] = [];
+
+    for (const session of layer.midTerm) {
+      const summaryMsg: ApiMessage = {
+        id: session.id,
+        role: 'system',
+        content: `**[历史会话摘要 - ${new Date(session.created_at).toLocaleDateString()}]**\n\n${session.summary}`,
+        timestamp: session.created_at,
+        compressed: false,
+      };
+      context.push(summaryMsg);
     }
+
+    let currentTokens = 0;
+    for (let i = layer.shortTerm.length - 1; i >= 0; i--) {
+      const msg = layer.shortTerm[i];
+      const tokens = msg.token_count ?? await this.tokenBudget.estimateTokens(
+        typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
+      );
+
+      if (currentTokens + tokens > tokenLimit) {
+        break;
+      }
+
+      context.unshift(msg);
+      currentTokens += tokens;
+    }
+
+    return context;
   }
 
   async promoteToMidTerm(
     sessionId: string,
-    messages: ApiMessage[],
     summary: string,
     keyTopics: string[],
     decisions: string[]
-  ): Promise<CompactedSession> {
+  ): Promise<CompactedSession | null> {
+    const messages = this.shortTerm.get(sessionId);
+    if (!messages || messages.length < 5) return null;
+
     const session: CompactedSession = {
       id: `mid-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       session_id: sessionId,
@@ -65,91 +137,167 @@ export class MemoryManager {
 
     await this.storage.saveMidTerm(sessionId, session);
 
-    this.clearShortTerm(sessionId);
+    this.shortTerm.delete(sessionId);
 
     return session;
   }
 
-  async getMidTerm(sessionId: string): Promise<CompactedSession[]> {
-    return this.storage.getMidTerm(sessionId);
-  }
-
   async promoteToLongTerm(
     sessionId: string,
+    summary: string,
     embedding: number[],
-    content: string,
     topics: string[]
-  ): Promise<IndexedConversation> {
+  ): Promise<IndexedConversation | null> {
+    if (!this.longTermStorage) return null;
+
     const conversation: IndexedConversation = {
       id: `long-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       session_id: sessionId,
       embedding,
-      content,
+      content: summary,
       metadata: {
         date: Date.now(),
         topics,
       },
     };
 
-    await this.storage.saveLongTerm(conversation);
+    await this.longTermStorage.saveConversation(conversation);
 
     return conversation;
   }
 
-  async searchLongTerm(queryEmbedding: number[], limit: number = 10): Promise<IndexedConversation[]> {
-    return this.storage.searchLongTerm(queryEmbedding, limit);
+  async searchLongTerm(
+    query: string,
+    queryEmbedding: number[],
+    limit: number = 5
+  ): Promise<IndexedConversation[]> {
+    if (!this.longTermStorage) return [];
+    return this.longTermStorage.searchConversations(queryEmbedding, limit);
   }
 
-  async getLayer(sessionId: string): Promise<MemoryLayer> {
-    const [short, mid] = await Promise.all([
-      Promise.resolve(this.getShortTerm(sessionId)),
-      this.getMidTerm(sessionId),
-    ]);
+  async createMemoryFromCheckpoint(
+    checkpoint: Checkpoint,
+    messages: ApiMessage[]
+  ): Promise<void> {
+    const sessionId = checkpoint.session_id;
 
-    return {
-      shortTerm: short,
-      midTerm: mid,
-      longTerm: [],
-    };
-  }
+    if (messages.length >= 10) {
+      const recentUserMsgs = messages
+        .filter(m => m.role === 'user')
+        .slice(-5);
 
-  async reconstructContext(
-    sessionId: string,
-    maxTokens: number
-  ): Promise<ApiMessage[]> {
-    const shortTerm = this.getShortTerm(sessionId);
-    const midTerm = await this.getMidTerm(sessionId);
+      const summary = recentUserMsgs.length > 0
+        ? recentUserMsgs.map(m => m.content).join('\n---\n')
+        : checkpoint.summary;
 
-    const context: ApiMessage[] = [];
-
-    for (const session of midTerm) {
-      const summaryMsg: ApiMessage = {
-        id: session.id,
-        role: 'system',
-        content: `**[历史会话摘要]**\n\n${session.summary}`,
-        timestamp: session.created_at,
-      };
-      context.push(summaryMsg);
+      await this.promoteToMidTerm(
+        sessionId,
+        summary,
+        extractKeyTopics(messages),
+        extractDecisions(messages)
+      );
     }
 
-    context.push(...shortTerm);
-
-    return context;
+    this.shortTerm.set(sessionId, messages.slice(-20));
   }
 
-  async cleanup(sessionId: string, olderThan?: number): Promise<void> {
-    if (olderThan) {
-      await this.storage.clearMidTerm(sessionId);
-    } else {
-      this.clearShortTerm(sessionId);
-      await this.storage.clearMidTerm(sessionId);
+  clearSession(sessionId: string): void {
+    this.shortTerm.delete(sessionId);
+  }
+
+  async clearAll(): Promise<void> {
+    this.shortTerm.clear();
+    await this.storage.clearMidTerm();
+    if (this.longTermStorage) {
+      await this.longTermStorage.clearConversations();
     }
   }
+
+  getStats(): Promise<{
+    shortTermSessions: number;
+    midTermSessions: number;
+    longTermConversations: number;
+  }> {
+    return Promise.resolve({
+      shortTermSessions: this.shortTerm.size,
+      midTermSessions: 0,
+      longTermConversations: 0,
+    });
+  }
+
+  private async checkAutoPromote(sessionId: string): Promise<void> {
+    const messages = this.shortTerm.get(sessionId);
+    if (!messages) return;
+
+    const totalTokens = await this.calculateTotalTokens(messages);
+
+    if (totalTokens > this.sessionMaxTokens * 0.8) {
+      const summary = this.generateAutoSummary(messages);
+      await this.promoteToMidTerm(
+        sessionId,
+        summary,
+        [],
+        []
+      );
+    }
+  }
+
+  private async calculateTotalTokens(messages: ApiMessage[]): Promise<number> {
+    let total = 0;
+    for (const msg of messages) {
+      const content = typeof msg.content === 'string'
+        ? msg.content
+        : JSON.stringify(msg.content);
+      total += await this.tokenBudget.estimateTokens(content);
+    }
+    return total;
+  }
+
+  private generateAutoSummary(messages: ApiMessage[]): string {
+    const userMsgs = messages.filter(m => m.role === 'user');
+    const lastFew = userMsgs.slice(-3);
+
+    if (lastFew.length === 0) {
+      return `会话包含 ${messages.length} 条消息`;
+    }
+
+    return `会话摘要 (${messages.length} 条消息, 最后用户消息: "${lastFew[lastFew.length - 1]?.content.substring(0, 50)}...")`;
+  }
+}
+
+function extractKeyTopics(messages: ApiMessage[]): string[] {
+  const topics: Set<string> = new Set();
+
+  for (const msg of messages) {
+    if (msg.role === 'user') {
+      const content = typeof msg.content === 'string' ? msg.content : '';
+      const words = content.toLowerCase().split(/\s+/);
+      if (words.length > 3) {
+        topics.add(words.slice(0, 3).join(' '));
+      }
+    }
+  }
+
+  return Array.from(topics).slice(0, 5);
+}
+
+function extractDecisions(messages: ApiMessage[]): string[] {
+  const decisions: string[] = [];
+
+  for (const msg of messages) {
+    if (msg.role === 'assistant') {
+      const content = typeof msg.content === 'string' ? msg.content : '';
+      if (content.includes('decision') || content.includes('decided')) {
+        decisions.push(content.substring(0, 100));
+      }
+    }
+  }
+
+  return decisions.slice(0, 5);
 }
 
 export class InMemoryStorage implements MemoryStorage {
   private midTerm: Map<string, CompactedSession[]> = new Map();
-  private longTerm: IndexedConversation[] = [];
 
   async saveMidTerm(sessionId: string, session: CompactedSession): Promise<void> {
     const existing = this.midTerm.get(sessionId) ?? [];
@@ -161,39 +309,6 @@ export class InMemoryStorage implements MemoryStorage {
     return this.midTerm.get(sessionId) ?? [];
   }
 
-  async saveLongTerm(conversation: IndexedConversation): Promise<void> {
-    this.longTerm.push(conversation);
-  }
-
-  async searchLongTerm(queryEmbedding: number[], limit: number): Promise<IndexedConversation[]> {
-    const similarities = this.longTerm.map(conv => ({
-      conversation: conv,
-      similarity: this.cosineSimilarity(queryEmbedding, conv.embedding),
-    }));
-
-    similarities.sort((a, b) => b.similarity - a.similarity);
-
-    return similarities.slice(0, limit).map(s => s.conversation);
-  }
-
-  private cosineSimilarity(a: number[], b: number[]): number {
-    if (a.length !== b.length) return 0;
-
-    let dotProduct = 0;
-    let normA = 0;
-    let normB = 0;
-
-    for (let i = 0; i < a.length; i++) {
-      dotProduct += a[i] * b[i];
-      normA += a[i] * a[i];
-      normB += b[i] * b[i];
-    }
-
-    if (normA === 0 || normB === 0) return 0;
-
-    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
-  }
-
   async clearMidTerm(sessionId?: string): Promise<void> {
     if (sessionId) {
       this.midTerm.delete(sessionId);
@@ -201,17 +316,82 @@ export class InMemoryStorage implements MemoryStorage {
       this.midTerm.clear();
     }
   }
+}
 
-  async clearLongTerm(sessionId?: string): Promise<void> {
-    if (sessionId) {
-      this.longTerm = this.longTerm.filter(c => c.session_id !== sessionId);
-    } else {
-      this.longTerm = [];
-    }
+export class ContextMemoryService {
+  private memory: ThreeLayerMemory;
+  private embeddingService: ((text: string) => Promise<number[]>) | null = null;
+
+  constructor(
+    storage: MemoryStorage,
+    longTermStorage?: LongTermMemoryStorage
+  ) {
+    this.memory = new ThreeLayerMemory(storage, {
+      longTermStorage: longTermStorage ?? undefined,
+    });
   }
 
-  clearAll(): void {
-    this.midTerm.clear();
-    this.longTerm = [];
+  setEmbeddingService(service: (text: string) => Promise<number[]>): void {
+    this.embeddingService = service;
+  }
+
+  addMessage(sessionId: string, message: ApiMessage): void {
+    this.memory.pushMessage(sessionId, message);
+  }
+
+  getContext(sessionId: string, maxTokens?: number): Promise<ApiMessage[]> {
+    return this.memory.reconstructContext(sessionId, maxTokens);
+  }
+
+  async promoteToMidTerm(
+    sessionId: string,
+    summary: string,
+    keyTopics: string[],
+    decisions: string[]
+  ): Promise<CompactedSession | null> {
+    return this.memory.promoteToMidTerm(sessionId, summary, keyTopics, decisions);
+  }
+
+  async promoteToLongTerm(
+    sessionId: string,
+    summary: string,
+    topics: string[]
+  ): Promise<IndexedConversation | null> {
+    if (!this.embeddingService) {
+      console.warn('[ContextMemoryService] No embedding service configured');
+      return null;
+    }
+
+    const embedding = await this.embeddingService(summary);
+    return this.memory.promoteToLongTerm(sessionId, summary, embedding, topics);
+  }
+
+  async searchRelevantHistory(
+    query: string,
+    limit: number = 5
+  ): Promise<IndexedConversation[]> {
+    if (!this.embeddingService) return [];
+
+    const embedding = await this.embeddingService(query);
+    return this.memory.searchLongTerm(query, embedding, limit);
+  }
+
+  clearSession(sessionId: string): void {
+    this.memory.clearSession(sessionId);
+  }
+
+  async createMemoryFromCheckpoint(
+    checkpoint: Checkpoint,
+    messages: ApiMessage[]
+  ): Promise<void> {
+    await this.memory.createMemoryFromCheckpoint(checkpoint, messages);
+  }
+
+  async getMemoryStats(): Promise<{
+    shortTermSessions: number;
+    midTermSessions: number;
+    longTermConversations: number;
+  }> {
+    return this.memory.getStats();
   }
 }

@@ -11,7 +11,11 @@ import {
   ContextConfig,
   ApiMessage,
   Checkpoint,
+  CompactedSession,
+  IndexedConversation,
   DEFAULT_CONTEXT_CONFIG,
+  ContextMemoryService,
+  InMemoryStorage,
 } from "../src/services/context";
 
 // --- Types for MCP ---
@@ -2812,4 +2816,118 @@ export async function getCompactedSessions(
   const storage = globalCheckpointStorage;
   if (!storage) return [];
   return storage.getCompactedSessions(sessionId);
+}
+
+// ========================
+// Phase 3: Three-Layer Memory Integration
+// ========================
+
+interface MemoryStats {
+  shortTermSessions: number;
+  midTermSessions: number;
+  longTermConversations: number;
+}
+
+let contextMemoryService: ContextMemoryService | null = null;
+
+export function initializeContextMemory(
+  options?: {
+    maxTokens?: number;
+    midTermMaxAge?: number;
+  }
+): ContextMemoryService {
+  const midTermStorage = new InMemoryStorage();
+  contextMemoryService = new ContextMemoryService(midTermStorage, undefined);
+  return contextMemoryService;
+}
+
+export function setContextMemoryService(service: ContextMemoryService): void {
+  contextMemoryService = service;
+}
+
+export function getContextMemoryService(): ContextMemoryService | null {
+  return contextMemoryService;
+}
+
+export function addMessageToMemory(
+  sessionId: string,
+  message: ApiMessage
+): void {
+  contextMemoryService?.addMessage(sessionId, message);
+}
+
+export async function getMemoryContext(
+  sessionId: string,
+  maxTokens?: number
+): Promise<ApiMessage[]> {
+  if (!contextMemoryService) {
+    return [];
+  }
+  return contextMemoryService.getContext(sessionId, maxTokens);
+}
+
+export async function promoteSessionToMidTerm(
+  sessionId: string,
+  summary: string,
+  keyTopics: string[],
+  decisions: string[]
+): Promise<CompactedSession | null> {
+  if (!contextMemoryService) return null;
+  return contextMemoryService.promoteToMidTerm(sessionId, summary, keyTopics, decisions);
+}
+
+export async function promoteSessionToLongTerm(
+  sessionId: string,
+  summary: string,
+  topics: string[]
+): Promise<IndexedConversation | null> {
+  if (!contextMemoryService) return null;
+  return contextMemoryService.promoteToLongTerm(sessionId, summary, topics);
+}
+
+export async function searchRelevantHistory(
+  query: string,
+  limit: number = 5
+): Promise<IndexedConversation[]> {
+  if (!contextMemoryService) return [];
+  return contextMemoryService.searchRelevantHistory(query, limit);
+}
+
+export function clearMemorySession(sessionId: string): void {
+  contextMemoryService?.clearSession(sessionId);
+}
+
+export async function getMemoryStats(): Promise<MemoryStats> {
+  if (!contextMemoryService) {
+    return { shortTermSessions: 0, midTermSessions: 0, longTermConversations: 0 };
+  }
+  return contextMemoryService.getMemoryStats();
+}
+
+export async function createMemoryFromCheckpoint(
+  checkpointId: string
+): Promise<boolean> {
+  const storage = globalCheckpointStorage;
+  if (!storage) return false;
+
+  const result = await storage.getCheckpoint(checkpointId);
+  if (!result) return false;
+
+  if (!contextMemoryService) {
+    initializeContextMemory();
+  }
+
+  await contextMemoryService?.createMemoryFromCheckpoint(result.checkpoint, result.messages);
+  return true;
+}
+
+export async function reconstructContextWithMemories(
+  sessionId: string,
+  systemPrompt: string
+): Promise<ApiMessage[]> {
+  const memoryContext = await getMemoryContext(sessionId);
+  const currentContext = await getContextMessages(sessionId);
+
+  const allMessages = [...memoryContext, ...currentContext];
+  return allMessages;
 }

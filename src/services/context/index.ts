@@ -4,6 +4,7 @@ export * from './compaction';
 export * from './manager';
 export * from './checkpoint';
 export * from './memory';
+export * from './long-term-memory';
 
 export {
   ContextManager,
@@ -29,5 +30,13 @@ export {
 export {
   MemoryManager,
   InMemoryStorage,
+  ThreeLayerMemory,
+  ContextMemoryService,
+  InMemoryLongTermStorage,
   type MemoryStorage,
+  type LongTermMemoryStorage,
 } from './memory';
+
+export {
+  LanceDBMemoryStorage,
+} from './long-term-memory';
