@@ -4,6 +4,15 @@ import { GoogleGenAI, FunctionDeclaration, Type } from "@google/genai";
 import { AIConfig, MarkdownFile, GraphData, Quiz, QuizQuestion, ChatMessage } from "../types";
 import { mcpService } from "../src/services/mcpService";
 import { platformFetch, platformStreamFetch } from "../src/services/ai/platformFetch";
+import {
+  ContextManager,
+  createContextManager,
+  TokenUsage,
+  ContextConfig,
+  ApiMessage,
+  Checkpoint,
+  DEFAULT_CONTEXT_CONFIG,
+} from "../src/services/context";
 
 // --- Types for MCP ---
 interface MCPServerConfig {
@@ -2533,3 +2542,179 @@ Reference: ${context.substring(0, 30000)}`;
 
   return generateAIResponse(prompt, config, systemPrompt);
 };
+
+// ========================
+// Context Engineering Integration
+// ========================
+
+const sessionContextManagers: Map<string, ContextManager> = new Map();
+
+export function getContextManager(sessionId: string): ContextManager {
+  let manager = sessionContextManagers.get(sessionId);
+  if (!manager) {
+    manager = createContextManager(sessionId);
+    sessionContextManagers.set(sessionId, manager);
+  }
+  return manager;
+}
+
+export function createContextManagerForSession(
+  sessionId: string,
+  config?: Partial<ContextConfig>
+): ContextManager {
+  const manager = createContextManager(sessionId, config);
+  sessionContextManagers.set(sessionId, manager);
+  return manager;
+}
+
+export function removeContextManager(sessionId: string): void {
+  sessionContextManagers.delete(sessionId);
+}
+
+export function clearAllContextManagers(): void {
+  sessionContextManagers.clear();
+}
+
+export async function manageContextForSession(
+  sessionId: string,
+  systemPrompt: string,
+  aiCompactFn?: (content: string) => Promise<string>
+): Promise<{ messages: ApiMessage[]; usage: TokenUsage; action: string; savedTokens?: number }> {
+  const manager = getContextManager(sessionId);
+  const result = await manager.manageContext(systemPrompt, aiCompactFn);
+  return {
+    messages: result.messages,
+    usage: result.usage,
+    action: result.action,
+    savedTokens: result.saved_tokens,
+  };
+}
+
+export function addMessageToContext(
+  sessionId: string,
+  message: ApiMessage
+): void {
+  const manager = getContextManager(sessionId);
+  manager.addMessage(message);
+}
+
+export function addMessagesToContext(
+  sessionId: string,
+  messages: ApiMessage[]
+): void {
+  const manager = getContextManager(sessionId);
+  manager.addMessages(messages);
+}
+
+export async function getContextMessages(
+  sessionId: string
+): Promise<ApiMessage[]> {
+  const manager = getContextManager(sessionId);
+  return manager.getMessages();
+}
+
+export async function getEffectiveContextHistory(
+  sessionId: string
+): Promise<ApiMessage[]> {
+  const manager = getContextManager(sessionId);
+  return manager.getEffectiveHistory();
+}
+
+export async function analyzeContextUsage(
+  sessionId: string,
+  systemPrompt: string
+): Promise<{ usage: TokenUsage; status: ReturnType<TokenBudget['checkThresholds']> }> {
+  const manager = getContextManager(sessionId);
+  return manager.analyzeUsage(systemPrompt);
+}
+
+export async function createContextCheckpoint(
+  sessionId: string,
+  name?: string
+): Promise<Checkpoint> {
+  const manager = getContextManager(sessionId);
+  return manager.createCheckpoint(name);
+}
+
+export function clearContext(sessionId: string): void {
+  const manager = sessionContextManagers.get(sessionId);
+  if (manager) {
+    manager.clear();
+  }
+}
+
+export function convertChatMessageToApiMessage(msg: ChatMessage): ApiMessage {
+  return {
+    id: msg.id,
+    role: msg.role as ApiMessage['role'],
+    content: msg.content,
+    timestamp: msg.timestamp,
+    tool_call_id: msg.tool_call_id,
+  };
+}
+
+export function convertApiMessageToChatMessage(msg: ApiMessage): ChatMessage {
+  return {
+    id: msg.id,
+    role: msg.role === 'system' ? 'assistant' : msg.role,
+    content: msg.content,
+    timestamp: msg.timestamp,
+  };
+}
+
+export async function compactConversationWithContext(
+  sessionId: string,
+  systemPrompt: string,
+  config: AIConfig
+): Promise<{ compactedMessages: ApiMessage[]; summary: string }> {
+  const manager = getContextManager(sessionId);
+  const messages = manager.getMessages();
+
+  if (messages.length <= 4) {
+    return { compactedMessages: messages, summary: '' };
+  }
+
+  const recentMessages = messages.slice(-4);
+  const toCompact = messages.slice(0, messages.length - 4);
+
+  const conversationText = toCompact
+    .map(m => `${m.role.toUpperCase()}: ${typeof m.content === 'string' ? m.content : JSON.stringify(m.content)}`)
+    .join('\n\n');
+
+  const prompt = `将以下对话历史压缩为简洁摘要，保留关键信息和决策（200字以内）：
+
+${conversationText}`;
+
+  const summary = await generateAIResponse(
+    prompt,
+    config,
+    "你是对话摘要助手。用中文回复，输出纯文本摘要，不要JSON或markdown格式。",
+    false,
+    [],
+    undefined,
+    undefined,
+    undefined,
+    true
+  );
+
+  const summaryMessage: ApiMessage = {
+    id: `compact-${Date.now()}`,
+    role: 'system',
+    content: `**[对话摘要]**\n${summary}`,
+    timestamp: Date.now(),
+  };
+
+  for (let i = 0; i < toCompact.length; i++) {
+    toCompact[i] = {
+      ...toCompact[i],
+      compressed: true,
+      compression_type: 'compacted',
+      condense_id: summaryMessage.id,
+    };
+  }
+
+  const compactedMessages = [summaryMessage, ...recentMessages];
+  manager.setMessages(compactedMessages);
+
+  return { compactedMessages, summary };
+}

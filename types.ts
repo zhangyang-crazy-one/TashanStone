@@ -132,29 +132,38 @@ export type BackupFrequency = 'never' | 'daily' | 'weekly' | 'monthly';
 export interface AIConfig {
   provider: AIProvider;
   model: string;
-  embeddingProvider?: AIProvider; // Independent embedding provider selection
-  embeddingModel?: string; // Added embedding model selection
-  embeddingBaseUrl?: string; // Base URL for embedding provider
-  embeddingApiKey?: string; // API key for embedding provider
-  compactModel?: string; // Model used for compacting context
+  embeddingProvider?: AIProvider;
+  embeddingModel?: string;
+  embeddingBaseUrl?: string;
+  embeddingApiKey?: string;
+  compactModel?: string;
   baseUrl?: string;
   apiKey?: string;
   temperature: number;
-  language: 'en' | 'zh'; // Added language support
-  enableWebSearch?: boolean; // Added Web Search support for Gemini
-  enableStreaming?: boolean; // Enable streaming responses
-  mcpTools?: string; // JSON string of custom tool definitions
+  language: 'en' | 'zh';
+  enableWebSearch?: boolean;
+  enableStreaming?: boolean;
+  mcpTools?: string;
   customPrompts?: {
     polish?: string;
     expand?: string;
-    enhance?: string; // New: Enhance User Prompt
+    enhance?: string;
   };
   backup?: {
     frequency: BackupFrequency;
     lastBackup: number;
   };
   security?: {
-    enableLoginProtection?: boolean; // Enable login screen protection
+    enableLoginProtection?: boolean;
+  };
+  contextEngine?: {
+    enabled: boolean;
+    maxTokens: number;
+    compactThreshold: number;
+    pruneThreshold: number;
+    truncateThreshold: number;
+    messagesToKeep: number;
+    checkpointInterval: number;
   };
 }
 

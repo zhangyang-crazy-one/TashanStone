@@ -8,3 +8,6 @@ export type { StorageService, ExportData, ImportResult } from './storage/types';
 
 // AI platform fetch
 export { platformFetch, platformFetchJson } from './ai/platformFetch';
+
+// Context Engineering
+export * from './context';
