@@ -24,9 +24,9 @@ interface ChatPanelProps {
   messages: ChatMessage[];
   onSendMessage: (text: string) => void;
   onClearChat: () => void;
-  onCompactChat?: () => void;
-  onPruneChat?: () => void;
-  onTruncateChat?: () => void;
+  onCompactChat?: () => Promise<void>;
+  onPruneChat?: () => Promise<void>;
+  onTruncateChat?: () => Promise<void>;
   onCreateCheckpoint?: (name: string) => Promise<void>;
   onRestoreCheckpoint?: (checkpointId: string) => Promise<void>;
   onDeleteCheckpoint?: (checkpointId: string) => Promise<void>;
@@ -83,20 +83,6 @@ const SmartMessageContent: React.FC<{ content: string; isStreaming?: boolean }> 
     </div>
   );
 };
-
-interface ChatPanelProps {
-  isOpen: boolean;
-  onClose: () => void;
-  messages: ChatMessage[];
-  onSendMessage: (text: string) => void;
-  onClearChat: () => void;
-  onCompactChat?: () => void;
-  aiState: AIState;
-  language?: Language;
-  isStreaming?: boolean;
-  onStopStreaming?: () => void;
-  showToast?: (message: string, isError?: boolean) => void;
-}
 
 export const ChatPanel: React.FC<ChatPanelProps> = ({
   isOpen,
@@ -202,7 +188,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             </button>
             {(onCompactChat || onPruneChat || onTruncateChat) && messages.length > 3 && !aiState.isThinking && (
               <CompactActionMenu
-                onCompact={onCompactChat || (() => {})}
+                onCompact={onCompactChat || (async () => {})}
                 onPrune={onPruneChat}
                 onTruncate={onTruncateChat}
                 tokenUsage={tokenUsage}

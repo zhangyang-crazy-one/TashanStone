@@ -7,6 +7,8 @@ import {
   CompressionType,
   Checkpoint,
   DEFAULT_CONTEXT_CONFIG,
+  PruneResult,
+  TruncationResult,
 } from './types';
 import { TokenBudget } from './token-budget';
 import { Compaction } from './compaction';
@@ -15,7 +17,7 @@ import { CheckpointStorage } from './checkpoint';
 export interface ManageResult {
   messages: ApiMessage[];
   usage: TokenUsage;
-  action: 'none' | 'prune' | 'compact' | 'truncate';
+  action: 'none' | 'prune' | 'compact' | 'truncate' | 'pruned' | 'compacted' | 'truncated';
   saved_tokens?: number;
   checkpoint?: Checkpoint;
 }
@@ -190,11 +192,18 @@ export class ContextManager {
   }
 
   async prune(): Promise<CompressionResult> {
-    const result = await this.compaction.prune(this.messages);
-    this.messages = result.pruned_messages;
+    const pruneResult = await this.compaction.prune(this.messages);
+    this.messages = pruneResult.pruned_messages;
     this.onContextUpdated?.(this.messages);
     this.checkAutoSave();
-    return result;
+    const compressionResult: CompressionResult = {
+      original_count: pruneResult.pruned_messages.length + pruneResult.removed_count,
+      compressed_count: pruneResult.pruned_messages.length,
+      saved_tokens: pruneResult.removed_tokens,
+      method: 'pruned',
+      retained_messages: pruneResult.pruned_messages,
+    };
+    return compressionResult;
   }
 
   async compact(

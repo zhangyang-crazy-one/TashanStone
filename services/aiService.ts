@@ -8,6 +8,7 @@ import {
   ContextManager,
   createContextManager,
   TokenUsage,
+  TokenBudget,
   ContextConfig,
   ApiMessage,
   Checkpoint,

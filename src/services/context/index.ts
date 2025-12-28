@@ -26,23 +26,28 @@ export {
 } from './compaction';
 
 export {
+  type CompressionResult,
+  type TruncationResult,
+  type PruneResult,
+} from './types';
+
+export {
   CheckpointManager,
   MemoryCheckpointStorage,
   type CheckpointStorage,
 } from './checkpoint';
 
 export {
-  MemoryManager,
-  InMemoryStorage,
   ThreeLayerMemory,
   ContextMemoryService,
-  InMemoryLongTermStorage,
+  InMemoryStorage,
   type MemoryStorage,
   type LongTermMemoryStorage,
 } from './memory';
 
 export {
   LanceDBMemoryStorage,
+  InMemoryLongTermStorage,
 } from './long-term-memory';
 
 export {

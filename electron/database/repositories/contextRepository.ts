@@ -1,6 +1,6 @@
-import { chatRepository, ChatMessage, Checkpoint, CompactedSession } from './chatRepository.js';
-import { CheckpointStorage as ICheckpointStorage } from '../../src/services/context/checkpoint.js';
-import { ApiMessage, CompactedSession as ContextCompactedSession } from '../../src/services/context/types.js';
+import { chatRepository, ChatMessage, Checkpoint, CompactedSession } from './chatRepository';
+import { CheckpointStorage as ICheckpointStorage } from '../../../src/services/context/checkpoint';
+import { ApiMessage, CompactedSession as ContextCompactedSession } from '../../../src/services/context/types';
 
 export class SQLiteCheckpointStorage implements ICheckpointStorage {
   async saveCheckpoint(checkpoint: Checkpoint, messages: ApiMessage[]): Promise<void> {
@@ -30,7 +30,7 @@ export class SQLiteCheckpointStorage implements ICheckpointStorage {
   }
 
   async deleteCheckpoint(checkpointId: string): Promise<boolean> {
-    return chatRepository.deleteCheckpoint(checkpointId) > 0;
+    return chatRepository.deleteCheckpoint(checkpointId);
   }
 
   async saveCompactedSession(session: ContextCompactedSession): Promise<void> {
@@ -38,8 +38,8 @@ export class SQLiteCheckpointStorage implements ICheckpointStorage {
       id: session.id,
       session_id: session.session_id,
       summary: session.summary,
-      key_topics: JSON.stringify(session.key_topics),
-      decisions: JSON.stringify(session.decisions),
+      key_topics: session.key_topics,
+      decisions: session.decisions,
       message_start: session.message_range.start,
       message_end: session.message_range.end,
       created_at: session.created_at,

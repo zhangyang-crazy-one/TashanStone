@@ -128,7 +128,7 @@ export class TokenBudget {
       project_context: '',
       conversation_history: [],
       tool_outputs: [],
-      outputReserved: budget.outputReserved,
+      output_reserved: budget.outputReserved,
     };
   }
 

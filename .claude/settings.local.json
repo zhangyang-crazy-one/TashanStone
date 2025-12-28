@@ -160,7 +160,8 @@
       "Bash(cmd /c \"del F:\\\\MYproject\\\\Zhang_Note\\\\zhang_reader\\\\.claude\\\\hooks\\\\*.js 2>nul && echo Old JS files deleted || echo No JS files to delete\")",
       "Bash(cmd /c \"dir /b F:\\\\MYproject\\\\Zhang_Note\\\\zhang_reader\\\\.claude\\\\hooks\")",
       "Bash(powershell -NoProfile -Command \"Remove-Item ''F:\\\\MYproject\\\\Zhang_Note\\\\zhang_reader\\\\.claude\\\\hooks\\\\*.js'' -Force; Get-ChildItem ''F:\\\\MYproject\\\\Zhang_Note\\\\zhang_reader\\\\.claude\\\\hooks''\")",
-      "Skill(bug-debug)"
+      "Skill(bug-debug)",
+      "Bash(cmd /c \"dir /b F:\\\\MYproject\\\\Zhang_Note\\\\TashaStone\\\\.claude\\\\hooks\")"
     ],
     "deny": [],
     "ask": []

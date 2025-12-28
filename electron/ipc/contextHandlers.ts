@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron';
-import { chatRepository, ChatMessage } from '../database/repositories/chatRepository.js';
-import { Checkpoint, CompactedSession } from '../database/repositories/chatRepository.js';
-import { logger } from '../utils/logger.js';
+import { chatRepository, ChatMessage } from '../database/repositories/chatRepository';
+import { Checkpoint, CompactedSession } from '../database/repositories/chatRepository';
+import { logger } from '../utils/logger';
 
 export interface SerializableCheckpoint {
   id: string;
@@ -146,7 +146,7 @@ export function registerContextHandlers(): void {
   ipcMain.handle('context:deleteCheckpoint', async (_, checkpointId: string) => {
     try {
       const deleted = chatRepository.deleteCheckpoint(checkpointId);
-      return { success: true, deleted: deleted > 0 };
+      return { success: true, deleted };
     } catch (error) {
       logger.error('Failed to delete checkpoint', error);
       return { success: false, error: String(error) };
@@ -159,8 +159,8 @@ export function registerContextHandlers(): void {
         id: session.id,
         session_id: session.session_id,
         summary: session.summary,
-        key_topics: JSON.stringify(session.key_topics),
-        decisions: JSON.stringify(session.decisions),
+        key_topics: session.key_topics,
+        decisions: session.decisions,
         message_start: session.message_start,
         message_end: session.message_end,
         created_at: session.created_at,
@@ -179,8 +179,8 @@ export function registerContextHandlers(): void {
         id: s.id,
         session_id: s.session_id,
         summary: s.summary,
-        key_topics: JSON.parse(s.key_topics || '[]'),
-        decisions: JSON.parse(s.decisions || '[]'),
+        key_topics: s.key_topics,
+        decisions: s.decisions,
         message_start: s.message_start,
         message_end: s.message_end,
         created_at: s.created_at,

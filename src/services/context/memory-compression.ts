@@ -1,4 +1,4 @@
-import { IndexedConversation, ContextMemory } from './types';
+import { IndexedConversation } from './types';
 
 export interface MemoryCompressionConfig {
   maxContentLength: number;
@@ -24,6 +24,15 @@ export interface CompressionResult {
   lostInfo: string[];
 }
 
+export interface ContextMemory extends IndexedConversation {
+  metadata: IndexedConversation['metadata'] & {
+    compressed?: boolean;
+    originalSize?: number;
+    compressedSize?: number;
+    compressedAt?: number;
+  };
+}
+
 export class MemoryCompressor {
   private config: MemoryCompressionConfig;
 
@@ -31,7 +40,7 @@ export class MemoryCompressor {
     this.config = { ...DEFAULT_CONFIG, ...config };
   }
 
-  compress(conversation: IndexedConversation): IndexedConversation {
+  compress(conversation: ContextMemory): ContextMemory {
     const originalSize = conversation.content.length;
     let content = conversation.content;
 
@@ -126,9 +135,9 @@ export class MemoryCompressor {
   }
 
   compressBatch(
-    conversations: IndexedConversation[]
-  ): { compressed: IndexedConversation[]; stats: CompressionResult } {
-    const compressed: IndexedConversation[] = [];
+    conversations: ContextMemory[]
+  ): { compressed: ContextMemory[]; stats: CompressionResult } {
+    const compressed: ContextMemory[] = [];
     let totalOriginal = 0;
     let totalCompressed = 0;
     const allPreserved: string[] = [];
@@ -159,7 +168,7 @@ export class MemoryCompressor {
     };
   }
 
-  private shouldCompress(conversation: IndexedConversation): boolean {
+  private shouldCompress(conversation: ContextMemory): boolean {
     if (!this.config.compressOldSessions) return false;
 
     const age = Date.now() - conversation.metadata.date;

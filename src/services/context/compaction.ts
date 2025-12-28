@@ -230,13 +230,14 @@ ${conversationText}`;
       }
     }
 
+    const truncationId = `trunc-${Date.now()}`;
     const truncationMarker: ApiMessage = {
-      id: `trunc-${Date.now()}`,
+      id: truncationId,
       role: 'system',
       content: `**[对话截断]** - 已移除 ${toRemove.length} 条早期消息`,
       timestamp: Date.now(),
       is_truncation_marker: true,
-      truncation_id: truncationMarker.id,
+      truncation_id: truncationId,
     };
 
     const truncatedMessages = [truncationMarker, ...keepFromEnd];
