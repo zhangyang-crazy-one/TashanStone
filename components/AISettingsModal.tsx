@@ -1,7 +1,7 @@
 
 
 import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { X, Save, Server, Cpu, Key, Globe, Palette, Upload, Trash2, Check, Download, Plus, Languages, MessageSquare, ChevronDown, Wrench, AlertTriangle, Play, Terminal, Code2, Box, Keyboard, Command, Shield, Eye, EyeOff } from 'lucide-react';
+import { X, Save, Server, Cpu, Key, Globe, Palette, Upload, Trash2, Check, Download, Plus, Languages, MessageSquare, ChevronDown, Wrench, AlertTriangle, Play, Terminal, Code2, Box, Keyboard, Command, Shield, Eye, EyeOff, FolderOpen } from 'lucide-react';
 import { AIConfig, AppTheme, AppShortcut } from '../types';
 import { translations, Language } from '../utils/translations';
 import { generateAIResponse, VirtualMCPClient } from '../services/aiService';
@@ -1115,6 +1115,20 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                     {t.backup.import}
                   </button>
                 </div>
+
+                {/* Open Data Directory Button */}
+                <button
+                  onClick={async () => {
+                    const memoriesDir = (window as any).electronAPI?.paths?.userData + '/.memories';
+                    if (memoriesDir) {
+                      await (window as any).electronAPI?.file?.openPath(memoriesDir);
+                    }
+                  }}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-[rgb(var(--bg-element))] hover:bg-[rgb(var(--border-main))] text-[rgb(var(--text-primary))] rounded-lg transition-colors font-medium font-[var(--font-primary)]"
+                >
+                  <FolderOpen size={16} />
+                  {t.backup.openDataDirectory}
+                </button>
               </div>
 
               {/* Warning Notice */}

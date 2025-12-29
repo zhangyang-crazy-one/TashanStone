@@ -192,6 +192,18 @@ export function registerFileHandlers(): void {
         }
     });
 
+    // Open file path in system file explorer
+    ipcMain.handle('fs:openPath', async (_, filePath: string) => {
+        try {
+            const { shell } = await import('electron');
+            await shell.showItemInFolder(path.resolve(filePath));
+            return true;
+        } catch (error) {
+            logger.error('fs:openPath failed', { filePath, error });
+            return false;
+        }
+    });
+
     logger.info('File system IPC handlers registered');
 }
 

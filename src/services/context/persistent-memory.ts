@@ -20,24 +20,41 @@ export class FileMemoryStorage implements MemoryFileStorage {
   private memoriesFolder: string;
   private indexFileName: string;
   private memoriesCache: Map<string, MemoryDocument> = new Map();
+  private isPackaged: boolean;
 
   constructor(config?: Partial<PersistentMemoryConfig>) {
     this.memoriesFolder = config?.memoriesFolder ?? '.memories';
     this.indexFileName = config?.indexFileName ?? '_memories_index.json';
+    this.isPackaged = !(typeof process !== 'undefined' && process.env?.NODE_ENV === 'development');
+  }
+
+  private getMemoriesDir(): string {
+    const electronAPI = (window as any).electronAPI;
+    if (electronAPI?.paths?.userData) {
+      return electronAPI.paths.userData + '/.memories';
+    }
+    return this.memoriesFolder;
   }
 
   getIndexFilePath(): string {
-    return `${this.memoriesFolder}/${this.indexFileName}`;
+    return `${this.getMemoriesDir()}/${this.indexFileName}`;
+  }
+
+  private getMemoryFilePath(fileName: string): string {
+    return `${this.getMemoriesDir()}/${fileName}`;
   }
 
   async saveMemory(memory: MemoryDocument): Promise<void> {
     try {
-      if (typeof window !== 'undefined' && (window as any).electronAPI) {
+      const electronAPI = (window as any).electronAPI;
+      const fsAPI = electronAPI?.fs || electronAPI?.file;
+      
+      if (fsAPI?.writeFile) {
         const fileName = this.generateFileName(memory);
-        const fullPath = `${this.memoriesFolder}/${fileName}`;
+        const fullPath = this.getMemoryFilePath(fileName);
         
         const content = this.formatMemoryAsMarkdown(memory);
-        await (window as any).electronAPI.file.writeFile(fullPath, content);
+        await fsAPI.writeFile(fullPath, content);
         
         memory.filePath = fullPath;
         this.memoriesCache.set(memory.id, memory);
@@ -56,14 +73,17 @@ export class FileMemoryStorage implements MemoryFileStorage {
     if (cached) return cached;
 
     try {
-      if (typeof window !== 'undefined' && (window as any).electronAPI) {
+      const electronAPI = (window as any).electronAPI;
+      const fsAPI = electronAPI?.fs || electronAPI?.file;
+      
+      if (fsAPI?.readFile) {
         const indexPath = this.getIndexFilePath();
-        const indexData = await (window as any).electronAPI.file.readFile(indexPath);
+        const indexData = await fsAPI.readFile(indexPath);
         if (indexData) {
           const index = JSON.parse(indexData);
           const memoryInfo = index.memories.find((m: any) => m.id === id);
           if (memoryInfo) {
-            const content = await (window as any).electronAPI.file.readFile(memoryInfo.filePath);
+            const content = await fsAPI.readFile(memoryInfo.filePath);
             if (content) {
               const memory = this.parseMarkdownToMemory(content, memoryInfo);
               this.memoriesCache.set(id, memory);
@@ -81,16 +101,24 @@ export class FileMemoryStorage implements MemoryFileStorage {
 
   async getAllMemories(): Promise<MemoryDocument[]> {
     try {
-      if (typeof window !== 'undefined' && (window as any).electronAPI) {
+      const electronAPI = (window as any).electronAPI;
+      console.log('[FileMemoryStorage] electronAPI keys:', electronAPI ? Object.keys(electronAPI).join(', ') : 'null');
+      console.log('[FileMemoryStorage] electronAPI.fs exists:', !!electronAPI?.fs);
+      console.log('[FileMemoryStorage] electronAPI.file exists:', !!electronAPI?.file);
+      console.log('[FileMemoryStorage] Memories dir:', this.getMemoriesDir());
+      console.log('[FileMemoryStorage] Index path:', this.getIndexFilePath());
+      
+      const fsAPI = electronAPI?.fs || electronAPI?.file;
+      if (fsAPI?.readFile) {
         const indexPath = this.getIndexFilePath();
-        const indexData = await (window as any).electronAPI.file.readFile(indexPath);
+        const indexData = await fsAPI.readFile(indexPath);
         if (indexData) {
           const index = JSON.parse(indexData);
           const memories: MemoryDocument[] = [];
           
           for (const memoryInfo of index.memories) {
             try {
-              const content = await (window as any).electronAPI.file.readFile(memoryInfo.filePath);
+              const content = await fsAPI.readFile(memoryInfo.filePath);
               if (content) {
                 const memory = this.parseMarkdownToMemory(content, memoryInfo);
                 memories.push(memory);
@@ -107,7 +135,7 @@ export class FileMemoryStorage implements MemoryFileStorage {
     } catch (error) {
       console.error('[FileMemoryStorage] Failed to get all memories:', error);
     }
-
+    
     return [];
   }
 
@@ -116,8 +144,11 @@ export class FileMemoryStorage implements MemoryFileStorage {
       const memory = this.memoriesCache.get(id);
       if (!memory) return false;
 
-      if (typeof window !== 'undefined' && (window as any).electronAPI) {
-        await (window as any).electronAPI.file.deleteFile(memory.filePath);
+      const electronAPI = (window as any).electronAPI;
+      const fsAPI = electronAPI?.fs || electronAPI?.file;
+      
+      if (fsAPI?.deleteFile) {
+        await fsAPI.deleteFile(memory.filePath);
         this.memoriesCache.delete(id);
         await this.updateIndex();
         
@@ -143,8 +174,11 @@ export class FileMemoryStorage implements MemoryFileStorage {
       };
 
       const content = this.formatMemoryAsMarkdown(updatedMemory);
-      if (typeof window !== 'undefined' && (window as any).electronAPI) {
-        await (window as any).electronAPI.file.writeFile(memory.filePath, content);
+      const electronAPI = (window as any).electronAPI;
+      const fsAPI = electronAPI?.fs || electronAPI?.file;
+      
+      if (fsAPI?.writeFile) {
+        await fsAPI.writeFile(memory.filePath, content);
         this.memoriesCache.set(id, updatedMemory);
         await this.updateIndex();
         
@@ -183,7 +217,17 @@ source_sessions: ${JSON.stringify(memory.sourceSessions)}
   }
 
   private parseMarkdownToMemory(content: string, metadata: any): MemoryDocument {
-    const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+    let actualContent = content;
+    
+    try {
+      const parsed = JSON.parse(content);
+      if (parsed.success && parsed.content) {
+        actualContent = parsed.content;
+      }
+    } catch {
+    }
+    
+    const frontmatterMatch = actualContent.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
     
     let topics: string[] = [];
     let parsedContent = content;
@@ -231,9 +275,12 @@ source_sessions: ${JSON.stringify(memory.sourceSessions)}
         memories,
       };
 
-      if (typeof window !== 'undefined' && (window as any).electronAPI) {
+      const electronAPI = (window as any).electronAPI;
+      const fsAPI = electronAPI?.fs || electronAPI?.file;
+      
+      if (fsAPI?.writeFile) {
         const indexPath = this.getIndexFilePath();
-        await (window as any).electronAPI.file.writeFile(indexPath, JSON.stringify(index, null, 2));
+        await fsAPI.writeFile(indexPath, JSON.stringify(index, null, 2));
       }
     } catch (error) {
       console.error('[FileMemoryStorage] Failed to update index:', error);
@@ -352,13 +399,75 @@ export class PersistentMemoryService {
     const memory = await this.fileStorage.getMemory(id);
     if (!memory) return false;
 
+    // Save original state for potential rollback
+    const originalContent = memory.content;
+    const originalUpdated = memory.updated;
+
     memory.content = content;
     memory.updated = Date.now();
 
     const success = await this.fileStorage.updateMemory(id, { content });
-    if (success && this.embeddingService) {
-      const embedding = await this.embeddingService(content);
-      await this.indexMemoryToLanceDB(memory, embedding);
+    if (!success) {
+      console.error('[PersistentMemoryService] Failed to update memory file');
+      return false;
+    }
+
+    // Index update with transaction-like guarantee
+    if (this.embeddingService) {
+      let indexUpdateSuccess = false;
+      let deleteSuccess = false;
+
+      try {
+        if (typeof window !== 'undefined' && (window as any).electronAPI?.lancedb) {
+          // Step 1: Delete old index entry
+          try {
+            await (window as any).electronAPI.lancedb.deleteById(id);
+            deleteSuccess = true;
+          } catch (deleteError) {
+            console.warn('[PersistentMemoryService] Failed to delete old index (may not exist):', deleteError);
+            // Continue even if delete fails - the entry might not exist
+            deleteSuccess = true; // Treat as success since we're creating new
+          }
+
+          // Step 2: Create new embedding and index
+          const embedding = await this.embeddingService(content);
+          await this.indexMemoryToLanceDB(memory, embedding);
+
+          // Step 3: Verify the index was created successfully
+          try {
+            const searchResults = await (window as any).electronAPI.lancedb.search(embedding, 1);
+            indexUpdateSuccess = searchResults?.some((r: any) => r.id === id);
+
+            if (!indexUpdateSuccess) {
+              console.warn('[PersistentMemoryService] Index verification failed - entry not found after indexing');
+            }
+          } catch (verifyError) {
+            console.warn('[PersistentMemoryService] Failed to verify index update:', verifyError);
+            // Assume success if verification fails but indexing didn't throw
+            indexUpdateSuccess = true;
+          }
+        }
+      } catch (error) {
+        console.error('[PersistentMemoryService] Index update failed:', error);
+
+        // Rollback file changes if index update failed
+        try {
+          await this.fileStorage.updateMemory(id, {
+            content: originalContent
+          });
+          memory.content = originalContent;
+          memory.updated = originalUpdated;
+          console.log('[PersistentMemoryService] Rolled back file changes after index failure');
+        } catch (rollbackError) {
+          console.error('[PersistentMemoryService] Rollback failed - inconsistent state:', rollbackError);
+        }
+
+        return false;
+      }
+
+      if (!indexUpdateSuccess) {
+        console.warn('[PersistentMemoryService] Index update may have failed, but file was updated');
+      }
     }
 
     return success;
@@ -368,28 +477,61 @@ export class PersistentMemoryService {
     return this.fileStorage.deleteMemory(id);
   }
 
+  // Internationalized memory templates
+  private memoryTemplates: Record<string, {
+    title: (topic: string) => string;
+    summary: string;
+    topics: string;
+    decisions: string;
+    findings: string;
+    notesHeader: string;
+    notesPlaceholder: string;
+  }> = {
+    zh: {
+      title: (topic) => `# ${topic || '会话记忆'}`,
+      summary: '## 摘要',
+      topics: '## 主题标签',
+      decisions: '## 关键决策',
+      findings: '## 重要发现',
+      notesHeader: '---\n\n## 用户笔记',
+      notesPlaceholder: '<!-- 在此添加您的注释和思考 -->',
+    },
+    en: {
+      title: (topic) => `# ${topic || 'Session Memory'}`,
+      summary: '## Summary',
+      topics: '## Topics',
+      decisions: '## Key Decisions',
+      findings: '## Key Findings',
+      notesHeader: '---\n\n## User Notes',
+      notesPlaceholder: '<!-- Add your notes and thoughts here -->',
+    },
+  };
+
   private generateMemoryContent(
     summary: string,
     topics: string[],
     decisions: string[],
-    keyFindings: string[]
+    keyFindings: string[],
+    language: string = 'en'
   ): string {
-    let content = `# ${topics[0] || '会话记忆'}\n\n`;
-    content += `## 摘要\n\n${summary}\n\n`;
+    const t = this.memoryTemplates[language] || this.memoryTemplates.en;
+    
+    let content = `${t.title(topics[0])}\n\n`;
+    content += `${t.summary}\n\n${summary}\n\n`;
 
     if (topics.length > 0) {
-      content += `## 主题标签\n\n${topics.map(t => `- ${t}`).join('\n')}\n\n`;
+      content += `${t.topics}\n\n${topics.map(t => `- ${t}`).join('\n')}\n\n`;
     }
 
     if (decisions.length > 0) {
-      content += `## 关键决策\n\n${decisions.map(d => `- ${d}`).join('\n')}\n\n`;
+      content += `${t.decisions}\n\n${decisions.map(d => `- ${d}`).join('\n')}\n\n`;
     }
 
     if (keyFindings.length > 0) {
-      content += `## 重要发现\n\n${keyFindings.map(f => `- ${f}`).join('\n')}\n\n`;
+      content += `${t.findings}\n\n${keyFindings.map(f => `- ${f}`).join('\n')}\n\n`;
     }
 
-    content += `---\n\n## 用户笔记\n\n<!-- 在此添加您的注释和思考 -->\n`;
+    content += `${t.notesHeader}\n\n${t.notesPlaceholder}\n`;
 
     return content;
   }

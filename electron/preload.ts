@@ -107,6 +107,11 @@ try {
         version: process.versions.electron
     },
 
+    // Paths (统一前后端数据目录)
+    paths: {
+        userData: process.env.APPDATA + (process.platform === 'win32' ? '\\tashanstone' : '/tashanstone')
+    },
+
     // Window control (for custom title bar)
     window: {
         minimize: (): Promise<void> => ipcRenderer.invoke('window:minimize'),
@@ -239,6 +244,22 @@ try {
             ipcRenderer.invoke('fs:selectPdf')
     },
 
+    // File operations for persistent memory (mirrors fs but under 'file' namespace)
+    file: {
+        readFile: (path: string): Promise<string> =>
+            ipcRenderer.invoke('fs:readFile', path),
+        writeFile: (path: string, content: string): Promise<boolean> =>
+            ipcRenderer.invoke('fs:writeFile', path, content),
+        deleteFile: (path: string): Promise<boolean> =>
+            ipcRenderer.invoke('fs:deleteFile', path),
+        ensureDir: (dirPath: string): Promise<boolean> =>
+            ipcRenderer.invoke('fs:ensureDir', dirPath),
+        listFiles: (dirPath: string): Promise<Array<{ name: string; path: string; size: number; lastModified: number }>> =>
+            ipcRenderer.invoke('fs:listFiles', dirPath),
+        openPath: (filePath: string): Promise<boolean> =>
+            ipcRenderer.invoke('fs:openPath', filePath)
+    },
+
     // AI proxy for CORS-free requests
     ai: {
         fetch: (url: string, options: RequestInit): Promise<FetchResult> =>
@@ -347,30 +368,54 @@ try {
             ipcRenderer.invoke('ocr:getStatus')
     },
 
-    // LanceDB vector database
-    lancedb: {
-        init: (): Promise<void> =>
-            ipcRenderer.invoke('lancedb:init'),
-        add: (chunks: any[]): Promise<void> =>
-            ipcRenderer.invoke('lancedb:add', chunks),
-        search: (queryVector: number[], limit?: number): Promise<any[]> =>
-            ipcRenderer.invoke('lancedb:search', queryVector, limit),
-        deleteByFile: (fileId: string): Promise<void> =>
-            ipcRenderer.invoke('lancedb:deleteByFile', fileId),
-        clear: (): Promise<void> =>
-            ipcRenderer.invoke('lancedb:clear'),
-        getAll: (): Promise<any[]> =>
-            ipcRenderer.invoke('lancedb:getAll'),
-        getFileIds: (): Promise<string[]> =>
-            ipcRenderer.invoke('lancedb:getFileIds'),
-        getStats: (): Promise<{ totalFiles: number; totalChunks: number }> =>
-            ipcRenderer.invoke('lancedb:getStats'),
-        getFileNameMapping: (): Promise<Record<string, string[]>> =>
-            ipcRenderer.invoke('lancedb:getFileNameMapping'),
-        cleanDuplicateFileNames: (fileNameToKeepId: Record<string, string>): Promise<number> =>
-            ipcRenderer.invoke('lancedb:cleanDuplicateFileNames', fileNameToKeepId),
-        getFileMetadata: (): Promise<Record<string, number>> =>
-            ipcRenderer.invoke('lancedb:getFileMetadata')
+        // LanceDB vector database
+        lancedb: {
+            init: (): Promise<void> =>
+                ipcRenderer.invoke('lancedb:init'),
+            add: (chunks: any[]): Promise<void> =>
+                ipcRenderer.invoke('lancedb:add', chunks),
+            search: (queryVector: number[], limit?: number): Promise<any[]> =>
+                ipcRenderer.invoke('lancedb:search', queryVector, limit),
+            deleteByFile: (fileId: string): Promise<void> =>
+                ipcRenderer.invoke('lancedb:deleteByFile', fileId),
+            deleteById: (id: string): Promise<void> =>
+                ipcRenderer.invoke('lancedb:deleteById', id),
+            clear: (): Promise<void> =>
+                ipcRenderer.invoke('lancedb:clear'),
+            getAll: (): Promise<any[]> =>
+                ipcRenderer.invoke('lancedb:getAll'),
+            getFileIds: (): Promise<string[]> =>
+                ipcRenderer.invoke('lancedb:getFileIds'),
+            getStats: (): Promise<{ totalFiles: number; totalChunks: number }> =>
+                ipcRenderer.invoke('lancedb:getStats'),
+            getFileNameMapping: (): Promise<Record<string, string[]>> =>
+                ipcRenderer.invoke('lancedb:getFileNameMapping'),
+            cleanDuplicateFileNames: (fileNameToKeepId: Record<string, string>): Promise<number> =>
+                ipcRenderer.invoke('lancedb:cleanDuplicateFileNames', fileNameToKeepId),
+            getFileMetadata: (): Promise<Record<string, number>> =>
+                ipcRenderer.invoke('lancedb:getFileMetadata')
+        },
+
+        // Permanent Memory operations
+        memory: {
+            search: (query: string, limit?: number): Promise<any[]> =>
+                ipcRenderer.invoke('memory:search', query, limit),
+            save: (memory: any): Promise<{ success: boolean; error?: string }> =>
+                ipcRenderer.invoke('memory:save', memory),
+            getAll: (): Promise<any[]> =>
+                ipcRenderer.invoke('memory:getAll'),
+            checkSyncStatus: (): Promise<{ needsSync: boolean; outdatedFiles: string[] }> =>
+                ipcRenderer.invoke('memory:checkSyncStatus'),
+            update: (data: { id: string; content: string; updatedAt?: number }): Promise<{ success: boolean; error?: string }> =>
+                ipcRenderer.invoke('memory:update', data),
+            star: (id: string, isStarred: boolean): Promise<{ success: boolean; error?: string }> =>
+                ipcRenderer.invoke('memory:star', id, isStarred),
+            getMemories: (filters?: { isStarred?: boolean; importance?: string }): Promise<any[]> =>
+                ipcRenderer.invoke('memory:getMemories', filters),
+            savePermanent: (memoryData: any): Promise<{ success: boolean; error?: string }> =>
+                ipcRenderer.invoke('memory:savePermanent', memoryData),
+            markAsPromoted: (originalId: string): Promise<{ success: boolean; error?: string }> =>
+                ipcRenderer.invoke('memory:markAsPromoted', originalId)
         },
 
         // Context Engineering (Phase 2)
@@ -439,6 +484,9 @@ declare global {
                 arch: string;
                 version: string;
             };
+            paths: {
+                userData: string;
+            };
             window: {
                 minimize: () => Promise<void>;
                 maximize: () => Promise<void>;
@@ -506,6 +554,14 @@ declare global {
                 saveFileAs: (content: string, defaultName: string) => Promise<string | null>;
                 selectPdf: () => Promise<{ path: string; name: string; buffer: string } | null>;
             };
+            file: {
+                readFile: (path: string) => Promise<string>;
+                writeFile: (path: string, content: string) => Promise<boolean>;
+                deleteFile: (path: string) => Promise<boolean>;
+                ensureDir: (dirPath: string) => Promise<boolean>;
+                listFiles: (dirPath: string) => Promise<Array<{ name: string; path: string; size: number; lastModified: number }>>;
+                openPath: (filePath: string) => Promise<boolean>;
+            };
             ai: {
                 fetch: (url: string, options: RequestInit) => Promise<FetchResult>;
                 streamFetch: (url: string, options: RequestInit) => Promise<{ streamId: string; status: number; headers: Record<string, string> }>;
@@ -562,6 +618,7 @@ declare global {
                 add: (chunks: any[]) => Promise<void>;
                 search: (queryVector: number[], limit?: number) => Promise<any[]>;
                 deleteByFile: (fileId: string) => Promise<void>;
+                deleteById: (id: string) => Promise<void>;
                 clear: () => Promise<void>;
                 getAll: () => Promise<any[]>;
                 getFileIds: () => Promise<string[]>;
@@ -569,6 +626,19 @@ declare global {
                 getFileNameMapping: () => Promise<Record<string, string[]>>;
                 cleanDuplicateFileNames: (fileNameToKeepId: Record<string, string>) => Promise<number>;
                 getFileMetadata: () => Promise<Record<string, number>>;
+            },
+
+            // Permanent Memory operations
+            memory: {
+                search: (query: string, limit?: number) => Promise<any[]>;
+                save: (memory: any) => Promise<{ success: boolean; error?: string }>;
+                getAll: () => Promise<any[]>;
+                checkSyncStatus: () => Promise<{ needsSync: boolean; outdatedFiles: string[] }>;
+                update: (data: { id: string; content: string; updatedAt?: number }) => Promise<{ success: boolean; error?: string }>;
+                star: (id: string, isStarred: boolean) => Promise<{ success: boolean; error?: string }>;
+                getMemories: (filters?: { isStarred?: boolean; importance?: string }) => Promise<any[]>;
+                savePermanent: (memoryData: any) => Promise<{ success: boolean; error?: string }>;
+                markAsPromoted: (originalId: string) => Promise<{ success: boolean; error?: string }>;
             },
 
             // Context Engineering (Phase 2)
