@@ -59,6 +59,60 @@ export function registerFileHandlers(): void {
         }
     });
 
+    // Delete a file
+    ipcMain.handle('fs:deleteFile', async (_, filePath: string) => {
+        try {
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+                return true;
+            }
+            return false;
+        } catch (error) {
+            logger.error('fs:deleteFile failed', error);
+            throw error;
+        }
+    });
+
+    // Ensure directory exists
+    ipcMain.handle('fs:ensureDir', async (_, dirPath: string) => {
+        try {
+            if (!fs.existsSync(dirPath)) {
+                fs.mkdirSync(dirPath, { recursive: true });
+            }
+            return true;
+        } catch (error) {
+            logger.error('fs:ensureDir failed', error);
+            throw error;
+        }
+    });
+
+    // List files in a directory
+    ipcMain.handle('fs:listFiles', async (_, dirPath: string) => {
+        try {
+            if (!fs.existsSync(dirPath)) {
+                return [];
+            }
+            const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+            const files: any[] = [];
+            for (const entry of entries) {
+                if (entry.isFile()) {
+                    const filePath = path.join(dirPath, entry.name);
+                    const stats = fs.statSync(filePath);
+                    files.push({
+                        name: entry.name,
+                        path: filePath,
+                        size: stats.size,
+                        lastModified: stats.mtimeMs,
+                    });
+                }
+            }
+            return files;
+        } catch (error) {
+            logger.error('fs:listFiles failed', error);
+            throw error;
+        }
+    });
+
     // Select a file with optional filters
     ipcMain.handle('fs:selectFile', async (_, filters?: FileFilter[]) => {
         try {

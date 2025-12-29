@@ -3670,3 +3670,162 @@ export async function getAllMemoryStats(): Promise<{
     permanentMemories: permMemories.length,
   };
 }
+
+// ========================
+// Memory Auto-Creation Integration
+// ========================
+
+export interface ChatMessageForMemory {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp?: number;
+}
+
+export async function autoCreateMemoryFromSession(
+  sessionId: string,
+  messages: ChatMessageForMemory[],
+  embeddingService: (text: string) => Promise<number[]>
+): Promise<MemoryDocument | null> {
+  if (!persistentMemoryService) {
+    console.warn('[AutoMemory] Service not initialized');
+    return null;
+  }
+
+  if (messages.length < 5) {
+    console.log('[AutoMemory] Session too short, skipping');
+    return null;
+  }
+
+  const summary = generateSessionSummary(messages);
+  const topics = extractTopics(messages);
+  const decisions = extractDecisions(messages);
+  const keyFindings = extractKeyFindings(messages);
+
+  const shouldPromote = shouldPromoteToPermanentMemory(
+    decisions,
+    keyFindings,
+    topics,
+    messages.length
+  );
+
+  if (!shouldPromote) {
+    console.log('[AutoMemory] Does not meet promotion criteria');
+    return null;
+  }
+
+  persistentMemoryService.setEmbeddingService(embeddingService);
+
+  return persistentMemoryService.createMemoryFromSession(
+    sessionId,
+    summary,
+    topics,
+    decisions,
+    keyFindings
+  );
+}
+
+function generateSessionSummary(messages: ChatMessageForMemory[]): string {
+  const userMsgs = messages.filter(m => m.role === 'user').slice(-5);
+  const assistantMsgs = messages.filter(m => m.role === 'assistant').slice(-5);
+
+  const recentConversation = userMsgs.map((u, i) => {
+    const a = assistantMsgs[i];
+    const userContent = typeof u.content === 'string' ? u.content : JSON.stringify(u.content);
+    const assistantContent = a ? (typeof a.content === 'string' ? a.content : JSON.stringify(a.content)) : 'N/A';
+    return `User: ${userContent.substring(0, 200)}...\nAssistant: ${assistantContent.substring(0, 200)}...`;
+  }).join('\n\n---\n\n');
+
+  return `会话包含 ${messages.length} 条消息。\n\n最近对话：\n${recentConversation}`;
+}
+
+function extractTopics(messages: ChatMessageForMemory[]): string[] {
+  const topics: Set<string> = new Set();
+  const topicKeywords = [
+    'React', 'TypeScript', 'Electron', 'Node.js', 'API', 'Database',
+    'AI', 'Claude', 'MCP', 'RAG', '向量数据库', 'Context',
+    'Bug', 'Fix', 'Error', '性能', '优化', '架构', '设计',
+    '组件', '状态管理', '内存', '存储', '文件', '搜索',
+  ];
+
+  for (const msg of messages) {
+    const content = typeof msg.content === 'string' ? msg.content : '';
+    for (const keyword of topicKeywords) {
+      if (content.toLowerCase().includes(keyword.toLowerCase())) {
+        topics.add(keyword);
+      }
+    }
+  }
+
+  return Array.from(topics).slice(0, 5);
+}
+
+function extractDecisions(messages: ChatMessageForMemory[]): string[] {
+  const decisions: string[] = [];
+
+  for (const msg of messages) {
+    if (msg.role === 'assistant') {
+      const content = typeof msg.content === 'string' ? msg.content : '';
+      const decisionPatterns = [
+        /(?:we decided|decided to|decision was|chose to|will use|using)\s+([^.]+)/gi,
+        /(?:解决方案|solution|方法|approach)[:\s]+([^.]+)/gi,
+      ];
+
+      for (const pattern of decisionPatterns) {
+        const matches = content.matchAll(pattern);
+        for (const match of matches) {
+          if (match[1]) {
+            decisions.push(match[1].trim().substring(0, 150));
+          }
+        }
+      }
+    }
+  }
+
+  return [...new Set(decisions)].slice(0, 5);
+}
+
+function extractKeyFindings(messages: ChatMessageForMemory[]): string[] {
+  const findings: string[] = [];
+
+  for (const msg of messages) {
+    const content = typeof msg.content === 'string' ? msg.content : '';
+    const findingPatterns = [
+      /(?:found|discovered|learned|noticed|realized|important|critical|key)[s]?[:\s]+([^.]+)/gi,
+      /(?:发现|重要|关键|注意)[:\s]+([^.]+)/gi,
+    ];
+
+    for (const pattern of findingPatterns) {
+      const matches = content.matchAll(pattern);
+      for (const match of matches) {
+        if (match[1]) {
+          findings.push(match[1].trim().substring(0, 200));
+        }
+      }
+    }
+  }
+
+  return [...new Set(findings)].slice(0, 5);
+}
+
+function shouldPromoteToPermanentMemory(
+  decisions: string[],
+  keyFindings: string[],
+  topics: string[],
+  sessionLength: number
+): boolean {
+  const hasCodeFix = decisions.some(d =>
+    /\b(fix|bug|error|issue|repair|solve|resolve)\b/i.test(d)
+  );
+  const hasLearning = keyFindings.some(f =>
+    /\b(learn|discover|understand|realize|notice)\b/i.test(f)
+  );
+  const hasTechStack = topics.some(t =>
+    /\b(react|typescript|electron|node|python|api|database|server|client)\b/i.test(t)
+  );
+
+  const score = (hasCodeFix ? 3 : 0) +
+                (hasLearning ? 2 : 0) +
+                (hasTechStack ? 1 : 0);
+
+  return score >= 3 || sessionLength >= 15;
+}

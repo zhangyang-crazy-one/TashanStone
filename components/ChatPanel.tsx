@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, User, Sparkles, Bot, X, Trash2, Minimize2, Archive, Mic, MicOff, Loader2, Square, Maximize2, Clock } from 'lucide-react';
+import { Send, User, Sparkles, Bot, X, Trash2, Minimize2, Archive, Mic, MicOff, Loader2, Square, Maximize2, Clock, Brain, Search } from 'lucide-react';
 import { ChatMessage, AIState } from '../types';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -109,6 +109,10 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   const [interimTranscript, setInterimTranscript] = useState('');
   const [compactMode, setCompactMode] = useState(false);
   const [showCheckpointDrawer, setShowCheckpointDrawer] = useState(false);
+  const [showMemorySearch, setShowMemorySearch] = useState(false);
+  const [memorySearchQuery, setMemorySearchQuery] = useState('');
+  const [memorySearchResults, setMemorySearchResults] = useState<any[]>([]);
+  const [isSearchingMemories, setIsSearchingMemories] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const t = translations[language];
 
@@ -144,6 +148,31 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   useEffect(() => {
     if (isOpen) scrollToBottom();
   }, [messages, isOpen]);
+
+  const handleMemorySearch = async () => {
+    if (!memorySearchQuery.trim()) return;
+    
+    setIsSearchingMemories(true);
+    try {
+      if (typeof window !== 'undefined' && (window as any).searchPermanentMemories) {
+        const results = await (window as any).searchPermanentMemories(memorySearchQuery, 5);
+        setMemorySearchResults(results);
+      }
+    } catch (error) {
+      console.error('Memory search failed:', error);
+    } finally {
+      setIsSearchingMemories(false);
+    }
+  };
+
+  const handleMemoryClick = (memory: any) => {
+    if (memory.filePath && (window as any).electronAPI?.file?.readFile) {
+      (window as any).electronAPI.file.readFile(memory.filePath).then((content: string) => {
+        setInput(prev => prev ? `${prev}\n\n${content}` : content);
+      });
+    }
+    setShowMemorySearch(false);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -219,6 +248,15 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                   <Clock size={15} />
                 </button>
               )}
+
+              {/* Memory Search Button */}
+              <button
+                onClick={() => setShowMemorySearch(!showMemorySearch)}
+                className={`p-1.5 rounded-md transition-all ${showMemorySearch ? 'text-violet-500 bg-violet-100/50 dark:bg-violet-900/30' : 'text-slate-400 hover:text-violet-500 hover:bg-violet-100/50 dark:hover:bg-violet-900/30'}`}
+                title={language === 'zh' ? '搜索记忆' : 'Search Memories'}
+              >
+                <Brain size={15} />
+              </button>
 
               {/* Compact Mode Toggle */}
               <button
@@ -592,6 +630,75 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           onDelete={onDeleteCheckpoint || (async () => {})}
           onCreate={onCreateCheckpoint || (async () => {})}
         />
+
+        {/* Memory Search Panel */}
+        {showMemorySearch && (
+          <div className="absolute inset-x-0 bottom-full mb-2 mx-2 bg-white dark:bg-cyber-800 rounded-lg shadow-xl border border-paper-200 dark:border-cyber-700 p-3 z-50">
+            <div className="flex items-center gap-2 mb-2">
+              <Brain size={14} className="text-violet-500" />
+              <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                {language === 'zh' ? '搜索记忆' : 'Search Memories'}
+              </span>
+              <button
+                onClick={() => setShowMemorySearch(false)}
+                className="ml-auto p-1 hover:bg-slate-100 dark:hover:bg-cyber-700 rounded"
+              >
+                <X size={12} className="text-slate-400" />
+              </button>
+            </div>
+            <div className="flex gap-2 mb-2">
+              <input
+                type="text"
+                value={memorySearchQuery}
+                onChange={(e) => setMemorySearchQuery(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleMemorySearch()}
+                placeholder={language === 'zh' ? '搜索...' : 'Search...'}
+                className="flex-1 px-2 py-1 text-xs bg-paper-100 dark:bg-cyber-900 border border-paper-200 dark:border-cyber-600 rounded focus:outline-none focus:border-violet-500"
+              />
+              <button
+                onClick={handleMemorySearch}
+                disabled={isSearchingMemories || !memorySearchQuery.trim()}
+                className="p-1.5 bg-violet-500 hover:bg-violet-600 text-white rounded disabled:opacity-50"
+              >
+                {isSearchingMemories ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : (
+                  <Search size={12} />
+                )}
+              </button>
+            </div>
+            <div className="max-h-48 overflow-y-auto space-y-1">
+              {memorySearchResults.map((memory) => (
+                <div
+                  key={memory.id}
+                  onClick={() => handleMemoryClick(memory)}
+                  className="px-2 py-1.5 rounded hover:bg-paper-200 dark:hover:bg-cyber-700 cursor-pointer transition-colors"
+                >
+                  <div className="flex items-center gap-1">
+                    <Sparkles size={10} className="text-violet-400" />
+                    <span className="text-xs text-slate-700 dark:text-slate-300 truncate">
+                      {memory.filePath?.split('/').pop()?.replace('.md', '') || memory.id}
+                    </span>
+                  </div>
+                  {memory.topics && memory.topics.length > 0 && (
+                    <div className="flex gap-1 mt-1">
+                      {memory.topics.slice(0, 3).map((topic: string, i: number) => (
+                        <span key={i} className="text-[9px] px-1 py-0.5 bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 rounded">
+                          {topic}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {memorySearchResults.length === 0 && memorySearchQuery && !isSearchingMemories && (
+                <p className="text-xs text-slate-400 text-center py-2">
+                  {language === 'zh' ? '未找到相关记忆' : 'No memories found'}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
