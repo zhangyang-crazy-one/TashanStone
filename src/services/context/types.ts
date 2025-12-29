@@ -111,6 +111,17 @@ export interface IndexedConversation {
   };
 }
 
+export interface MemoryDocument {
+  id: string;
+  filePath: string;
+  created: number;
+  updated: number;
+  topics: string[];
+  importance: 'low' | 'medium' | 'high';
+  sourceSessions: string[];
+  content: string;
+}
+
 export interface MemoryLayer {
   shortTerm: ApiMessage[];
   midTerm: CompactedSession[];

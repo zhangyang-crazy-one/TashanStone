@@ -5,7 +5,7 @@ import {
   FileText, Plus, Trash2, FolderOpen, Search, X, FolderInput,
   FileType, List, AlignLeft, ChevronRight, GraduationCap,
   Folder, FileCode, FileImage, FileJson, FileSpreadsheet, File as FileIcon,
-  Lock, Upload, Database, Loader2, RefreshCw, Code2, Edit3
+  Lock, Upload, Database, Loader2, RefreshCw, Code2, Edit3, Brain, Sparkles
 } from 'lucide-react';
 import { MarkdownFile, RAGStats, OCRStats, Snippet } from '../types';
 import { translations, Language } from '../utils/translations';
@@ -714,17 +714,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                isDropTarget={dragOverNodeId === node.id}
                            />
                        ))
-                   )}
-                   
-                   {/* Root Drop Zone - Only visible when dragging */}
-                   <div 
-                     className={`flex-1 border-2 border-dashed rounded-lg flex items-center justify-center text-xs text-slate-400 transition-all min-h-[60px] mt-4 ${isRootDropTarget ? 'border-cyan-400 bg-cyan-50 dark:bg-cyan-900/20' : 'border-transparent'}`}
-                     onDragOver={(e) => handleDragOver(e, null)}
-                     onDrop={(e) => handleDrop(e, null)}
-                   >
-                       {isRootDropTarget ? "Drop to Root Directory" : ""}
-                   </div>
-               </div>
+                    )}
+                    
+                    {/* Root Drop Zone - Only visible when dragging */}
+                    <div 
+                      className={`flex-1 border-2 border-dashed rounded-lg flex items-center justify-center text-xs text-slate-400 transition-all min-h-[60px] mt-4 ${isRootDropTarget ? 'border-cyan-400 bg-cyan-50 dark:bg-cyan-900/20' : 'border-transparent'}`}
+                      onDragOver={(e) => handleDragOver(e, null)}
+                      onDrop={(e) => handleDrop(e, null)}
+                    >
+                        {isRootDropTarget ? "Drop to Root Directory" : ""}
+                    </div>
+
+                    {/* AI Memory Library Section */}
+                    <MemoryLibrarySection
+                      language={language}
+                      onSelectMemory={onSelectFile}
+                    />
+                </div>
             </>
           )}
 
@@ -863,10 +869,192 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Footer */}
         <div className="p-2 border-t border-paper-200 dark:border-cyber-700 bg-paper-50 dark:bg-cyber-900/50 text-[10px] text-slate-400 text-center flex justify-between items-center px-4">
-           <span>{files.length} Files</span>
-           <span>ZhangNote</span>
+            <span>{files.length} Files</span>
+            <span>TashanStone</span>
         </div>
       </div>
     </>
   );
 };
+
+// Memory Library Section Component
+interface MemoryLibrarySectionProps {
+  language?: Language;
+  onSelectMemory: (id: string) => void;
+}
+
+interface MemoryFileInfo {
+  id: string;
+  filePath: string;
+  name: string;
+  topics: string[];
+  importance: 'low' | 'medium' | 'high';
+  updated: number;
+}
+
+const MemoryLibrarySection: React.FC<MemoryLibrarySectionProps> = ({
+  language,
+  onSelectMemory,
+}) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [memories, setMemories] = useState<MemoryFileInfo[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const loadMemories = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      if (typeof window !== 'undefined' && (window as any).electronAPI?.file) {
+        const memoriesFolder = '.memories';
+        const files = await (window as any).electronAPI.file.listFiles(memoriesFolder);
+        
+        const memoryFiles: MemoryFileInfo[] = [];
+        for (const file of files || []) {
+          if (file.name?.endsWith('.md') && file.name.startsWith('memory_')) {
+            const content = await (window as any).electronAPI.file.readFile(file.path);
+            
+            let topics: string[] = [];
+            let importance: 'low' | 'medium' | 'high' = 'medium';
+            
+            if (content) {
+              const topicMatch = content.match(/topics:\s*(\[[^\]]*\])/);
+              if (topicMatch) {
+                try {
+                  topics = JSON.parse(topicMatch[1]);
+                } catch {}
+              }
+              
+              const impMatch = content.match(/importance:\s*(\w+)/);
+              if (impMatch) {
+                importance = impMatch[1] as 'low' | 'medium' | 'high';
+              }
+            }
+            
+            memoryFiles.push({
+              id: file.name.replace('.memories/', '').replace('.md', ''),
+              filePath: file.path,
+              name: file.name.replace('.memories/', '').replace('.md', ''),
+              topics,
+              importance,
+              updated: file.lastModified || Date.now(),
+            });
+          }
+        }
+        
+        memoryFiles.sort((a, b) => b.updated - a.updated);
+        setMemories(memoryFiles);
+      }
+    } catch (error) {
+      console.error('Failed to load memories:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isExpanded) {
+      loadMemories();
+    }
+  }, [isExpanded, loadMemories]);
+
+  const filteredMemories = memories.filter(m =>
+    m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    m.topics.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
+
+  const getImportanceColor = (imp: string) => {
+    switch (imp) {
+      case 'high': return 'text-red-500 bg-red-100 dark:bg-red-900/30';
+      case 'medium': return 'text-amber-500 bg-amber-100 dark:bg-amber-900/30';
+      default: return 'text-slate-400 bg-slate-100 dark:bg-slate-800';
+    }
+  };
+
+  const formatDate = (timestamp: number) => {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    
+    if (days === 0) return 'Today';
+    if (days === 1) return 'Yesterday';
+    if (days < 7) return `${days} days ago`;
+    return date.toLocaleDateString();
+  };
+
+  return (
+    <div className="mt-4 border-t border-paper-200 dark:border-cyber-700 pt-3">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-paper-200 dark:hover:bg-cyber-700 transition-colors text-xs font-medium text-slate-600 dark:text-slate-300"
+      >
+        <ChevronRight
+          size={12}
+          className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+        />
+        <Brain size={14} className="text-violet-500" />
+        <span>AI Memory Library</span>
+        <span className="ml-auto text-[10px] px-1.5 py-0.5 bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 rounded">
+          {memories.length}
+        </span>
+      </button>
+
+      {isExpanded && (
+        <div className="mt-2 ml-4 space-y-1">
+          {/* Search */}
+          <div className="relative mb-2">
+            <input
+              type="text"
+              placeholder="Search memories..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-7 pr-2 py-1 bg-paper-100 dark:bg-cyber-900/50 border border-paper-200 dark:border-cyber-700 rounded text-[10px] focus:outline-none focus:border-violet-500"
+            />
+            <Search size={10} className="absolute left-2 top-1.5 text-slate-400" />
+          </div>
+
+          {isLoading ? (
+            <div className="flex items-center gap-2 px-2 py-2 text-slate-400 text-xs">
+              <Loader2 size={12} className="animate-spin" />
+              Loading...
+            </div>
+          ) : filteredMemories.length === 0 ? (
+            <div className="px-2 py-3 text-center text-slate-400 text-[10px] italic">
+              {searchQuery ? 'No matching memories' : 'No memories yet'}
+            </div>
+          ) : (
+            filteredMemories.map((memory) => (
+              <div
+                key={memory.id}
+                onClick={() => onSelectMemory(memory.filePath)}
+                className="group flex items-center gap-2 px-2 py-1.5 rounded hover:bg-paper-200 dark:hover:bg-cyber-700 cursor-pointer transition-colors"
+              >
+                <Sparkles size={10} className="text-violet-400 shrink-0" />
+                <span className="text-xs text-slate-700 dark:text-slate-300 truncate flex-1">
+                  {memory.name}
+                </span>
+                <span className={`text-[9px] px-1 py-0.5 rounded ${getImportanceColor(memory.importance)}`}>
+                  {memory.importance}
+                </span>
+                <span className="text-[9px] text-slate-400 shrink-0">
+                  {formatDate(memory.updated)}
+                </span>
+              </div>
+            ))
+          )}
+
+          {/* Refresh button */}
+          <button
+            onClick={(e) => { e.stopPropagation(); loadMemories(); }}
+            className="w-full flex items-center justify-center gap-1 px-2 py-1 mt-2 text-[10px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-paper-200 dark:hover:bg-cyber-700 rounded transition-colors"
+          >
+            <RefreshCw size={10} className={isLoading ? 'animate-spin' : ''} />
+            Refresh
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default Sidebar;

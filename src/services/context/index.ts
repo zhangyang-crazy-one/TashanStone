@@ -9,6 +9,7 @@ export * from './prompt-cache';
 export * from './streaming';
 export * from './memory-compression';
 export * from './batch-operations';
+export * from './persistent-memory';
 
 export {
   ContextManager,
@@ -74,3 +75,12 @@ export {
   BatchCheckpointOperations,
   CheckpointMaintenance,
 } from './batch-operations';
+
+export {
+  FileMemoryStorage,
+  PersistentMemoryService,
+  createPersistentMemoryService,
+  type MemoryFileStorage,
+  type MemoryDocument,
+  type PersistentMemoryConfig,
+} from './persistent-memory';

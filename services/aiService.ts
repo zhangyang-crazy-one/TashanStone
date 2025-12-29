@@ -18,6 +18,9 @@ import {
   ContextMemoryService,
   InMemoryStorage,
   MessageRole,
+  PersistentMemoryService,
+  createPersistentMemoryService,
+  MemoryDocument,
 } from "../src/services/context";
 
 // --- Types for MCP ---
@@ -3565,4 +3568,105 @@ export async function reconstructContextWithMemories(
 
   const allMessages = [...memoryContext, ...currentContext];
   return allMessages;
+}
+
+// ========================
+// Phase 3.5: Persistent Memory (Permanent Memory Documents)
+// ========================
+
+let persistentMemoryService: PersistentMemoryService | null = null;
+
+export function initializePersistentMemory(
+  options?: { memoriesFolder?: string }
+): PersistentMemoryService {
+  persistentMemoryService = createPersistentMemoryService({
+    memoriesFolder: options?.memoriesFolder ?? '.memories',
+  });
+  return persistentMemoryService;
+}
+
+export function setPersistentMemoryService(service: PersistentMemoryService): void {
+  persistentMemoryService = service;
+}
+
+export function getPersistentMemoryService(): PersistentMemoryService | null {
+  return persistentMemoryService;
+}
+
+export async function initPersistentMemory(): Promise<void> {
+  if (!persistentMemoryService) {
+    initializePersistentMemory();
+  }
+  await persistentMemoryService?.initialize();
+}
+
+export function setMemoryEmbeddingService(
+  service: (text: string) => Promise<number[]>
+): void {
+  persistentMemoryService?.setEmbeddingService(service);
+}
+
+export async function promoteToPermanentMemory(
+  sessionId: string,
+  summary: string,
+  topics: string[],
+  decisions: string[],
+  keyFindings: string[]
+): Promise<MemoryDocument | null> {
+  if (!persistentMemoryService) {
+    console.warn('[PersistentMemory] Service not initialized');
+    return null;
+  }
+  return persistentMemoryService.createMemoryFromSession(
+    sessionId,
+    summary,
+    topics,
+    decisions,
+    keyFindings
+  );
+}
+
+export async function getPermanentMemories(): Promise<MemoryDocument[]> {
+  if (!persistentMemoryService) return [];
+  return persistentMemoryService.getAllMemories();
+}
+
+export async function getPermanentMemory(id: string): Promise<MemoryDocument | null> {
+  if (!persistentMemoryService) return null;
+  return persistentMemoryService.getMemory(id);
+}
+
+export async function searchPermanentMemories(
+  query: string,
+  limit: number = 5
+): Promise<MemoryDocument[]> {
+  if (!persistentMemoryService) return [];
+  return persistentMemoryService.searchMemories(query, limit);
+}
+
+export async function updatePermanentMemory(
+  id: string,
+  content: string
+): Promise<boolean> {
+  if (!persistentMemoryService) return false;
+  return persistentMemoryService.updateMemory(id, content);
+}
+
+export async function deletePermanentMemory(id: string): Promise<boolean> {
+  if (!persistentMemoryService) return false;
+  return persistentMemoryService.deleteMemory(id);
+}
+
+export async function getAllMemoryStats(): Promise<{
+  shortTermSessions: number;
+  midTermSessions: number;
+  longTermConversations: number;
+  permanentMemories: number;
+}> {
+  const memStats = await getMemoryStats();
+  const permMemories = await getPermanentMemories();
+  return {
+    ...memStats,
+    permanentMemories: permMemories.length,
+  };
 }
