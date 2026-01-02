@@ -99,6 +99,16 @@ button, input, select, textarea, a, [role="button"] {
   padding: 1rem 0;
 }
 
+/* CodeMirror initialization mode - prevents flash during scroll setup */
+.codemirror-container.codemirror-initializing .cm-editor {
+  opacity: 0;
+}
+
+.codemirror-container:not(.codemirror-initializing) .cm-editor {
+  opacity: 1;
+  transition: opacity 0.15s ease-out;
+}
+
 /* Fancy Background for MindMap */
 .bg-radial-fade {
   background: radial-gradient(circle at center, transparent 0%, rgb(var(--bg-main)) 100%);

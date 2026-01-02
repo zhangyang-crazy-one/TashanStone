@@ -399,7 +399,9 @@ export const parseCsvToQuiz = (file: File): Promise<Quiz | null> => {
                         question: qText,
                         options: options.length > 0 ? options : undefined,
                         correctAnswer: colMap.ans > -1 ? row[colMap.ans] : undefined,
-                        explanation: colMap.exp > -1 ? row[colMap.exp] : undefined
+                        explanation: colMap.exp > -1 ? row[colMap.exp] : undefined,
+                        timesUsed: 0,
+                        successRate: 0
                     });
                 });
 

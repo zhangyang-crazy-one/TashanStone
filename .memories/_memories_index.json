@@ -1,0 +1,42 @@
+{
+  "version": "1.0",
+  "updated": "2025-12-29T06:50:56.904Z",
+  "memories": [
+    {
+      "id": "test-memory-mjqsupdo-p6xtib",
+      "filePath": "F:\\MYproject\\Zhang_Note\\TashaStone\\.memories\\memory_2025-12-29_ceshi_p6xtib.md",
+      "created": "2025-12-29T06:50:56.892Z",
+      "updated": "2025-12-29T06:50:56.892Z",
+      "topics": [
+        "测试",
+        "示例",
+        "项目"
+      ],
+      "importance": "medium"
+    },
+    {
+      "id": "test-memory-mjqsupdx-nrm81w",
+      "filePath": "F:\\MYproject\\Zhang_Note\\TashaStone\\.memories\\memory_2025-12-29_test-1_nrm81w.md",
+      "created": "2025-12-29T06:50:56.901Z",
+      "updated": "2025-12-29T06:50:56.901Z",
+      "topics": [
+        "项目",
+        "TashaStone",
+        "AI"
+      ],
+      "importance": "medium"
+    },
+    {
+      "id": "test-memory-mjqsupe0-w8xgk9",
+      "filePath": "F:\\MYproject\\Zhang_Note\\TashaStone\\.memories\\memory_2025-12-29_test-2_w8xgk9.md",
+      "created": "2025-12-29T06:50:56.904Z",
+      "updated": "2025-12-29T06:50:56.904Z",
+      "topics": [
+        "开发",
+        "工作流",
+        "指南"
+      ],
+      "importance": "medium"
+    }
+  ]
+}

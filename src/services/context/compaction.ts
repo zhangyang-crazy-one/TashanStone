@@ -9,6 +9,12 @@ import {
 } from './types';
 import { TokenBudget } from './token-budget';
 
+export const TOOL_OUTPUT_PLACEHOLDER = '[Tool output pruned - {tokens} tokens]';
+
+export function createPrunedPlaceholder(tokenCount: number): string {
+  return TOOL_OUTPUT_PLACEHOLDER.replace('{tokens}', tokenCount.toString());
+}
+
 export interface CompactionConfig {
   maxTokensToRemove?: number;
   preserveRecentRounds?: number;
@@ -54,14 +60,21 @@ export class Compaction {
 
     for (const msg of messages) {
       if (msg.role === 'tool' && toPrune.includes(msg)) {
-        const tokens = await this.tokenBudget.estimateTokens(
-          typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
-        );
+        const originalContent = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+        const tokens = await this.tokenBudget.estimateTokens(originalContent);
         totalRemovedTokens += tokens;
+
         const prunedMsg: ApiMessage = {
           ...msg,
           compressed: true,
           compression_type: 'pruned',
+          content: createPrunedPlaceholder(tokens),
+          prune_info: {
+            timestamp: Date.now(),
+            originalTokens: tokens,
+            preserved: true,
+            originalContent: originalContent,
+          },
         };
         prunedMessages.push(prunedMsg);
       } else {

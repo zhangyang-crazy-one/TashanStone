@@ -195,6 +195,7 @@ export class VectorStore {
 
     /**
      * 主索引方法（使用 LanceDB 持久化）
+     * 优化：使用并行嵌入处理提高性能
      */
     async indexFile(file: MarkdownFile, config: AIConfig): Promise<boolean> {
         // 跳过已索引且有效的文件
@@ -213,21 +214,33 @@ export class VectorStore {
             // Create new chunks
             const newChunks = splitTextIntoChunks(file);
 
-            // Embed chunks (sequential with rate limiting)
-            let chunkIndex = 0;
-            for (const chunk of newChunks) {
-                try {
-                    // Rate limit guard
-                    await new Promise(r => setTimeout(r, 200));
-                    chunk.embedding = await getEmbedding(chunk.text, config);
-                    chunkIndex++;
-                } catch (e) {
-                    console.warn(`Failed to embed chunk in ${file.name}`, e);
+            // 并行嵌入处理（批量优化）
+            const BATCH_SIZE = 5; // 每批并行处理 5 个 chunk
+            const validChunks: Chunk[] = [];
+
+            for (let i = 0; i < newChunks.length; i += BATCH_SIZE) {
+                const batch = newChunks.slice(i, i + BATCH_SIZE);
+                const batchResults = await Promise.all(
+                    batch.map(async (chunk) => {
+                        try {
+                            chunk.embedding = await getEmbedding(chunk.text, config);
+                            return chunk;
+                        } catch (e) {
+                            console.warn(`Failed to embed chunk in ${file.name}`, e);
+                            return null;
+                        }
+                    })
+                );
+
+                // 过滤掉失败的 embedding
+                validChunks.push(...batchResults.filter((c): c is Chunk => c !== null && c.embedding && c.embedding.length > 0));
+
+                // 小延迟避免速率限制（可选，取决于 API 限制）
+                if (i + BATCH_SIZE < newChunks.length) {
+                    await new Promise(r => setTimeout(r, 100));
                 }
             }
 
-            // Filter out failed embeddings
-            const validChunks = newChunks.filter(c => c.embedding && c.embedding.length > 0);
             this.chunks.push(...validChunks);
             this.fileSignatures.set(file.id, file.lastModified);
 

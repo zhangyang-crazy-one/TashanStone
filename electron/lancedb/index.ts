@@ -281,10 +281,9 @@ export async function deleteByFile(fileId: string): Promise<void> {
     logger.info('[LanceDB] Deleted vectors for file', { fileId });
 
     // Optimize table to materialize deletions (remove tombstones)
-    // This ensures deleted data is actually removed from query results
     try {
       const optimizeStats = await vectorTable.optimize({
-        cleanupOlderThan: new Date() // Clean up all old versions
+        cleanupOlderThan: new Date()
       });
       logger.debug('[LanceDB] Optimization completed', optimizeStats);
     } catch (optimizeError) {
@@ -294,18 +293,45 @@ export async function deleteByFile(fileId: string): Promise<void> {
     // Re-open table to ensure fresh data in subsequent queries
     vectorTable = await db.openTable(TABLE_NAME);
 
-    // Log count after deletion and refresh
     const afterChunks = await vectorTable.query().toArray() as VectorChunk[];
     const afterCount = afterChunks.length;
-    const afterFileIds = new Set(afterChunks.map(c => c.fileId));
     logger.debug('[LanceDB] After deletion and optimization', {
       chunkCount: afterCount,
-      fileIdsCount: afterFileIds.size,
-      hasTargetFile: afterFileIds.has(fileId),
       chunksDeleted: beforeCount - afterCount
     });
   } catch (error) {
     logger.error('[LanceDB] Failed to delete vectors', { fileId, error });
+    throw error;
+  }
+}
+
+/**
+ * 删除指定 ID 的向量数据
+ */
+export async function deleteById(id: string): Promise<void> {
+  if (!isAvailable || !vectorTable || !db) {
+    logger.warn('[LanceDB] No table available for deletion by ID');
+    return;
+  }
+
+  try {
+    logger.info('[LanceDB] Deleting vector by ID', { id });
+    await vectorTable.delete(`\`id\` = '${id}'`);
+
+    // Optimize table to materialize deletions
+    try {
+      await vectorTable.optimize({
+        cleanupOlderThan: new Date()
+      });
+    } catch (optimizeError) {
+      logger.warn('[LanceDB] Optimization failed after deleteById', optimizeError);
+    }
+
+    // Re-open table to ensure fresh data
+    vectorTable = await db.openTable(TABLE_NAME);
+    logger.info('[LanceDB] Deleted vector by ID successfully', { id });
+  } catch (error) {
+    logger.error('[LanceDB] Failed to delete vector by ID', { id, error });
     throw error;
   }
 }

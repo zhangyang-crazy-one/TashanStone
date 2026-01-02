@@ -3,6 +3,11 @@ import { chatRepository, ChatMessage } from '../database/repositories/chatReposi
 import { Checkpoint, CompactedSession } from '../database/repositories/chatRepository.js';
 import { logger } from '../utils/logger.js';
 
+// Context Manager IPC Handlers
+// 注意：以下 handlers 已注册但当前未被渲染进程使用
+// 保留这些 handlers 以便未来集成上下文工程功能
+// 如：检查点管理、消息压缩、会话历史等
+
 export interface SerializableCheckpoint {
   id: string;
   session_id: string;

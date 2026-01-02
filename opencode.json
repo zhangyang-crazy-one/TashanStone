@@ -1,0 +1,39 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "lsp": {
+    "typescript": {
+      "command": ["typescript-language-server", "--stdio"],
+      "extensions": [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts"]
+    },
+    "python": {
+      "command": ["pyright", "--stdio"],
+      "extensions": [".py", ".pyi"]
+    },
+    "go": {
+      "command": ["gopls"],
+      "extensions": [".go"]
+    },
+    "rust": {
+      "command": ["rust-analyzer"],
+      "extensions": [".rs"]
+    }
+  },
+  "mcp": {
+    "chrome-devtools": {
+      "type":"local",
+      "command":["npx","-y", "chrome-devtools-mcp@latest"]
+    },
+    "mcp_everything": {
+      "type": "local",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-everything"]
+    }
+  },
+  "agent": {
+    "enhanced-plan": {
+      "description": "增强规划代理，结合调研和工具制定详细计划",
+      "mode": "primary",
+      "temperature": 0.1,
+      "system-prompt": "你是一个增强规划代理，专门负责：1. 整合用户头脑风暴结果和调研文档；2. 使用 chrome-devtools 调研代码仓库；3. 使用 LSP、GREP、GLOB 等工具进行代码分析；4. 调用 code-reviewer 子代理评估方案可行性；5. 制定详细的实施计划；6. 更新 docs/ 目录下的项目文档。你只允许编辑 docs/ 目录下的文件，禁止修改源代码。"
+    }
+  }
+}

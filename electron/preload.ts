@@ -412,6 +412,10 @@ try {
                 ipcRenderer.invoke('memory:star', id, isStarred),
             getMemories: (filters?: { isStarred?: boolean; importance?: string }): Promise<any[]> =>
                 ipcRenderer.invoke('memory:getMemories', filters),
+            getMidTermMemories: (): Promise<any[]> =>
+                ipcRenderer.invoke('memory:getMidTermMemories'),
+            getStarredMemories: (): Promise<any[]> =>
+                ipcRenderer.invoke('memory:getStarredMemories'),
             savePermanent: (memoryData: any): Promise<{ success: boolean; error?: string }> =>
                 ipcRenderer.invoke('memory:savePermanent', memoryData),
             markAsPromoted: (originalId: string): Promise<{ success: boolean; error?: string }> =>
@@ -637,6 +641,8 @@ declare global {
                 update: (data: { id: string; content: string; updatedAt?: number }) => Promise<{ success: boolean; error?: string }>;
                 star: (id: string, isStarred: boolean) => Promise<{ success: boolean; error?: string }>;
                 getMemories: (filters?: { isStarred?: boolean; importance?: string }) => Promise<any[]>;
+                getMidTermMemories: () => Promise<any[]>;
+                getStarredMemories: () => Promise<any[]>;
                 savePermanent: (memoryData: any) => Promise<{ success: boolean; error?: string }>;
                 markAsPromoted: (originalId: string) => Promise<{ success: boolean; error?: string }>;
             },

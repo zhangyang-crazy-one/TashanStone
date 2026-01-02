@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, RotateCcw, Trash2, Plus, Clock, FileText, Loader2, Check } from 'lucide-react';
+import { X, RotateCcw, Trash2, Plus, Clock, FileText, Loader2, Check, Sparkles } from 'lucide-react';
 
 interface Checkpoint {
   id: string;
@@ -17,8 +17,10 @@ interface CheckpointDrawerProps {
   onRestore: (checkpointId: string) => Promise<void>;
   onDelete: (checkpointId: string) => Promise<void>;
   onCreate: (name: string) => Promise<void>;
+  onCreateMemory?: (checkpointId: string) => Promise<void>;
   currentSessionId?: string;
   isLoading?: boolean;
+  language?: 'zh' | 'en';
 }
 
 export const CheckpointDrawer: React.FC<CheckpointDrawerProps> = ({
@@ -28,8 +30,10 @@ export const CheckpointDrawer: React.FC<CheckpointDrawerProps> = ({
   onRestore,
   onDelete,
   onCreate,
+  onCreateMemory,
   currentSessionId,
   isLoading = false,
+  language = 'en',
 }) => {
   const [isCreating, setIsCreating] = useState(false);
   const [newName, setNewName] = useState('');
@@ -197,6 +201,16 @@ export const CheckpointDrawer: React.FC<CheckpointDrawerProps> = ({
                   </div>
 
                   <div className="flex items-center gap-1 mt-3 pt-2 border-t border-neutral-700/50">
+                    {onCreateMemory && (
+                      <button
+                        onClick={() => onCreateMemory(checkpoint.id)}
+                        className="flex items-center justify-center gap-1 px-2 py-1 text-xs text-violet-400 hover:bg-violet-500/10 rounded transition-colors"
+                        title={language === 'zh' ? '创建记忆' : 'Create Memory'}
+                      >
+                        <Sparkles className="w-3 h-3" />
+                        Memory
+                      </button>
+                    )}
                     <button
                       onClick={() => handleRestore(checkpoint.id)}
                       disabled={restoringId === checkpoint.id || successId === checkpoint.id}

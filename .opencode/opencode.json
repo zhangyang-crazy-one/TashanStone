@@ -1,0 +1,102 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": [
+    "AGENTS.md",
+    "docs/PROJECT.md",
+    "docs/PROJECT_STATUS.md"
+  ],
+  "lsp": {
+    "typescript": {
+      "command": ["typescript-language-server", "--stdio"],
+      "extensions": [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts"]
+    },
+    "python": {
+      "command": ["pyright", "--stdio"],
+      "extensions": [".py", ".pyi"]
+    },
+    "go": {
+      "command": ["gopls"],
+      "extensions": [".go"]
+    },
+    "rust": {
+      "command": ["rust-analyzer"],
+      "extensions": [".rs"]
+    }
+  },
+  "mcp": {
+    "chrome-devtools": {
+      "type": "local",
+      "enabled": true,
+      "command": ["npx", "-y", "chrome-devtools-mcp@latest"]
+    },
+    "mcp_everything": {
+      "type": "local",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-everything"]
+    },
+    "sequential-thinking": {
+      "type": "local",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-sequential-thinking@latest"]
+    },
+    "zai-mcp-server": {
+            "type": "local",
+            "command": ["npx","-y","@z_ai/mcp-server"],
+            "environment": {
+                "Z_AI_API_KEY": "e247e649f1534651a3f12bfe47d2c42f.qlrVZegtSW0nFdMI",
+                "Z_AI_MODE": "ZHIPU"
+            }
+    },
+    "zread": {
+            "type": "remote",
+            "url": "https://open.bigmodel.cn/api/mcp/zread/mcp",
+            "headers": {
+                "Authorization": "Bearer e247e649f1534651a3f12bfe47d2c42f.qlrVZegtSW0nFdMI"
+            }
+    },
+    "web-reader": {
+            "type": "remote",
+            "url": "https://open.bigmodel.cn/api/mcp/web_reader/mcp",
+            "headers": {
+                "Authorization": "Bearer e247e649f1534651a3f12bfe47d2c42f.qlrVZegtSW0nFdMI"
+            }
+    }
+  },
+  "agent": {
+    "plan": {
+      "description": "规划和分析模式，不修改代码",
+      "mode": "primary",
+      "tools": {
+        "write": false,
+        "edit": false,
+        "bash": false
+      }
+    },
+    "bug-fixer": {
+      "description": "专业 Bug 修复代理，快速定位和修复代码问题",
+      "mode": "subagent",
+      "temperature": 0.1,
+      "maxSteps": 20
+    },
+    "code-reviewer": {
+      "description": "代码审查代理，检查代码质量、安全性和最佳实践",
+      "mode": "subagent",
+      "temperature": 0.1,
+      "maxSteps": 15
+    },
+    "frontend-dev": {
+      "description": "React 前端开发专家，构建 UI 组件和交互功能",
+      "mode": "subagent",
+      "temperature": 0.3,
+      "maxSteps": 30
+    },
+    "backend-dev": {
+      "description": "Electron 后端开发专家，IPC 通信和数据库操作",
+      "mode": "subagent",
+      "temperature": 0.3,
+      "maxSteps": 30
+    },
+    "project-manager": {
+      "description": "项目管理代理，维护项目进度和状态文档",
+      "mode": "subagent"
+    }
+  }
+}

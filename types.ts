@@ -165,6 +165,10 @@ export interface AIConfig {
     messagesToKeep: number;
     checkpointInterval: number;
   };
+  tagSuggestion?: {
+    enabled: boolean;
+    autoSuggest: boolean;
+  };
 }
 
 // ========================
@@ -294,6 +298,12 @@ export interface QuizQuestion {
   knowledgePoints?: string[];
   sourceFileId?: string;
   created?: number;
+
+  // Question Bank fields
+  questionBankId?: string;
+  timesUsed: number;
+  lastUsed?: number;
+  successRate: number;
 }
 
 export interface Quiz {
@@ -310,6 +320,24 @@ export interface Quiz {
   endTime?: number;
   status?: 'not_started' | 'in_progress' | 'completed';
   sourceFileId?: string; // Link back to note
+}
+
+export interface QuestionBank {
+  id: string;
+  name: string;
+  description?: string;
+  tags: string[];
+  questions: QuizQuestion[];
+  createdAt: number;
+  updatedAt: number;
+  sourceFileIds: string[];
+}
+
+export interface QuestionBankStats {
+  totalQuestions: number;
+  byDifficulty: Record<DifficultyLevel, number>;
+  byTags: Record<string, number>;
+  averageSuccessRate: number;
 }
 
 export interface MistakeRecord {
@@ -373,7 +401,8 @@ export interface Snippet {
   id: string;
   name: string;
   content: string;
-  category: 'code' | 'text' | 'template';
+  category: 'code' | 'text' | 'template' | 'wikilink';
+  description?: string;
 }
 
 export interface SearchResult {

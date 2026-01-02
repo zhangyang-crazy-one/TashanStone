@@ -173,9 +173,35 @@
       "Bash(cmd /c \"taskkill /F /PID 25116\")",
       "Bash(cmd /c \"taskkill /F /PID 33216\")",
       "Skill(mcp-tools)",
-      "Skill(react-frontend)"
+      "Skill(react-frontend)",
+      "Skill(ai-integration)",
+      "Skill(electron-main)",
+      "Bash(cmd /c \"taskkill /F /PID 16520\")",
+      "Bash(cmd /c \"dir F:\\\\MYproject\\\\Zhang_Note\\\\TashaStone\\\\dist-electron\\\\*.* 2>&1\")",
+      "mcp__chrome-devtools__evaluate_script",
+      "mcp__chrome-devtools__fill",
+      "Bash(cmd /c \"dir /b F:\\\\MYproject\\\\Zhang_Note\\\\TashaStone\\\\.claude\\\\skills\")",
+      "Bash(cmd /c \"dir /b F:\\\\MYproject\\\\Zhang_Note\\\\TashaStone\\\\.claude\\\\agents\")",
+      "Bash(cmd /c \"dir /b F:\\\\MYproject\\\\Zhang_Note\\\\TashaStone\\\\.claude\\\\commands\")",
+      "Bash(cmd /c \"dir /s /b F:\\\\MYproject\\\\Zhang_Note\\\\zhang_reader\\\\New_Features\\\\zhangnote 2>nul | head -50\")",
+      "Bash(cmd /c \"if exist F:\\\\MYproject\\\\Zhang_Note\\\\zhang_reader\\\\New_Features\\\\zhangnote \\(dir /s /b F:\\\\MYproject\\\\Zhang_Note\\\\zhang_reader\\\\New_Features\\\\zhangnote 2>nul\\) else \\(echo Directory not found\\)\")",
+      "Bash(cmd /c \"dir F:\\\\MYproject\\\\Zhang_Note\\\\zhang_reader\\\\New_Features 2>nul || echo Directory not found\")",
+      "Bash(cmd /c \"dir F:\\\\MYproject\\\\Zhang_Note\\\\zhang_reader 2>nul || echo Directory not found\")",
+      "Bash(npm test:*)",
+      "Bash(npx vitest:*)",
+      "Bash(start /B npx vite --port 5175)",
+      "Bash(cmd /c \"dir /b F:\\\\MYproject\\\\Zhang_Note\\\\TashaStone\\\\utils\")",
+      "Bash(npx vite:*)",
+      "Bash(cmd /c \"if exist node_modules\\\\.vite rmdir /s /q node_modules\\\\.vite && echo Cache cleared\")",
+      "Bash(npm run electron:dev)",
+      "Bash(npm run)"
     ],
     "deny": [],
     "ask": []
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "C:\\Users\\Mr.zhang\\.claude\\ccline\\ccline.exe",
+    "padding": 0
   }
 }

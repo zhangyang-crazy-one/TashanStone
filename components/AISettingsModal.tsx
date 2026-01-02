@@ -1,7 +1,7 @@
 
 
 import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { X, Save, Server, Cpu, Key, Globe, Palette, Upload, Trash2, Check, Download, Plus, Languages, MessageSquare, ChevronDown, Wrench, AlertTriangle, Play, Terminal, Code2, Box, Keyboard, Command, Shield, Eye, EyeOff, FolderOpen } from 'lucide-react';
+import { X, Save, Server, Cpu, Key, Globe, Palette, Upload, Trash2, Check, Download, Plus, Languages, MessageSquare, ChevronDown, Wrench, AlertTriangle, Play, Terminal, Code2, Box, Keyboard, Command, Shield, Eye, EyeOff, FolderOpen, Tag } from 'lucide-react';
 import { AIConfig, AppTheme, AppShortcut } from '../types';
 import { translations, Language } from '../utils/translations';
 import { generateAIResponse, VirtualMCPClient } from '../services/aiService';
@@ -531,6 +531,53 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                 <p className="text-xs text-slate-500 dark:text-slate-400 ml-7">
                   {t.streamingHint || "Show AI response as it's being generated in real-time."} <br/>
                   <span className="text-amber-500 font-medium">⚠️ {t.streamingRecommend || "Recommended: Disable streaming for better tool calling stability and real-time UI feedback."}</span>
+                </p>
+              </div>
+
+              {/* Tag Suggestion Toggle */}
+              <div className="space-y-2 p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg border border-emerald-100 dark:border-emerald-800">
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="tagSuggestionEnabled"
+                    checked={!!tempConfig.tagSuggestion?.enabled}
+                    onChange={(e) => setTempConfig({
+                      ...tempConfig, 
+                      tagSuggestion: { 
+                        ...tempConfig.tagSuggestion, 
+                        enabled: e.target.checked,
+                        autoSuggest: tempConfig.tagSuggestion?.autoSuggest ?? false
+                      }
+                    })}
+                    className="w-4 h-4 text-emerald-600 rounded border-gray-300 focus:ring-emerald-500 cursor-pointer"
+                  />
+                  <label htmlFor="tagSuggestionEnabled" className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2 cursor-pointer">
+                    <Tag size={16} className="text-emerald-500" />
+                    Enable AI Tag Suggestion
+                  </label>
+                </div>
+                <div className="flex items-center gap-3 ml-7">
+                  <input
+                    type="checkbox"
+                    id="tagSuggestionAuto"
+                    checked={!!tempConfig.tagSuggestion?.autoSuggest}
+                    onChange={(e) => setTempConfig({
+                      ...tempConfig, 
+                      tagSuggestion: { 
+                        ...tempConfig.tagSuggestion, 
+                        enabled: tempConfig.tagSuggestion?.enabled ?? true,
+                        autoSuggest: e.target.checked
+                      }
+                    })}
+                    className="w-4 h-4 text-emerald-600 rounded border-gray-300 focus:ring-emerald-500 cursor-pointer"
+                    disabled={!tempConfig.tagSuggestion?.enabled}
+                  />
+                  <label htmlFor="tagSuggestionAuto" className={`text-sm flex items-center gap-2 cursor-pointer ${!tempConfig.tagSuggestion?.enabled ? 'text-slate-400' : 'text-slate-600 dark:text-slate-400'}`}>
+                    Auto-suggest tags when creating notes
+                  </label>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 ml-7">
+                  Uses AI to analyze content and suggest relevant tags automatically.
                 </p>
               </div>
 

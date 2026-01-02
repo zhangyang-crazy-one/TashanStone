@@ -173,6 +173,75 @@ const stats = await window.electronAPI.lancedb.getStats();
 - `electron/lancedb/index.ts` - LanceDB 服务封装
 - `types.ts` - Chunk, SearchResult 类型定义
 
+## Memory 持久化服务
+
+### 文件结构
+
+记忆以 Markdown 文件存储在 `%APPDATA%/tashanstone/.memories/`:
+
+```
+.memories/
+├── _memories_index.json      # 索引文件
+├── memory_2025-12-29_主题_abc123.md
+└── memory_2025-12-29_开发_def456.md
+```
+
+### Memory 文档格式
+
+```markdown
+---
+id: test-memory-abc123
+created: 2025-12-29T06:50:56.904Z
+updated: 2025-12-29T12:37:23.935Z
+topics: ["开发","工作流","指南"]
+importance: medium
+source_sessions: []
+---
+
+# 记忆标题
+
+记忆正文内容...
+```
+
+### IPC 处理器
+
+```typescript
+// 注册 Memory IPC 处理器
+ipcMain.handle('memory:search', async (_, query, limit) => {
+  const memoryService = getMainProcessMemoryService();
+  return memoryService.searchMemories(query, limit);
+});
+
+ipcMain.handle('memory:update', async (_, data) => {
+  // 更新记忆内容
+  await memoryService.saveMemory(memoryDoc);
+  return { success: true };
+});
+
+ipcMain.handle('memory:star', async (_, memoryId, isStarred) => {
+  // 更新标星状态
+  return { success: true };
+});
+```
+
+### 自动注入机制
+
+发送消息时自动搜索并注入相关记忆：
+
+```typescript
+// 基于用户问题搜索相关记忆
+const autoResults = await window.electronAPI.memory.search(userQuery, 5);
+
+// 合并手动注入和自动检索的记忆
+const allMemories = [
+  ...injectedMemories,                    // 手动注入（优先级高）
+  ...autoResults.filter(notDuplicate)     // 自动检索
+];
+
+// 格式化并注入到消息
+messageContent = formatMemoriesIntoPrompt(allMemories) + userQuery;
+```
+
 ## 检查清单
 
 - [ ] 是否正确配置分块参数
@@ -180,3 +249,5 @@ const stats = await window.electronAPI.lancedb.getStats();
 - [ ] 是否设置了相似度阈值
 - [ ] 是否正确处理了文件删除
 - [ ] 是否在 Electron 环境正确使用 IPC
+- [ ] Memory 文件是否包含正确的 YAML frontmatter
+- [ ] Memory 索引是否同步更新

@@ -381,6 +381,17 @@ export class ChatRepository {
         return rows.map(row => this.rowToCompactedSession(row));
     }
 
+    getAllCompactedSessions(): CompactedSession[] {
+        const db = getDatabase();
+        const rows = db.prepare(`
+            SELECT id, session_id, summary, key_topics, decisions, message_start, message_end, created_at
+            FROM compacted_sessions
+            ORDER BY created_at DESC
+        `).all() as CompactedSessionRow[];
+
+        return rows.map(row => this.rowToCompactedSession(row));
+    }
+
     deleteCompactedSession(sessionId: string): number {
         const db = getDatabase();
         const result = db.prepare('DELETE FROM compacted_sessions WHERE session_id = ?').run(sessionId);

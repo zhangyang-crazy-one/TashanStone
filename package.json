@@ -30,6 +30,11 @@
     "download:ocr-model": "node scripts/download-ocr-model.cjs"
   },
   "dependencies": {
+    "@codemirror/commands": "^6.10.1",
+    "@codemirror/lang-markdown": "^6.5.0",
+    "@codemirror/language": "^6.12.1",
+    "@codemirror/state": "^6.5.3",
+    "@codemirror/view": "^6.39.8",
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@ffprobe-installer/ffprobe": "^2.1.2",
     "@fontsource/ma-shan-zheng": "^5.2.8",
@@ -42,6 +47,8 @@
     "@techstark/opencv-js": "^4.12.0-release.1",
     "@types/diff": "^7.0.2",
     "@types/papaparse": "^5.5.0",
+    "@types/react-virtualized-auto-sizer": "^1.0.4",
+    "@uiw/react-codemirror": "^4.25.4",
     "better-sqlite3": "^11.6.0",
     "canvas": "^3.2.0",
     "clsx": "^2.1.0",
@@ -60,6 +67,8 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-markdown": "^10.1.0",
+    "react-virtualized-auto-sizer": "^2.0.1",
+    "react-window": "^2.2.3",
     "rehype-highlight": "^7.0.2",
     "rehype-katex": "^7.0.1",
     "rehype-raw": "^7.0.0",
@@ -73,6 +82,9 @@
     "@electron/rebuild": "^4.0.1",
     "@tailwindcss/postcss": "^4.1.17",
     "@tailwindcss/typography": "^0.5.19",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.1",
+    "@testing-library/user-event": "^14.6.1",
     "@types/better-sqlite3": "^7.6.12",
     "@types/d3": "^7.4.3",
     "@types/fluent-ffmpeg": "^2.1.28",
@@ -85,6 +97,7 @@
     "electron-builder": "^25.1.8",
     "electron-icon-builder": "^2.0.1",
     "jimp": "^1.6.0",
+    "jsdom": "^27.4.0",
     "png-to-ico": "^3.0.1",
     "postcss": "^8.5.6",
     "sharp": "^0.34.5",
@@ -93,6 +106,7 @@
     "typescript": "~5.8.2",
     "vite": "^6.2.0",
     "vite-plugin-static-copy": "^3.1.4",
+    "vitest": "^4.0.16",
     "wait-on": "^8.0.1"
   }
 }

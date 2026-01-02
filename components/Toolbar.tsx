@@ -37,7 +37,8 @@ import {
   HelpCircle,
   Edit3,
   ChevronDown,
-  Mic
+  Mic,
+  Code2
 } from 'lucide-react';
 import { ViewMode, Theme, AIProvider } from '../types';
 import { translations, Language } from '../utils/translations';
@@ -49,10 +50,12 @@ interface ToolbarProps {
   onExport: () => void;
   onAIPolish: () => void;
   onAIExpand: () => void;
-  onBuildGraph: (useActiveFileOnly?: boolean) => void;
+  isSaving?: boolean;
+  onBuildGraph: (useActiveFileOnly?: boolean, graphType?: 'concept' | 'filelink') => void;
   onSynthesize: () => void;
   onGenerateMindMap: () => void;
   onGenerateQuiz: () => void;
+  onOpenQuestionBank?: () => void;
   onFormatBold: () => void;
   onFormatItalic: () => void;
   onUndo?: () => void;
@@ -70,6 +73,9 @@ interface ToolbarProps {
   language?: Language;
   splitMode?: 'none' | 'horizontal' | 'vertical';
   onSplitModeChange?: (mode: 'none' | 'horizontal' | 'vertical') => void;
+  graphType?: 'concept' | 'filelink';
+  useCodeMirror?: boolean;
+  onToggleCodeMirror?: (enabled: boolean) => void;
 }
 
 export const Toolbar: React.FC<ToolbarProps> = ({
@@ -83,6 +89,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onSynthesize,
   onGenerateMindMap,
   onGenerateQuiz,
+  onOpenQuestionBank,
   onFormatBold,
   onFormatItalic,
   onUndo,
@@ -99,7 +106,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   activeProvider,
   language = 'en',
   splitMode = 'none',
-  onSplitModeChange
+  onSplitModeChange,
+  graphType = 'concept',
+  useCodeMirror = false,
+  onToggleCodeMirror
 }) => {
   const t = translations[language];
 
@@ -149,6 +159,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         <button
           onClick={toggleSidebar}
           className="p-2 rounded-lg hover:bg-paper-100 dark:hover:bg-cyber-800 text-slate-500 dark:text-slate-400 transition-colors flex-shrink-0 app-no-drag"
+          aria-label="Toggle sidebar"
         >
           <Menu size={20} />
         </button>
@@ -175,19 +186,21 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         {/* Undo/Redo Controls */}
         <div className="flex bg-paper-100 dark:bg-cyber-800 rounded-lg p-1 border border-paper-200 dark:border-cyber-700 transition-colors hidden sm:flex">
           <button
-            onClick={onUndo}
-            className="p-2 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all hover:bg-white dark:hover:bg-cyber-700"
-            title="Undo (Ctrl+Z)"
-          >
-            <Undo size={18} />
-          </button>
-          <button
-            onClick={onRedo}
-            className="p-2 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all hover:bg-white dark:hover:bg-cyber-700"
-            title="Redo (Ctrl+Y)"
-          >
-            <Redo size={18} />
-          </button>
+          onClick={onUndo}
+          className="p-2 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all hover:bg-white dark:hover:bg-cyber-700"
+          title="Undo (Ctrl+Z)"
+          aria-label="Undo"
+        >
+          <Undo size={18} />
+        </button>
+        <button
+          onClick={onRedo}
+          className="p-2 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all hover:bg-white dark:hover:bg-cyber-700"
+          title="Redo (Ctrl+Y)"
+          aria-label="Redo"
+        >
+          <Redo size={18} />
+        </button>
         </div>
 
         {/* Formatting Controls */}
@@ -196,6 +209,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             onClick={onFormatBold}
             className="p-2 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all hover:bg-white dark:hover:bg-cyber-700"
             title="Bold"
+            aria-label="Bold"
           >
             <Bold size={18} />
           </button>
@@ -203,6 +217,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             onClick={onFormatItalic}
             className="p-2 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all hover:bg-white dark:hover:bg-cyber-700"
             title="Italic"
+            aria-label="Italic"
           >
             <Italic size={18} />
           </button>
@@ -265,16 +280,31 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               <div className="my-1 h-px bg-paper-200 dark:bg-cyber-700"></div>
               {/* Knowledge Graph Views */}
               <button
-                onClick={() => { onBuildGraph(true); setShowViewMenu(false); }}
-                className={`w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 flex items-center gap-2 ${viewMode === ViewMode.Graph ? 'text-cyan-600 dark:text-cyan-400 font-medium' : 'text-slate-700 dark:text-slate-200'}`}
+                onClick={() => { onBuildGraph(true, 'concept'); setShowViewMenu(false); }}
+                className={`w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 flex items-center gap-2 ${viewMode === ViewMode.Graph && graphType === 'concept' ? 'text-cyan-600 dark:text-cyan-400 font-medium' : 'text-slate-700 dark:text-slate-200'}`}
               >
-                <Network size={14} className="text-emerald-500" /> {t.graph} ({language === 'zh' ? '当前' : 'Current'})
+                <Network size={14} className="text-emerald-500" /> {t.graph} - Concept
               </button>
               <button
-                onClick={() => { onBuildGraph(false); setShowViewMenu(false); }}
-                className="w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
+                onClick={() => { onBuildGraph(false, 'concept'); setShowViewMenu(false); }}
+                className={`w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 flex items-center gap-2 ${viewMode === ViewMode.Graph && graphType === 'concept' ? 'text-cyan-600 dark:text-cyan-400 font-medium' : 'text-slate-700 dark:text-slate-200'}`}
               >
-                <Library size={14} className="text-emerald-400" /> {t.graph} ({language === 'zh' ? '全部' : 'All'})
+                <Library size={14} className="text-emerald-400" /> {t.graph} - Concept (All)
+              </button>
+              <button
+                onClick={() => { onBuildGraph(false, 'filelink'); setShowViewMenu(false); }}
+                className={`w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 flex items-center gap-2 ${viewMode === ViewMode.Graph && graphType === 'filelink' ? 'text-cyan-600 dark:text-cyan-400 font-medium' : 'text-slate-700 dark:text-slate-200'}`}
+              >
+                <GitBranch size={14} className="text-violet-500" /> {t.graph} - File Links
+              </button>
+              <div className="my-1 h-px bg-paper-200 dark:bg-cyber-700"></div>
+              {/* Editor Mode Toggle */}
+              <button
+                onClick={() => { onToggleCodeMirror?.(!useCodeMirror); setShowViewMenu(false); }}
+                className={`w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 flex items-center gap-2 ${useCodeMirror ? 'text-cyan-600 dark:text-cyan-400 font-medium' : 'text-slate-700 dark:text-slate-200'}`}
+              >
+                <Code2 size={14} className={useCodeMirror ? 'text-cyan-500' : 'text-slate-400'} /> 
+                {useCodeMirror ? t.codeMirrorEditor : t.plainTextEditor}
               </button>
               <div className="my-1 h-px bg-paper-200 dark:bg-cyber-700"></div>
               {/* Analytics & Tools Views */}
@@ -307,6 +337,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               onClick={() => onSplitModeChange('none')}
               className={`p-2 rounded-md transition-all ${splitMode === 'none' ? 'bg-white dark:bg-cyber-500 text-cyan-600 dark:text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
               title="Single View"
+              aria-label="Single view"
             >
               <Square size={16} />
             </button>
@@ -314,6 +345,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               onClick={() => onSplitModeChange('horizontal')}
               className={`p-2 rounded-md transition-all ${splitMode === 'horizontal' ? 'bg-white dark:bg-cyber-500 text-cyan-600 dark:text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
               title="Split Horizontal"
+              aria-label="Split horizontally"
             >
               <Columns size={16} />
             </button>
@@ -321,6 +353,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               onClick={() => onSplitModeChange('vertical')}
               className={`p-2 rounded-md transition-all ${splitMode === 'vertical' ? 'bg-white dark:bg-cyber-500 text-cyan-600 dark:text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
               title="Split Vertical"
+              aria-label="Split vertically"
             >
               <Rows size={16} />
             </button>
@@ -374,6 +407,14 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                 >
                   <GraduationCap size={14} className="text-amber-500" /> {t.quiz}
                 </button>
+                {onOpenQuestionBank && (
+                  <button
+                    onClick={() => { onOpenQuestionBank(); setShowAIMenu(false); }}
+                    className="w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
+                  >
+                    <Library size={14} className="text-violet-500" /> {t.questionBank}
+                  </button>
+                )}
                 <button
                   onClick={() => { onSynthesize(); setShowAIMenu(false); }}
                   className="w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
@@ -404,6 +445,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           onClick={toggleChat}
           className="p-2 text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-900/20 rounded-lg transition-colors relative"
           title={t.chat}
+          aria-label={t.chat}
         >
           <MessageSquare size={20} />
           <span className="absolute top-1 right-1 w-2 h-2 bg-violet-500 rounded-full"></span>
@@ -413,6 +455,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           onClick={toggleSettings}
           className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg transition-colors"
           title={t.settings}
+          aria-label={t.settings}
         >
           <Settings size={20} />
         </button>
@@ -421,12 +464,18 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         <button
           onClick={toggleTheme}
           className="p-2 rounded-full hover:bg-paper-100 dark:hover:bg-cyber-800 text-amber-500 dark:text-cyber-400 transition-colors"
+          aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
         >
           {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
         </button>
 
         {/* File Actions */}
-        <button onClick={onExport} className="p-2 text-slate-400 hover:text-cyan-600 dark:hover:text-cyber-400 transition-colors" title={t.download}>
+        <button
+          onClick={onExport}
+          className="p-2 text-slate-400 hover:text-cyan-600 dark:hover:text-cyber-400 transition-colors"
+          title={t.download}
+          aria-label={t.download}
+        >
           <Download size={20} />
         </button>
       </div>
@@ -440,6 +489,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               onClick={handleMinimize}
               className="p-2 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-paper-100 dark:hover:bg-cyber-700 transition-all"
               title="Minimize"
+              aria-label="Minimize window"
             >
               <Minus size={14} />
             </button>
@@ -447,6 +497,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               onClick={handleMaximize}
               className="p-2 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-paper-100 dark:hover:bg-cyber-700 transition-all"
               title={isMaximized ? "Restore" : "Maximize"}
+              aria-label={isMaximized ? "Restore window" : "Maximize window"}
             >
               {isMaximized ? <Minimize2 size={14} /> : <Square size={14} />}
             </button>
@@ -454,6 +505,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               onClick={handleClose}
               className="p-2 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"
               title="Close"
+              aria-label="Close window"
             >
               <X size={14} />
             </button>

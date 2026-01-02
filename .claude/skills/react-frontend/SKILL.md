@@ -142,6 +142,63 @@ export function Component({ data, onAction, theme = 'dark' }: ComponentProps) {
 - `components/Editor.tsx` - 编辑器组件
 - `components/Sidebar.tsx` - 文件浏览器
 
+## Memory 组件规范
+
+### 状态同步原则
+
+在编辑 Memory 后，**必须**同步更新本地状态：
+
+```typescript
+// ✅ 正确 - 成功后更新本地状态
+const handleSaveMemory = async (memory: MemoryItem) => {
+  const result = await window.electronAPI.memory.update(data);
+  if (result?.success) {
+    // 关键：更新预览状态
+    setPreviewMemory(prev => prev ? {
+      ...prev,
+      content: memory.content,
+      updatedAt: Date.now()
+    } : null);
+    showToast('保存成功');
+  }
+};
+
+// ❌ 错误 - 只显示 toast 不更新状态
+const handleSaveMemory = async (memory: MemoryItem) => {
+  await window.electronAPI.memory.update(data);
+  showToast('保存成功'); // 状态不同步！
+};
+```
+
+### Memory IPC 调用
+
+```typescript
+// 搜索记忆
+window.electronAPI.memory.search(query, limit)
+
+// 更新记忆
+window.electronAPI.memory.update({ id, content, updatedAt })
+
+// 标星记忆
+window.electronAPI.memory.star(memoryId, isStarred)
+
+// 获取所有记忆
+window.electronAPI.memory.getAll()
+```
+
+### Memory 组件结构
+
+```tsx
+// 状态定义
+const [previewMemory, setPreviewMemory] = useState<MemoryItem | null>(null);
+const [injectedMemories, setInjectedMemories] = useState<any[]>([]);
+
+// 编辑后同步状态
+if (previewMemory?.id === memory.id) {
+  setPreviewMemory(prev => prev ? { ...prev, content, updatedAt } : null);
+}
+```
+
 ## 检查清单
 
 - [ ] 是否使用函数组件 + hooks
@@ -149,3 +206,4 @@ export function Component({ data, onAction, theme = 'dark' }: ComponentProps) {
 - [ ] 是否使用 Tailwind CSS 样式
 - [ ] 是否通过 electronAPI 调用主进程功能
 - [ ] 是否处理了 loading/error 状态
+- [ ] Memory 操作后是否同步更新本地状态

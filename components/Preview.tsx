@@ -6,13 +6,17 @@ import rehypeHighlight from 'rehype-highlight';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
 import { visit } from 'unist-util-visit';
-import { Check, Copy, FileCode, Terminal, AlertTriangle, ZoomIn, ZoomOut, Maximize, WrapText, FileJson, ImageOff } from 'lucide-react';
+import { Check, Copy, FileCode, Terminal, AlertTriangle, ZoomIn, ZoomOut, Maximize, WrapText, FileJson, ImageOff, ExternalLink, GraduationCap, HelpCircle, Link2, FileText } from 'lucide-react';
 import mermaid from 'mermaid';
+import { preprocessWikiLinks, extractBlockReferencesWithContent } from '../src/types/wiki';
+import { MarkdownFile } from '../types';
+import { findFileByWikiLinkTarget } from '../src/services/wiki/wikiLinkService';
 
 // --- Types ---
 interface PreviewProps {
   content: string;
-  initialScrollRatio?: number; // 0-1 之间的滚动比例
+  initialScrollRatio?: number;
+  files?: MarkdownFile[];
 }
 
 // --- Rehype Plugin to skip mermaid code blocks from highlighting ---
@@ -57,6 +61,136 @@ const rehypeFilterAttributes = () => {
   };
 };
 
+// --- Rehype Plugin to transform Block References ---
+// Transforms <<PageName:LineNumber>> or <<PageName:start-end>> into custom elements
+// IMPORTANT: This is a plugin factory that returns a rehype plugin
+const rehypeBlockReferences = (files: MarkdownFile[]) => {
+  // Return the actual plugin function (this is what unified expects)
+  return () => (tree: any) => {
+    if (!tree || typeof tree !== 'object') return;
+
+    try {
+      visit(tree, 'text', (node: any, index, parent: any) => {
+        // Guard: skip if parent or index is undefined
+        if (!parent || index === undefined || !node?.value) return;
+
+        const value = node.value;
+
+        // 支持两种格式: <<filename:line>> 和 <<{filename}:{line}>>
+        const blockRefRegex = /<<\{?([^:}]+)\}?:\{?(\d+)\}?(?:-\{?(\d+)\}?)?>>(?!>)/g;
+        const matches = [...value.matchAll(blockRefRegex)];
+
+        if (matches.length > 0) {
+          const children: any[] = [];
+          let lastIndex = 0;
+
+          matches.forEach((match, idx) => {
+            if (match.index > lastIndex) {
+              children.push({
+                type: 'text',
+                value: value.slice(lastIndex, match.index)
+              });
+            }
+
+            const target = match[1].trim();
+            const startLine = parseInt(match[2], 10);
+            const endLine = match[3] ? parseInt(match[3], 10) : startLine;
+
+            children.push({
+              type: 'element',
+              tagName: 'blockref',
+              properties: {
+                'data-target': target,
+                'data-start-line': startLine,
+                'data-end-line': endLine
+              },
+              children: [{ type: 'text', value: `<<${target}:${startLine}${endLine > startLine ? `-${endLine}` : ''}>>` }]
+            });
+
+            lastIndex = match.index + match[0].length;
+          });
+
+          if (lastIndex < value.length) {
+            children.push({
+              type: 'text',
+              value: value.slice(lastIndex)
+            });
+          }
+
+          parent.children.splice(index, 1, ...children);
+        }
+      });
+    } catch (e) {
+      // Silently ignore tree traversal errors
+    }
+  };
+};
+
+// --- Rehype Plugin to transform WikiLinks ---
+// Transforms [[Link]] or [[Link|Alias]] into custom elements with data-wikilink attribute
+const rehypeWikiLinks = () => {
+  return (tree: any) => {
+    if (!tree || typeof tree !== 'object') return;
+
+    try {
+      visit(tree, 'text', (node: any, index, parent: any) => {
+        // Guard: skip if parent or index is undefined
+        if (!parent || index === undefined || !node?.value) return;
+
+        const wikiLinkRegex = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+        const value = node.value;
+        const matches = [...value.matchAll(wikiLinkRegex)];
+
+        if (matches.length > 0) {
+          const children: any[] = [];
+          let lastIndex = 0;
+
+          matches.forEach((match) => {
+            // Add text before the match
+            if (match.index > lastIndex) {
+              children.push({
+                type: 'text',
+                value: value.slice(lastIndex, match.index)
+              });
+            }
+
+            // 移除首尾花括号，支持 [[{target}|{alias}]] 格式
+            const target = match[1].trim().replace(/^\{|\}$/g, '');
+            const alias = match[2]?.trim().replace(/^\{|\}$/g, '');
+
+            // Create a custom element for the wiki link
+            children.push({
+              type: 'element',
+              tagName: 'wikilink',
+              properties: {
+                'data-target': target,
+                'data-alias': alias || target
+              },
+              children: [{ type: 'text', value: alias || target }]
+            });
+
+            lastIndex = match.index + match[0].length;
+          });
+
+          // Add remaining text
+          if (lastIndex < value.length) {
+            children.push({
+              type: 'text',
+              value: value.slice(lastIndex)
+            });
+          }
+
+          // Replace the text node with new nodes
+          parent.children.splice(index, 1, ...children);
+        }
+      });
+    } catch (e) {
+      // Silently ignore tree traversal errors
+      console.warn('[Preview] WikiLink parsing error:', e);
+    }
+  };
+};
+
 // --- Utils ---
 // Generate slug from text (supports Chinese characters)
 const generateSlug = (text: string): string => {
@@ -81,6 +215,245 @@ const extractText = (children: React.ReactNode): string => {
   return '';
 };
 
+// --- WikiLink Preview Component for use in Preview.tsx ---
+interface WikiLinkPreviewProps {
+  target: string;
+  alias?: string;
+  files?: MarkdownFile[];
+  onNavigate?: (fileId: string) => void;
+}
+
+const WikiLinkPreview: React.FC<WikiLinkPreviewProps> = ({ target, alias, files }) => {
+  const [showPreview, setShowPreview] = useState(false);
+  const [targetFile, setTargetFile] = useState<{ id: string; name: string; path?: string; content?: string; lastModified?: number } | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 防御性检查：确保 files 是数组
+  const safeFiles = files || [];
+
+  const isExamLink = target?.toLowerCase().startsWith('exam:') ?? false;
+  const isQuestionLink = target?.toLowerCase().startsWith('question:') ?? false;
+
+  const displayText = alias || target || '';
+  const href = `?wiki=${encodeURIComponent(target || '')}`;
+
+  // Find target file for preview
+  useEffect(() => {
+    if (target && !isExamLink && !isQuestionLink && safeFiles.length > 0) {
+      const file = findFileByWikiLinkTarget(target, safeFiles);
+      setTargetFile(file || null);
+    }
+  }, [target, safeFiles, isExamLink, isQuestionLink]);
+
+  const handleMouseEnter = () => {
+    if (isExamLink || isQuestionLink) return;
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => {
+      setShowPreview(true);
+    }, 500);
+  };
+
+  const handleMouseLeave = () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    setShowPreview(false);
+  };
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (isExamLink || isQuestionLink) {
+      window.dispatchEvent(new CustomEvent('navigate-to-wikilink', { detail: { target } }));
+      return;
+    }
+    window.dispatchEvent(new CustomEvent('navigate-to-wikilink', { detail: { target } }));
+  };
+
+  if (isExamLink) {
+    return (
+      <a
+        href={href}
+        onClick={handleClick}
+        className="inline-flex items-center gap-1 font-semibold text-violet-600 dark:text-violet-400 hover:underline cursor-pointer"
+      >
+        <GraduationCap size={14} />
+        <span>{displayText}</span>
+      </a>
+    );
+  }
+
+  if (isQuestionLink) {
+    return (
+      <a
+        href={href}
+        onClick={handleClick}
+        className="inline-flex items-center gap-1 font-semibold text-amber-600 dark:text-amber-400 hover:underline cursor-pointer"
+      >
+        <HelpCircle size={14} />
+        <span>{displayText}</span>
+      </a>
+    );
+  }
+
+  return (
+    <span
+      className="relative inline-block"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
+      <a
+        href={href}
+        onClick={handleClick}
+        className={`inline-flex items-center gap-0.5 font-semibold rounded px-1 -mx-1 cursor-pointer no-underline ${targetFile
+          ? 'text-cyan-600 dark:text-cyan-400 hover:bg-cyan-100 dark:hover:bg-cyan-900/30'
+          : 'text-slate-400 dark:text-slate-500 hover:text-red-400'
+          }`}
+      >
+        <ExternalLink size={12} className="opacity-60" />
+        <span className="border-b border-dashed border-current">{displayText}</span>
+      </a>
+
+      {/* Hover Preview Popup - 向右下方显示 */}
+      {showPreview && targetFile && (
+        <div className="absolute top-full left-full ml-2 mt-2 w-72 z-[100] pointer-events-none">
+          <div className="w-3 h-3 bg-white/95 dark:bg-gray-800/95 rotate-45 absolute left-4 -top-1.5 border-l border-t border-gray-200 dark:border-gray-700"></div>
+          <div className="bg-white/95 dark:bg-gray-800/95 backdrop-blur-xl border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl overflow-hidden p-3">
+            <div className="flex items-center gap-2 mb-2 pb-2 border-b border-gray-100 dark:border-gray-700">
+              <FileText size={14} className="text-cyan-500 flex-shrink-0" />
+              <span className="text-xs font-bold text-gray-700 dark:text-gray-200 truncate">{targetFile.name}</span>
+            </div>
+            <div className="text-[10px] text-gray-500 dark:text-gray-400 line-clamp-6 leading-relaxed whitespace-pre-wrap">
+              {targetFile.content.slice(0, 300).replace(/[#*`_~]/g, '')}...
+            </div>
+          </div>
+        </div>
+      )}
+    </span>
+  );
+};
+
+// --- Block Reference Preview Component ---
+interface BlockReferencePreviewProps {
+  target: string;
+  startLine: number;
+  endLine?: number;
+  files?: MarkdownFile[];
+}
+
+const BlockReferencePreview: React.FC<BlockReferencePreviewProps> = ({ target, startLine, endLine, files }) => {
+  const [showPreview, setShowPreview] = useState(false);
+  const [blockContent, setBlockContent] = useState('');
+  const [fileExists, setFileExists] = useState(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 防御性检查：确保 files 是数组
+  const safeFiles = files || [];
+
+  useEffect(() => {
+    if (!target || safeFiles.length === 0) {
+      setFileExists(false);
+      return;
+    }
+
+    const targetLower = target.toLowerCase();
+    // 移除 .md 扩展名进行比较
+    const targetWithoutExt = targetLower.replace(/\.md$/i, '');
+
+    const targetFile = safeFiles.find(f => {
+      const name = f.name.toLowerCase();
+      // 移除 .md 扩展名进行比较
+      const nameWithoutExt = name.replace(/\.md$/i, '');
+      // 比较不带扩展名的名称
+      return nameWithoutExt === targetWithoutExt;
+    });
+
+    if (targetFile) {
+      setFileExists(true);
+      const lines = targetFile.content.split('\n');
+      if (endLine && endLine >= startLine && endLine <= lines.length) {
+        setBlockContent(lines.slice(startLine - 1, endLine).join('\n').trim());
+      } else if (startLine <= lines.length) {
+        setBlockContent(lines[startLine - 1].trim());
+      }
+    } else {
+      setFileExists(false);
+    }
+  }, [target, startLine, endLine, safeFiles]);
+
+  const formatLabel = () => {
+    if (endLine && endLine > startLine) {
+      return `<<${target}:${startLine}-${endLine}>>`;
+    }
+    return `<<${target}:${startLine}>>`;
+  };
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (safeFiles.length === 0) return;
+
+    const targetFile = safeFiles.find(f => {
+      const name = f.name.toLowerCase();
+      const targetLower = target.toLowerCase();
+      return name === targetLower ||
+        name === `${targetLower}.md` ||
+        f.path?.toLowerCase()?.endsWith(`/${targetLower}`) ||
+        f.path?.toLowerCase()?.endsWith(`/${targetLower}.md`);
+    });
+    if (targetFile) {
+      window.dispatchEvent(new CustomEvent('navigate-to-wikilink', { detail: { target } }));
+    }
+  };
+
+  const handleMouseEnter = () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => {
+      setShowPreview(true);
+    }, 500);
+  };
+
+  const handleMouseLeave = () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    setShowPreview(false);
+  };
+
+  return (
+    <span
+      className="relative inline-flex items-center gap-1 group cursor-pointer"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onClick={handleClick}
+    >
+      <Link2 size={12} className="text-orange-500" />
+      <code className={`
+        text-xs px-1.5 py-0.5 rounded font-mono
+        ${fileExists
+          ? 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400'
+          : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500'}
+      `}>
+        {formatLabel()}
+      </code>
+
+      {showPreview && (
+        <div className="absolute top-full left-full ml-2 mt-2 w-80 z-[100] pointer-events-none">
+          <div className="w-3 h-3 bg-white/95 dark:bg-cyber-900/95 rotate-45 absolute left-4 -top-1.5 border-l border-t border-orange-200 dark:border-orange-800"></div>
+          <div className="bg-white/95 dark:bg-cyber-900/95 backdrop-blur-xl border border-orange-200 dark:border-orange-800 rounded-lg shadow-xl overflow-hidden">
+            <div className="p-3 max-h-48 overflow-y-auto">
+              {blockContent ? (
+                <pre className="text-xs text-slate-700 dark:text-slate-300 font-mono whitespace-pre-wrap break-all">
+                  {blockContent}
+                </pre>
+              ) : (
+                <p className="text-xs text-slate-400 dark:text-slate-500 italic">
+                  {fileExists ? 'Content not available' : 'File not found'}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </span>
+  );
+};
+
 // --- Sub-Components ---
 
 /**
@@ -101,20 +474,20 @@ const MermaidRenderer = ({ code, isDark }: { code: string, isDark: boolean }) =>
       if (!code) return;
       try {
         setError(null);
-        
+
         // Dynamic Theme Color Extraction
         const style = getComputedStyle(document.documentElement);
         // Helper to extract rgb values and format as needed
         const getVar = (name: string) => {
-           const val = style.getPropertyValue(name).trim();
-           // Tailwind vars in this project are like '11 17 33'. RGB() needs commas or spaces.
-           return val ? `rgb(${val.split(' ').join(', ')})` : '';
+          const val = style.getPropertyValue(name).trim();
+          // Tailwind vars in this project are like '11 17 33'. RGB() needs commas or spaces.
+          return val ? `rgb(${val.split(' ').join(', ')})` : '';
         };
-        
+
         // Fallback colors if vars missing (safety)
         const primary = getVar('--primary-500') || (isDark ? '#06b6d4' : '#0891b2');
         const line = getVar('--neutral-500') || (isDark ? '#94a3b8' : '#475569');
-        const bg = 'transparent'; 
+        const bg = 'transparent';
 
         // Configure Mermaid based on theme
         mermaid.initialize({
@@ -123,13 +496,13 @@ const MermaidRenderer = ({ code, isDark }: { code: string, isDark: boolean }) =>
           securityLevel: 'loose',
           fontFamily: 'JetBrains Mono, monospace',
           themeVariables: {
-             darkMode: isDark,
-             background: bg,
-             primaryColor: primary,
-             lineColor: line,
-             textColor: getVar('--text-primary'),
-             mainBkg: bg,
-             nodeBorder: primary
+            darkMode: isDark,
+            background: bg,
+            primaryColor: primary,
+            lineColor: line,
+            textColor: getVar('--text-primary'),
+            mainBkg: bg,
+            nodeBorder: primary
           }
         });
 
@@ -173,7 +546,7 @@ const MermaidRenderer = ({ code, isDark }: { code: string, isDark: boolean }) =>
 
   return (
     <div className="my-6 relative group border border-paper-200 dark:border-cyber-700 rounded-xl overflow-hidden bg-paper-100 dark:bg-cyber-800 h-[400px]">
-      <div 
+      <div
         className="w-full h-full cursor-grab active:cursor-grabbing flex items-center justify-center overflow-hidden"
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -181,13 +554,13 @@ const MermaidRenderer = ({ code, isDark }: { code: string, isDark: boolean }) =>
         onMouseLeave={handleMouseUp}
         ref={containerRef}
       >
-        <div 
+        <div
           style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`, transition: isDragging.current ? 'none' : 'transform 0.1s' }}
           dangerouslySetInnerHTML={{ __html: svg }}
           className="pointer-events-none"
         />
       </div>
-      
+
       {/* Controls */}
       <div className="absolute bottom-4 right-4 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
         <button onClick={() => setScale(s => Math.min(5, s + 0.2))} className="p-1.5 bg-white dark:bg-cyber-700 rounded shadow hover:bg-paper-100 dark:hover:bg-cyber-600"><ZoomIn size={16} /></button>
@@ -270,48 +643,48 @@ const createEnhancedCodeBlock = (renderHtml: boolean) => {
       } catch (err) { console.error(err); }
     };
 
-  return (
-    <div className="my-6 rounded-xl border border-paper-200 dark:border-cyber-700 bg-[#282c34] overflow-hidden shadow-lg group">
-      {/* Code Header */}
-      <div className="flex items-center justify-between px-4 py-2.5 bg-[#21252b] border-b border-white/5">
-        <div className="flex items-center gap-3">
-          <div className="flex gap-1.5 opacity-70 group-hover:opacity-100 transition-opacity">
-            <div className="w-2.5 h-2.5 rounded-full bg-[#ff5f56]"></div>
-            <div className="w-2.5 h-2.5 rounded-full bg-[#ffbd2e]"></div>
-            <div className="w-2.5 h-2.5 rounded-full bg-[#27c93f]"></div>
+    return (
+      <div className="my-6 rounded-xl border border-paper-200 dark:border-cyber-700 bg-[#282c34] overflow-hidden shadow-lg group">
+        {/* Code Header */}
+        <div className="flex items-center justify-between px-4 py-2.5 bg-[#21252b] border-b border-white/5">
+          <div className="flex items-center gap-3">
+            <div className="flex gap-1.5 opacity-70 group-hover:opacity-100 transition-opacity">
+              <div className="w-2.5 h-2.5 rounded-full bg-[#ff5f56]"></div>
+              <div className="w-2.5 h-2.5 rounded-full bg-[#ffbd2e]"></div>
+              <div className="w-2.5 h-2.5 rounded-full bg-[#27c93f]"></div>
+            </div>
+            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider font-mono ml-2 select-none">
+              {language}
+            </span>
           </div>
-          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider font-mono ml-2 select-none">
-            {language}
-          </span>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setWrap(!wrap)}
+              className={`p-1.5 rounded transition-all ${wrap ? 'text-cyan-400' : 'text-slate-500 hover:text-slate-300'}`}
+              title="Toggle Word Wrap"
+            >
+              <WrapText size={16} />
+            </button>
+            <button
+              onClick={handleCopy}
+              className="p-1.5 rounded text-slate-500 hover:text-slate-300 transition-all"
+              title="Copy code"
+            >
+              {copied ? <Check size={16} className="text-emerald-400" /> : <Copy size={16} />}
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => setWrap(!wrap)}
-            className={`p-1.5 rounded transition-all ${wrap ? 'text-cyan-400' : 'text-slate-500 hover:text-slate-300'}`}
-            title="Toggle Word Wrap"
-          >
-            <WrapText size={16} />
-          </button>
-          <button
-            onClick={handleCopy}
-            className="p-1.5 rounded text-slate-500 hover:text-slate-300 transition-all"
-            title="Copy code"
-          >
-            {copied ? <Check size={16} className="text-emerald-400" /> : <Copy size={16} />}
-          </button>
-        </div>
-      </div>
 
-      {/* Code Content */}
-      <div className={`relative p-0 ${wrap ? 'whitespace-pre-wrap break-words' : 'overflow-x-auto'}`}>
-        <pre className={`!m-0 !p-4 !bg-transparent text-sm font-mono leading-relaxed text-gray-300 ${wrap ? '!whitespace-pre-wrap' : '!whitespace-pre'}`} {...props}>
-          <code className={className || 'language-text'} style={{ textShadow: 'none' }}>
-            {children}
-          </code>
-        </pre>
+        {/* Code Content */}
+        <div className={`relative p-0 ${wrap ? 'whitespace-pre-wrap break-words' : 'overflow-x-auto'}`}>
+          <pre className={`!m-0 !p-4 !bg-transparent text-sm font-mono leading-relaxed text-gray-300 ${wrap ? '!whitespace-pre-wrap' : '!whitespace-pre'}`} {...props}>
+            <code className={className || 'language-text'} style={{ textShadow: 'none' }}>
+              {children}
+            </code>
+          </pre>
+        </div>
       </div>
-    </div>
-  );
+    );
   };
 };
 
@@ -365,7 +738,7 @@ const EnhancedImage = ({ src, alt, ...props }: any) => {
 };
 
 
-export const Preview: React.FC<PreviewProps> = ({ content, initialScrollRatio }) => {
+export const Preview: React.FC<PreviewProps> = ({ content, initialScrollRatio, files = [] }) => {
   const [renderHtml, setRenderHtml] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -394,21 +767,21 @@ export const Preview: React.FC<PreviewProps> = ({ content, initialScrollRatio })
 
       {/* HTML Toggle Header - Only shown if HTML is detected */}
       {hasHtml && (
-         <div className="absolute top-4 right-6 z-20 flex items-center gap-2 bg-white/90 dark:bg-cyber-800/90 backdrop-blur px-3 py-1.5 rounded-full shadow-sm border border-paper-200 dark:border-cyber-700 animate-fadeIn">
-             <FileCode size={14} className="text-cyan-600 dark:text-cyan-400" />
-             <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 cursor-pointer flex items-center gap-2 select-none">
-                Render HTML
-                <div className={`w-8 h-4 rounded-full p-0.5 transition-colors duration-200 ${renderHtml ? 'bg-cyan-500' : 'bg-slate-300 dark:bg-slate-600'}`}>
-                    <div className={`w-3 h-3 bg-white rounded-full shadow-sm transform transition-transform duration-200 ${renderHtml ? 'translate-x-4' : 'translate-x-0'}`}></div>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={renderHtml}
-                  onChange={(e) => setRenderHtml(e.target.checked)}
-                  className="hidden"
-                />
-             </label>
-         </div>
+        <div className="absolute top-4 right-6 z-20 flex items-center gap-2 bg-white/90 dark:bg-cyber-800/90 backdrop-blur px-3 py-1.5 rounded-full shadow-sm border border-paper-200 dark:border-cyber-700 animate-fadeIn">
+          <FileCode size={14} className="text-cyan-600 dark:text-cyan-400" />
+          <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 cursor-pointer flex items-center gap-2 select-none">
+            Render HTML
+            <div className={`w-8 h-4 rounded-full p-0.5 transition-colors duration-200 ${renderHtml ? 'bg-cyan-500' : 'bg-slate-300 dark:bg-slate-600'}`}>
+              <div className={`w-3 h-3 bg-white rounded-full shadow-sm transform transition-transform duration-200 ${renderHtml ? 'translate-x-4' : 'translate-x-0'}`}></div>
+            </div>
+            <input
+              type="checkbox"
+              checked={renderHtml}
+              onChange={(e) => setRenderHtml(e.target.checked)}
+              className="hidden"
+            />
+          </label>
+        </div>
       )}
 
       {/* Main Content Area */}
@@ -420,6 +793,10 @@ export const Preview: React.FC<PreviewProps> = ({ content, initialScrollRatio })
               // Order matters! rehypeRaw must come BEFORE rehypeHighlight
               // so that raw HTML is parsed first, then code blocks get highlighted
               ...(renderHtml ? [rehypeRaw, rehypeFilterAttributes] : []),
+              // Transform Block References before WikiLinks
+              rehypeBlockReferences(files),
+              // Transform WikiLinks before other processing
+              rehypeWikiLinks,
               // Skip mermaid blocks before highlighting
               rehypeSkipMermaid,
               // Configure rehypeHighlight to ignore mermaid
@@ -428,43 +805,68 @@ export const Preview: React.FC<PreviewProps> = ({ content, initialScrollRatio })
             ]}
             components={{
               // Override pre to simply pass through children, as our 'code' component handles the block wrapper
-              pre: ({children}) => <>{children}</>,
+              pre: ({ children }) => <>{children}</>,
               // Custom Code Block Handler (with HTML rendering support)
               code: createEnhancedCodeBlock(renderHtml),
               // Custom Image Handler with error fallback
               img: EnhancedImage,
               // Add IDs to headings for outline navigation
-              h1: ({children, ...props}) => {
+              h1: ({ children, ...props }) => {
                 const text = extractText(children);
                 const id = `heading-${generateSlug(text)}`;
                 return <h1 id={id} {...props}>{children}</h1>;
               },
-              h2: ({children, ...props}) => {
+              h2: ({ children, ...props }) => {
                 const text = extractText(children);
                 const id = `heading-${generateSlug(text)}`;
                 return <h2 id={id} {...props}>{children}</h2>;
               },
-              h3: ({children, ...props}) => {
+              h3: ({ children, ...props }) => {
                 const text = extractText(children);
                 const id = `heading-${generateSlug(text)}`;
                 return <h3 id={id} {...props}>{children}</h3>;
               },
-              h4: ({children, ...props}) => {
+              h4: ({ children, ...props }) => {
                 const text = extractText(children);
                 const id = `heading-${generateSlug(text)}`;
                 return <h4 id={id} {...props}>{children}</h4>;
               },
-              h5: ({children, ...props}) => {
+              h5: ({ children, ...props }) => {
                 const text = extractText(children);
                 const id = `heading-${generateSlug(text)}`;
                 return <h5 id={id} {...props}>{children}</h5>;
               },
-              h6: ({children, ...props}) => {
+              h6: ({ children, ...props }) => {
                 const text = extractText(children);
                 const id = `heading-${generateSlug(text)}`;
                 return <h6 id={id} {...props}>{children}</h6>;
               },
-            }}
+              // Custom WikiLink Handler
+              wikilink: ({ 'data-target': target, 'data-alias': alias, children }: any) => {
+                const linkText = Array.isArray(children) ? extractText(children) : (children as string);
+                return (
+                  <WikiLinkPreview
+                    target={target}
+                    alias={alias || linkText}
+                    files={files}
+                    onNavigate={(target) => {
+                      window.dispatchEvent(new CustomEvent('navigate-to-wikilink', { detail: { target } }));
+                    }}
+                  />
+                );
+              },
+              // Custom Block Reference Handler
+              blockref: ({ 'data-target': target, 'data-start-line': startLine, 'data-end-line': endLine }: any) => {
+                return (
+                  <BlockReferencePreview
+                    target={target}
+                    startLine={parseInt(startLine, 10)}
+                    endLine={endLine ? parseInt(endLine, 10) : undefined}
+                    files={files}
+                  />
+                );
+              },
+            } as any}
           >
             {content}
           </ReactMarkdown>

@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Quiz, AIConfig, Theme, MistakeRecord } from '../types';
 import { CheckCircle2, XCircle, HelpCircle, Download, BookOpen, AlertTriangle, ArrowRight, ArrowLeft, RotateCcw, BookmarkX, Trash2, Sparkles, Loader2, CheckSquare, Circle } from 'lucide-react';
 import { gradeQuizQuestion, generateQuizExplanation } from '../services/aiService';
+import { srsService } from '../src/services/srs/srsService';
 import { translations, Language } from '../utils/translations';
 
 interface QuizPanelProps {
@@ -26,8 +27,16 @@ export const QuizPanel: React.FC<QuizPanelProps> = ({ quiz, aiConfig, theme, onC
 
   const t = translations[language];
 
-  // Load mistakes on mount
+  // Load mistakes and initialize SRS on mount
   useEffect(() => {
+    // Initialize SRS service
+    try {
+      srsService.initialize();
+      console.log('[QuizPanel] SRS service initialized');
+    } catch (error) {
+      console.error('[QuizPanel] Failed to initialize SRS service:', error);
+    }
+
     try {
       const stored = localStorage.getItem('neon-quiz-mistakes');
       if (stored) {
@@ -60,6 +69,14 @@ export const QuizPanel: React.FC<QuizPanelProps> = ({ quiz, aiConfig, theme, onC
     } else {
       // Add new record at the beginning
       updated = [record, ...savedMistakes];
+      
+      // Auto-create study plan for new mistake (SRS integration)
+      try {
+        srsService.createStudyPlanForMistake(record, currentQuiz.title);
+        console.log('[QuizPanel] Created study plan for mistake:', record.id);
+      } catch (error) {
+        console.error('[QuizPanel] Failed to create study plan for mistake:', error);
+      }
     }
 
     setSavedMistakes(updated);

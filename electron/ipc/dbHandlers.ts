@@ -416,6 +416,28 @@ export function registerDbHandlers(): void {
     });
 
     /**
+     * 获取所有向量块（带分页）
+     */
+    ipcMain.handle('db:vectors:getAllPaginated', async (_, limit: number, offset: number): Promise<VectorChunk[]> => {
+        try {
+            return vectorRepository.getAllChunksPaginated(limit, offset);
+        } catch (error) {
+            handleError('db:vectors:getAllPaginated', error);
+        }
+    });
+
+    /**
+     * 获取所有向量块数量
+     */
+    ipcMain.handle('db:vectors:getAllCount', async (): Promise<number> => {
+        try {
+            return vectorRepository.getAllChunksCount();
+        } catch (error) {
+            handleError('db:vectors:getAllCount', error);
+        }
+    });
+
+    /**
      * 获取所有向量块
      */
     ipcMain.handle('db:vectors:getAll', async (): Promise<VectorChunk[]> => {
@@ -545,11 +567,29 @@ export function registerDbHandlers(): void {
     });
 
     /**
-     * 重置密码 (危险操作)
+     * 重置密码 (危险操作) - 已添加当前密码验证
+     * 修复：需要先验证当前密码才能重置
      */
-    ipcMain.handle('db:auth:resetPassword', async (_, newPassword: string) => {
+    ipcMain.handle('db:auth:resetPassword', async (_, currentPassword: string, newPassword: string) => {
         try {
-            return authRepository.resetPassword(newPassword);
+            // 1. 验证当前密码
+            const isValidCurrent = authRepository.verify(currentPassword);
+            if (!isValidCurrent) {
+                logger.warn('Password reset attempted with incorrect current password');
+                return {
+                    success: false,
+                    error: '当前密码错误，无法重置密码'
+                };
+            }
+
+            // 2. 执行密码重置
+            const result = authRepository.resetPassword(newPassword);
+
+            if (result.success) {
+                logger.info('Password reset successfully after verification');
+            }
+
+            return result;
         } catch (error) {
             handleError('db:auth:resetPassword', error);
         }

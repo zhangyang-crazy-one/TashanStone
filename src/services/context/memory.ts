@@ -10,6 +10,7 @@ import { TokenBudget } from './token-budget';
 export interface MemoryStorage {
   saveMidTerm(sessionId: string, session: CompactedSession): Promise<void>;
   getMidTerm(sessionId: string): Promise<CompactedSession[]>;
+  getAllMidTerm(): Promise<CompactedSession[]>;
   clearMidTerm(sessionId?: string): Promise<void>;
 }
 
@@ -49,6 +50,9 @@ export class ThreeLayerMemory {
   }
 
   pushMessage(sessionId: string, message: ApiMessage): void {
+    if (!message.token_count && typeof message.content === 'string') {
+      message.token_count = this.tokenBudget.estimateTokensSync(message.content);
+    }
     const messages = this.shortTerm.get(sessionId) ?? [];
     messages.push(message);
     this.shortTerm.set(sessionId, messages);
@@ -57,7 +61,12 @@ export class ThreeLayerMemory {
 
   pushMessages(sessionId: string, messages: ApiMessage[]): void {
     const existing = this.shortTerm.get(sessionId) ?? [];
-    existing.push(...messages);
+    for (const message of messages) {
+      if (!message.token_count && typeof message.content === 'string') {
+        message.token_count = this.tokenBudget.estimateTokensSync(message.content);
+      }
+      existing.push(message);
+    }
     this.shortTerm.set(sessionId, existing);
     this.checkAutoPromote(sessionId);
   }
@@ -69,11 +78,26 @@ export class ThreeLayerMemory {
   getMemoryLayer(sessionId: string): Promise<MemoryLayer> {
     const shortTerm = this.shortTerm.get(sessionId) ?? [];
 
-    return this.storage.getMidTerm(sessionId).then(midTerm => {
+    return this.storage.getMidTerm(sessionId).then(async (midTerm) => {
+      // 获取长期记忆（如果可用）
+      let longTerm: IndexedConversation[] = [];
+      if (this.longTermStorage) {
+        try {
+          // 获取与当前会话相关的长期记忆
+          longTerm = await this.longTermStorage.searchConversations(
+            new Array(384).fill(0), // 空向量，不进行相似性搜索
+            5,
+            sessionId
+          );
+        } catch (error) {
+          console.warn('[ThreeLayerMemory] Failed to get long-term memories:', error);
+        }
+      }
+
       return {
         shortTerm,
         midTerm: midTerm.filter(m => Date.now() - m.created_at < this.midTermMaxAge),
-        longTerm: [],
+        longTerm,
       };
     });
   }
@@ -213,16 +237,36 @@ export class ThreeLayerMemory {
     }
   }
 
-  getStats(): Promise<{
+  async getStats(): Promise<{
     shortTermSessions: number;
     midTermSessions: number;
     longTermConversations: number;
   }> {
-    return Promise.resolve({
-      shortTermSessions: this.shortTerm.size,
-      midTermSessions: 0,
-      longTermConversations: 0,
-    });
+    const shortTermSessions = this.shortTerm.size;
+    
+    let midTermSessions = 0;
+    try {
+      const allMidTerm = await this.storage.getAllMidTerm();
+      midTermSessions = allMidTerm.length;
+    } catch (error) {
+      console.warn('[ThreeLayerMemory] Failed to get mid-term stats:', error);
+    }
+    
+    let longTermConversations = 0;
+    if (this.longTermStorage) {
+      try {
+        const longTermStats = await this.longTermStorage.getStats();
+        longTermConversations = longTermStats.totalConversations;
+      } catch (error) {
+        console.warn('[ThreeLayerMemory] Failed to get long-term stats:', error);
+      }
+    }
+    
+    return {
+      shortTermSessions,
+      midTermSessions,
+      longTermConversations,
+    };
   }
 
   private async checkAutoPromote(sessionId: string): Promise<void> {
@@ -242,15 +286,16 @@ export class ThreeLayerMemory {
     }
   }
 
-  private async calculateTotalTokens(messages: ApiMessage[]): Promise<number> {
-    let total = 0;
-    for (const msg of messages) {
+  private calculateTotalTokens(messages: ApiMessage[]): number {
+    return messages.reduce((total, msg) => {
+      if (msg.token_count) {
+        return total + msg.token_count;
+      }
       const content = typeof msg.content === 'string'
         ? msg.content
         : JSON.stringify(msg.content);
-      total += await this.tokenBudget.estimateTokens(content);
-    }
-    return total;
+      return total + this.tokenBudget.estimateTokensSync(content);
+    }, 0);
   }
 
   private generateAutoSummary(messages: ApiMessage[]): string {
@@ -307,6 +352,14 @@ export class InMemoryStorage implements MemoryStorage {
 
   async getMidTerm(sessionId: string): Promise<CompactedSession[]> {
     return this.midTerm.get(sessionId) ?? [];
+  }
+
+  async getAllMidTerm(): Promise<CompactedSession[]> {
+    const all: CompactedSession[] = [];
+    for (const sessions of this.midTerm.values()) {
+      all.push(...sessions);
+    }
+    return all;
   }
 
   async clearMidTerm(sessionId?: string): Promise<void> {

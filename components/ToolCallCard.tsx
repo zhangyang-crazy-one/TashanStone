@@ -2,6 +2,154 @@ import React, { useState, useEffect } from 'react';
 import { Terminal, Check, AlertTriangle, Loader2, ChevronDown, Copy, CheckCheck, Sparkles, Brain } from 'lucide-react';
 import { ToolCall } from '../types';
 
+// Helper function to detect content type and format for display
+const deepParseJson = (value: any, maxDepth: number = 3): any => {
+  if (maxDepth <= 0) return value;
+  if (typeof value !== 'string') return value;
+
+  const trimmed = value.trim();
+
+  const jsonPatterns = [
+    /^{\s*["']?\w+["']?\s*:/,
+    /^\[/,
+    /^{/,
+  ];
+
+  const hasJsonPrefix = jsonPatterns.some(pattern => pattern.test(trimmed));
+
+  if (
+    hasJsonPrefix ||
+    (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+    (trimmed.startsWith('[') && trimmed.endsWith(']')) ||
+    (trimmed.startsWith('"') && trimmed.endsWith('"'))
+  ) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      return deepParseJson(parsed, maxDepth - 1);
+    } catch {
+    }
+  }
+
+  const embeddedPatterns = [
+    /(?:^|\n)json\s*\n([\s\S]*?)$/i,
+    /(?:^|\n)```json\s*\n([\s\S]*?)(?:\n```\s*)?$/i,
+    /(["'])json\1\s*:\s*(["'])([\s\S]*?)\2/i,
+  ];
+
+  for (const pattern of embeddedPatterns) {
+    const embeddedMatch = trimmed.match(pattern);
+    if (embeddedMatch) {
+      try {
+        const jsonStr = embeddedMatch[embeddedMatch.length - 1];
+        const parsed = JSON.parse(jsonStr);
+        return deepParseJson(parsed, maxDepth - 1);
+      } catch {
+      }
+    }
+  }
+
+  return value;
+};
+
+const deepParseObject = (obj: any, maxDepth: number = 3): any => {
+  if (maxDepth <= 0) return obj;
+  if (typeof obj === 'string') return deepParseJson(obj, maxDepth);
+  if (Array.isArray(obj)) return obj.map(item => deepParseObject(item, maxDepth - 1));
+  if (obj && typeof obj === 'object') {
+    const result: any = {};
+    for (const [key, value] of Object.entries(obj)) {
+      result[key] = deepParseObject(value, maxDepth - 1);
+    }
+    return result;
+  }
+  return obj;
+};
+
+const formatWithSyntaxHighlight = (content: string): { type: 'json' | 'html' | 'text'; formatted: string } => {
+  const deepParsed = deepParseJson(content);
+
+  if (typeof deepParsed === 'object' && deepParsed !== null) {
+    return { type: 'json', formatted: JSON.stringify(deepParsed, null, 2) };
+  }
+
+  const trimmed = String(deepParsed).trim();
+  if (trimmed.startsWith('<!DOCTYPE') || trimmed.startsWith('<html') ||
+      trimmed.startsWith('<!') || (trimmed.startsWith('<') && trimmed.endsWith('>'))) {
+    return { type: 'html', formatted: trimmed };
+  }
+
+  return { type: 'text', formatted: trimmed };
+};
+
+// JSON syntax highlighting component
+const JsonHighlight: React.FC<{ content: string }> = ({ content }) => {
+  try {
+    const parsed = JSON.parse(content);
+    const formatted = JSON.stringify(parsed, null, 2);
+    
+    // Simple syntax highlighting for JSON
+    const parts = formatted.split(/(\s*"[^"]*"\s*:\s*|[{}\[\],])/g);
+    
+    return (
+      <pre className="text-xs leading-relaxed font-mono whitespace-pre-wrap break-words">
+        {parts.map((part, i) => {
+          if (!part) return null;
+          
+          let className = 'text-slate-300';
+          if (part.startsWith('"')) {
+            if (part.includes(':')) {
+              className = 'text-cyan-300'; // Keys
+            } else if (part.match(/^".*"$/)) {
+              className = 'text-amber-300'; // String values
+            } else if (part.match(/^-?\d+(\.\d+)?$/)) {
+              className = 'text-emerald-300'; // Numbers
+            } else if (part === 'true' || part === 'false') {
+              className = 'text-purple-300'; // Booleans
+            } else if (part === 'null') {
+              className = 'text-slate-500'; // Null
+            }
+          } else if (!isNaN(parseFloat(part))) {
+            className = 'text-emerald-300';
+          } else if (['{', '}', '[', ']', ':', ','].includes(part)) {
+            className = 'text-slate-400';
+          }
+          
+          return <span key={i} className={className}>{part}</span>;
+        })}
+      </pre>
+    );
+  } catch {
+    return <pre className="text-xs leading-relaxed font-mono whitespace-pre-wrap break-words text-red-400">{content}</pre>;
+  }
+};
+
+// HTML syntax highlighting component  
+const HtmlHighlight: React.FC<{ content: string }> = ({ content }) => {
+  // Simple HTML syntax highlighting
+  const parts = content.split(/(<[^>]+>)/g);
+  
+  return (
+    <pre className="text-xs leading-relaxed font-mono whitespace-pre-wrap break-words">
+      {parts.map((part, i) => {
+        if (!part) return null;
+        
+        if (part.startsWith('<') && part.endsWith('>')) {
+          if (part.startsWith('</')) {
+            return <span key={i} className="text-red-400">{part}</span>; // Closing tags
+          } else if (part.match(/^<\w+/)) {
+            return <span key={i} className="text-cyan-400">{part}</span>; // Opening tags
+          } else if (part.startsWith('<!')) {
+            return <span key={i} className="text-purple-400">{part}</span>; // DOCTYPE
+          } else {
+            return <span key={i} className="text-slate-300">{part}</span>; // Other
+          }
+        }
+        return <span key={i} className="text-slate-200">{part}</span>;
+      })}
+    </pre>
+  );
+};
+
 interface ToolCallCardProps {
   toolCall: ToolCall;
   isExpanded?: boolean;
@@ -162,10 +310,10 @@ export const StreamToolCard: React.FC<StreamToolCardProps> = ({
   let isSuccess = true;
   if (result) {
     try {
-      parsedResult = JSON.parse(result);
+      parsedResult = deepParseObject(JSON.parse(result));
       isSuccess = parsedResult.success !== false;
     } catch {
-      parsedResult = result;
+      parsedResult = deepParseJson(result);
     }
   }
 
@@ -341,44 +489,58 @@ export const StreamToolCard: React.FC<StreamToolCardProps> = ({
                 OUTPUT
               </div>
 
-              {/* 智能结果渲染 */}
+              {/* Smart result rendering with syntax highlighting */}
               {parsedResult?.output ? (
                 <div className="space-y-2">
                   {/* 简洁摘要 */}
                   <div className={`
                     p-3 rounded-xl
-                    bg-slate-100 dark:bg-slate-900/60
-                    border border-slate-200 dark:border-slate-700/30
-                    font-mono text-xs leading-relaxed
-                    text-slate-700 dark:text-slate-300
+                    bg-slate-900 dark:bg-slate-900/80
+                    border border-slate-700 dark:border-slate-700/50
                     max-h-48 overflow-auto custom-scrollbar
                   `}>
                     {typeof parsedResult.output === 'string' ? (
-                      <pre className="whitespace-pre-wrap break-words">
-                        {parsedResult.output.length > 800
-                          ? parsedResult.output.substring(0, 800) + '\n...(truncated)'
-                          : parsedResult.output
-                        }
-                      </pre>
+                      formatWithSyntaxHighlight(parsedResult.output).type === 'json' ? (
+                        <JsonHighlight content={parsedResult.output} />
+                      ) : formatWithSyntaxHighlight(parsedResult.output).type === 'html' ? (
+                        <HtmlHighlight content={parsedResult.output} />
+                      ) : (
+                        <pre className="whitespace-pre-wrap break-words text-slate-300">
+                          {parsedResult.output.length > 800
+                            ? parsedResult.output.substring(0, 800) + '\n...(truncated)'
+                            : parsedResult.output}
+                        </pre>
+                      )
                     ) : (
-                      <pre className="whitespace-pre-wrap">
-                        {JSON.stringify(parsedResult.output, null, 2).substring(0, 800)}
-                      </pre>
+                      <JsonHighlight content={JSON.stringify(parsedResult.output, null, 2)} />
                     )}
                   </div>
                 </div>
               ) : (
-                <pre className={`
+                <div className={`
                   p-3 rounded-xl
-                  bg-slate-100 dark:bg-slate-900/60
-                  border border-slate-200 dark:border-slate-700/30
-                  font-mono text-xs leading-relaxed
-                  ${actualStatus === 'error' ? 'text-red-600 dark:text-red-400' : 'text-slate-700 dark:text-slate-300'}
+                  bg-slate-900 dark:bg-slate-900/80
+                  border border-slate-700 dark:border-slate-700/30
                   max-h-48 overflow-auto custom-scrollbar
-                  whitespace-pre-wrap break-words
+                  ${actualStatus === 'error' ? 'border-red-500/50' : ''}
                 `}>
-                  {result.length > 800 ? result.substring(0, 800) + '\n...(truncated)' : result}
-                </pre>
+                  {(() => {
+                    const { type, formatted } = formatWithSyntaxHighlight(result);
+                    if (type === 'json') {
+                      return <JsonHighlight content={formatted} />;
+                    } else if (type === 'html') {
+                      return <HtmlHighlight content={formatted} />;
+                    }
+                    return (
+                      <pre className={`
+                        whitespace-pre-wrap break-words text-xs leading-relaxed font-mono
+                        ${actualStatus === 'error' ? 'text-red-400' : 'text-slate-300'}
+                      `}>
+                        {result.length > 800 ? result.substring(0, 800) + '\n...(truncated)' : result}
+                      </pre>
+                    );
+                  })()}
+                </div>
               )}
             </div>
           )}
@@ -443,12 +605,6 @@ export const parseToolCallsFromContent = (content: string): Array<{
 
   // 先提取 <think> 块，避免被其他解析干扰
   // 支持多种格式: <think>, <thinking>, </think>, </thinking>
-  const thinkPattern = /<(?:think|thinking)>([\s\S]*?)<\/(?:think|thinking)>/gi;
-
-  // 匹配工具执行块
-  const toolPattern = /🔧\s*\*\*(?:Tool|Executing):\s*([^*]+)\*\*(?:\.\.\.)?\s*(?:```json\s*([\s\S]*?)```)?/g;
-
-  // 合并所有匹配项并按位置排序
   interface MatchItem {
     index: number;
     length: number;
@@ -460,30 +616,30 @@ export const parseToolCallsFromContent = (content: string): Array<{
 
   const matches: MatchItem[] = [];
 
-  // 收集 thinking 匹配
-  let thinkMatch;
-  while ((thinkMatch = thinkPattern.exec(content)) !== null) {
+  const thinkPattern = /<(?:think|thinking)>([\s\S]*?)<\/(?:think|thinking)>/gi;
+  const toolPattern = /🔧\s*\*\*(?:Tool|Executing):\s*([^*]+)\*\*(?:\.\.\.)?\s*(?:```json\s*([\s\S]*?)```)?/g;
+
+  const thinkMatches = [...content.matchAll(thinkPattern)];
+  for (const match of thinkMatches) {
     matches.push({
-      index: thinkMatch.index,
-      length: thinkMatch[0].length,
+      index: match.index,
+      length: match[0].length,
       type: 'thinking',
-      content: thinkMatch[1].trim()
+      content: match[1]?.trim()
     });
   }
 
-  // 收集 tool 匹配
-  let toolMatch;
-  while ((toolMatch = toolPattern.exec(content)) !== null) {
+  const toolMatches = [...content.matchAll(toolPattern)];
+  for (const match of toolMatches) {
     matches.push({
-      index: toolMatch.index,
-      length: toolMatch[0].length,
+      index: match.index,
+      length: match[0].length,
       type: 'tool',
-      toolName: toolMatch[1].trim(),
-      result: toolMatch[2]?.trim()
+      toolName: match[1]?.trim(),
+      result: match[2]?.trim()
     });
   }
 
-  // 按位置排序
   matches.sort((a, b) => a.index - b.index);
 
   let lastIndex = 0;

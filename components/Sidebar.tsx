@@ -5,10 +5,11 @@ import {
   FileText, Plus, Trash2, FolderOpen, Search, X, FolderInput,
   FileType, List, AlignLeft, ChevronRight, GraduationCap,
   Folder, FileCode, FileImage, FileJson, FileSpreadsheet, File as FileIcon,
-  Lock, Upload, Database, Loader2, RefreshCw, Code2, Edit3, Brain, Sparkles
+  Lock, Upload, Database, Loader2, RefreshCw, Code2, Edit3, Brain, Sparkles, Tag, ChevronDown, BookOpen
 } from 'lucide-react';
 import { MarkdownFile, RAGStats, OCRStats, Snippet } from '../types';
 import { translations, Language } from '../utils/translations';
+import { TagsBrowser } from './TagsBrowser';
 
 interface SidebarProps {
   files: MarkdownFile[];
@@ -31,6 +32,9 @@ interface SidebarProps {
   onCreateSnippet?: (snippet: Omit<Snippet, 'id'>) => void;
   onDeleteSnippet?: (id: string) => void;
   onInsertSnippet?: (content: string) => void;
+  onOpenTagSuggestion?: () => void;
+  onOpenSmartOrganize?: (file: MarkdownFile) => void;
+  onOpenReview?: () => void;
 }
 
 interface OutlineItem {
@@ -49,6 +53,8 @@ interface FileTreeNode {
     fileId?: string;
     children?: FileTreeNode[];
     level?: number;
+    isMemory?: boolean;  // Mark as memory file
+    memoryImportance?: 'low' | 'medium' | 'high';  // Memory importance level
 }
 
 // Flat Node Interface for Virtual-ish Rendering
@@ -66,6 +72,11 @@ const OPERABLE_EXTENSIONS = ['.md', '.markdown', '.csv', '.txt'];
 
 // Default preset templates
 const DEFAULT_SNIPPETS: Snippet[] = [
+  // WikiLink Templates
+  { id: 'wikilink-plain', name: 'File Link', category: 'wikilink', content: '[[{filename}]]\n' },
+  { id: 'wikilink-alias', name: 'Link with Alias', category: 'wikilink', content: '[[{filename}|{alias}]]\n' },
+  { id: 'wikilink-block', name: 'Block Reference', category: 'wikilink', content: '<<{filename}:{line}>>\n' },
+  // Content Templates
   { id: 'tbl', name: 'Table', category: 'template', content: '| Header 1 | Header 2 |\n| -------- | -------- |\n| Cell 1   | Cell 2   |\n' },
   { id: 'math', name: 'Math Block', category: 'code', content: '$$\n  \\int_0^\\infty x^2 dx\n$$\n' },
   { id: 'mermaid', name: 'Mermaid Diagram', category: 'code', content: '```mermaid\ngraph TD;\n    A-->B;\n    A-->C;\n```\n' },
@@ -131,21 +142,25 @@ const FileTreeRow = React.memo<{
     activeFileId: string;
     onSelect: (id: string) => void;
     onToggle: (path: string) => void;
-    onDelete: (id: string) => void;
+    onDelete: (id: string, fileName: string) => void;
     onRequestCreate: (type: 'file' | 'folder', parentPath: string) => void;
     onDragStart: (e: React.DragEvent, nodeId: string) => void;
     onDragOver: (e: React.DragEvent, nodeId: string) => void;
     onDrop: (e: React.DragEvent, targetPath: string) => void;
     isDropTarget: boolean;
-}>(({ node, activeFileId, onSelect, onToggle, onDelete, onRequestCreate, onDragStart, onDragOver, onDrop, isDropTarget }) => {
+    onShowContextMenu?: (fileId: string, fileName: string, x: number, y: number) => void;
+}>(({ node, activeFileId, onSelect, onToggle, onDelete, onRequestCreate, onDragStart, onDragOver, onDrop, isDropTarget, onShowContextMenu }) => {
     const indentStyle = { paddingLeft: `${node.level * 12 + 12}px` };
     
     if (node.type === 'folder') {
+        const isMemoryFolder = node.name === '.memories';
         return (
-            <div 
+            <div
                 className={`
                     flex items-center gap-2 py-1.5 pr-2 cursor-pointer transition-colors group select-none relative
-                    ${isDropTarget ? 'bg-cyan-100 dark:bg-cyan-900/40 ring-1 ring-cyan-400 inset-0' : 'hover:bg-paper-200 dark:hover:bg-cyber-800 text-slate-600 dark:text-slate-300'}
+                    ${isDropTarget ? 'bg-cyan-100 dark:bg-cyan-900/40 ring-1 ring-cyan-400 inset-0' : isMemoryFolder
+                        ? 'bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/30 text-violet-700 dark:text-violet-300'
+                        : 'hover:bg-paper-200 dark:hover:bg-cyber-800 text-slate-600 dark:text-slate-300'}
                 `}
                 style={indentStyle}
                 onClick={() => onToggle(node.path)}
@@ -156,78 +171,116 @@ const FileTreeRow = React.memo<{
             >
                 {/* Indent Guide */}
                 {node.level > 0 && <div className="absolute left-0 top-0 bottom-0 border-l border-paper-200 dark:border-cyber-800" style={{ left: `${node.level * 12 + 4}px` }} />}
-                
+
                 <span className="opacity-60 transition-transform duration-200 shrink-0" style={{ transform: node.isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>
                     <ChevronRight size={12} />
                 </span>
-                <span className="text-amber-400 shrink-0">
+                <span className={`shrink-0 ${isMemoryFolder ? 'text-violet-500' : 'text-amber-400'}`}>
                      {node.isExpanded ? <FolderOpen size={16} /> : <Folder size={16} />}
                 </span>
-                <span className="text-sm font-semibold truncate flex-1">{node.name}</span>
-                
-                {/* Quick Add Buttons (Visible on Hover) */}
+                <span className={`text-sm font-semibold truncate flex-1 ${isMemoryFolder ? 'text-violet-700 dark:text-violet-300' : ''}`}>
+                    {isMemoryFolder ? '🧠 AI 记忆库' : node.name}
+                </span>
+
+                {/* Quick Add Buttons (Visible on Hover) - Hide for memory folder */}
+                {!isMemoryFolder && (
                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                     <button 
-                        onClick={(e) => { e.stopPropagation(); onRequestCreate('file', node.path); }}
-                        className="p-1 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 rounded text-slate-500 hover:text-cyan-600"
-                        title="New File inside"
+                     <button
+                         onClick={(e) => { e.stopPropagation(); onRequestCreate('file', node.path); }}
+                         className="p-1 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 rounded text-slate-500 hover:text-cyan-600"
+                         title="New File inside"
                      >
                          <Plus size={12} />
                      </button>
-                     <button 
-                        onClick={(e) => { e.stopPropagation(); onRequestCreate('folder', node.path); }}
-                        className="p-1 hover:bg-amber-100 dark:hover:bg-amber-900/50 rounded text-slate-500 hover:text-amber-600"
-                        title="New Folder inside"
+                     <button
+                         onClick={(e) => { e.stopPropagation(); onRequestCreate('folder', node.path); }}
+                         className="p-1 hover:bg-amber-100 dark:hover:bg-amber-900/50 rounded text-slate-500 hover:text-amber-600"
+                         title="New Folder inside"
                      >
                          <FolderInput size={12} />
                      </button>
                 </div>
+                )}
             </div>
         );
     }
 
     const isActive = activeFileId === node.fileId;
     const isOperable = isExtensionInList(node.name, OPERABLE_EXTENSIONS);
-    
+
     // Hide .keep files from the list view
     if (node.name === '.keep') return null;
 
-    return (
-        <div 
-           className={`
-             group flex items-center gap-2 py-1.5 pr-2 transition-colors relative select-none
-             ${isActive 
-               ? 'bg-cyan-50 dark:bg-cyan-900/20 text-cyan-800 dark:text-cyan-200' 
-               : 'text-slate-600 dark:text-slate-400 hover:bg-paper-200 dark:hover:bg-cyber-800'}
-             ${!isOperable ? 'opacity-60 cursor-default' : 'cursor-pointer'}
-           `}
-           style={indentStyle}
-           onClick={() => isOperable && onSelect(node.fileId!)}
-           title={!isOperable ? "Read Only / Extraction Source" : node.name}
-           draggable={isOperable}
-           onDragStart={(e) => isOperable && onDragStart(e, node.fileId!)}
-        >
-           {/* Indent Guide */}
-           {node.level > 0 && <div className="absolute left-0 top-0 bottom-0 border-l border-paper-200 dark:border-cyber-800" style={{ left: `${node.level * 12 + 4}px` }} />}
-           
-           {/* Active Indicator */}
-           {isActive && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-cyan-500" />}
-           
-           <span className="opacity-80 shrink-0">{getIconForFile(node.name)}</span>
-           <span className="text-sm truncate flex-1 leading-none pt-0.5">{node.name}</span>
-           
-           {!isOperable && <Lock size={10} className="text-slate-400" />}
+    // Check if this is a memory file
+    const isMemoryFile = (node as FileTreeNode).isMemory;
+    const memoryImportance = (node as FileTreeNode).memoryImportance;
 
-           {isOperable && (
-               <button
-                onClick={(e) => { e.stopPropagation(); onDelete(node.fileId!); }}
-                className="p-1 opacity-0 group-hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-500 rounded transition-all shrink-0"
-                title="Delete File"
-               >
-                 <Trash2 size={12} />
-               </button>
-           )}
-        </div>
+    const getMemoryImportanceColor = (imp: string) => {
+        switch (imp) {
+            case 'high': return 'text-red-500 bg-red-100 dark:bg-red-900/30';
+            case 'medium': return 'text-amber-500 bg-amber-100 dark:bg-amber-900/30';
+            default: return 'text-slate-400 bg-slate-100 dark:bg-slate-800';
+        }
+    };
+
+    return (
+            <div
+                className={`
+                    flex items-center gap-2 py-1.5 pr-2 cursor-pointer transition-colors group select-none relative
+                    ${isDropTarget ? 'bg-cyan-100 dark:bg-cyan-900/40 ring-1 ring-cyan-400 inset-0' :
+                        'hover:bg-paper-200 dark:hover:bg-cyber-800 text-slate-600 dark:text-slate-300'}
+                `}
+                style={indentStyle}
+                onClick={() => isOperable && onSelect(node.fileId!)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  if (isOperable && node.fileId && onShowContextMenu) {
+                    onShowContextMenu(node.fileId, node.name, e.clientX, e.clientY);
+                  }
+                }}
+                title={!isOperable ? "Read Only / Extraction Source" : node.name}
+                draggable={isOperable}
+                onDragStart={(e) => isOperable && onDragStart(e, node.fileId!)}
+             >
+            {/* Indent Guide */}
+            {node.level > 0 && <div className="absolute left-0 top-0 bottom-0 border-l border-paper-200 dark:border-cyber-800" style={{ left: `${node.level * 12 + 4}px` }} />}
+
+            {/* Active Indicator */}
+            {isActive && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-cyan-500" />}
+
+            {/* File Icon - Use special icon for memory files */}
+            <span className="opacity-80 shrink-0">
+                {isMemoryFile ? (
+                    <Sparkles size={14} className="text-violet-500" />
+                ) : (
+                    getIconForFile(node.name)
+                )}
+            </span>
+            <span className={`text-sm truncate flex-1 leading-none pt-0.5 ${isMemoryFile ? 'text-violet-700 dark:text-violet-300' : ''}`}>
+                {node.name}
+            </span>
+
+            {/* Memory importance badge */}
+            {isMemoryFile && memoryImportance && (
+                <span className={`text-[9px] px-1 py-0.5 rounded ${getMemoryImportanceColor(memoryImportance)}`}>
+                    {memoryImportance}
+                </span>
+            )}
+
+            {/* Lock icon for non-operable files */}
+            {!isOperable && <Lock size={10} className="text-slate-400" />}
+
+            {/* Delete button - only for operable files */}
+            {isOperable && (
+                <button
+                 onClick={(e) => { e.stopPropagation(); onDelete(node.fileId!, node.name); }}
+                 className="p-1 opacity-0 group-hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-500 rounded transition-all shrink-0"
+                 title="Delete File"
+                >
+                  <Trash2 size={12} />
+                </button>
+            )}
+         </div>
     );
 });
 
@@ -251,7 +304,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   snippets = [],
   onCreateSnippet,
   onDeleteSnippet,
-  onInsertSnippet
+  onInsertSnippet,
+  onOpenTagSuggestion,
+  onOpenSmartOrganize,
+  onOpenReview
 }) => {
   const [activeTab, setActiveTab] = useState<'files' | 'snippets' | 'outline'>('files');
   const [outline, setOutline] = useState<OutlineItem[]>([]);
@@ -277,6 +333,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
     category: 'code' | 'text' | 'template';
   }>({ isOpen: false, name: '', content: '', category: 'code' });
 
+  // Delete Confirmation Modal State
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    isOpen: boolean;
+    fileId: string | null;
+    fileName: string;
+  }>({ isOpen: false, fileId: null, fileName: '' });
+
+  // Tags Section State
+  const [tagsExpanded, setTagsExpanded] = useState(true);
+
+  // Context Menu State
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    fileId: string | null;
+    fileName: string;
+  } | null>(null);
+
   const creationInputRef = useRef<HTMLInputElement>(null);
 
   // Persist expanded state to localStorage
@@ -289,6 +363,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
       return {};
     }
   });
+
+  // Memory files state (loaded asynchronously)
+  const [memoryNodes, setMemoryNodes] = useState<FileTreeNode[]>([]);
 
   useEffect(() => {
     try {
@@ -303,6 +380,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
           setTimeout(() => creationInputRef.current?.focus(), 50);
       }
   }, [creationModal.isOpen]);
+
+  // Close context menu when clicking outside
+  useEffect(() => {
+    const handleClick = () => setContextMenu(null);
+    if (contextMenu) {
+      document.addEventListener('click', handleClick);
+      return () => document.removeEventListener('click', handleClick);
+    }
+  }, [contextMenu]);
 
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const dirInputRef = useRef<HTMLInputElement>(null);
@@ -330,7 +416,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     const pathMap = new Map<string, FileTreeNode>();
 
     // 1. Filter Files
-    const visibleFiles = currentFiles.filter(f => 
+    const visibleFiles = currentFiles.filter(f =>
         f && (f.path || f.name) && isExtensionInList(f.path || f.name, DISPLAY_EXTENSIONS)
     );
 
@@ -341,10 +427,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
         const parts = normalizedPath.split('/').filter(p => p);
 
         let currentPath = '';
-        
+
         parts.forEach((part, index) => {
             const isFile = index === parts.length - 1;
-            const parentPath = currentPath; 
+            const parentPath = currentPath;
             currentPath = currentPath ? `${currentPath}/${part}` : part;
 
             // Find or Create Node
@@ -376,9 +462,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
         });
     });
 
-    // 3. Sort Nodes Recursively
+    // 3. Add Memory Files from state (loaded asynchronously via useEffect)
+    if (memoryNodes.length > 0) {
+      // Find or create .memories folder node
+      const memoriesFolder = '.memories';
+      let memoryFolderNode = pathMap.get(memoriesFolder);
+      if (!memoryFolderNode) {
+        memoryFolderNode = {
+          id: 'folder-.memories',
+          name: '.memories',
+          path: memoriesFolder,
+          type: 'folder',
+          children: []
+        };
+        pathMap.set(memoriesFolder, memoryFolderNode);
+        rootNodes.push(memoryFolderNode);
+      }
+      // Merge memory nodes
+      if (memoryFolderNode.children) {
+        memoryFolderNode.children = [...memoryNodes];
+      }
+    }
+
+    // 4. Sort Nodes Recursively
     const sortNodes = (nodes: FileTreeNode[]): FileTreeNode[] => {
         return nodes.sort((a, b) => {
+            // Memory folder always first
+            if (a.name === '.memories' && b.name !== '.memories') return -1;
+            if (b.name === '.memories' && a.name !== '.memories') return 1;
             if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
             return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
         }).map(node => {
@@ -390,7 +501,67 @@ export const Sidebar: React.FC<SidebarProps> = ({
     };
 
     return sortNodes(rootNodes);
-  }, [filesStructureHash]); 
+  }, [filesStructureHash, memoryNodes]);
+
+  // Load memory files asynchronously via useEffect
+  useEffect(() => {
+    const loadMemoryFiles = async () => {
+      try {
+        if (typeof window !== 'undefined' && (window as any).electronAPI?.file) {
+          const memoriesFolder = '.memories';
+          const files = await (window as any).electronAPI.file.listFiles(memoriesFolder);
+
+          if (!files || files.length === 0) {
+            setMemoryNodes([]);
+            return;
+          }
+
+          const nodes: FileTreeNode[] = [];
+
+          // Add memory files
+          for (const file of files || []) {
+            if (file.name?.startsWith('memory_') && file.name.endsWith('.md')) {
+              // Read memory file to get importance
+              let importance: 'low' | 'medium' | 'high' = 'medium';
+              try {
+                const content = await (window as any).electronAPI.file.readFile(file.path);
+                const impMatch = content?.match(/importance:\s*(\w+)/);
+                if (impMatch) {
+                  importance = impMatch[1] as 'low' | 'medium' | 'high';
+                }
+              } catch (e) {
+                // Use default importance
+              }
+
+              nodes.push({
+                id: file.name.replace('.md', ''),
+                name: file.name.replace('.memories/', '').replace('.md', ''),
+                path: file.path,
+                type: 'file',
+                fileId: file.path,
+                isMemory: true,
+                memoryImportance: importance
+              });
+            }
+          }
+
+          // Sort by modification time (newest first)
+          nodes.sort((a, b) => {
+            const aTime = files.find((f: any) => f.path === a.path)?.lastModified || 0;
+            const bTime = files.find((f: any) => f.path === b.path)?.lastModified || 0;
+            return bTime - aTime;
+          });
+
+          setMemoryNodes(nodes);
+        }
+      } catch (error) {
+        console.error('Failed to load memory files:', error);
+        setMemoryNodes([]);
+      }
+    };
+
+    loadMemoryFiles();
+  }, [files]); // Re-load when files change
 
   // Auto-expand to active file
   useEffect(() => {
@@ -544,6 +715,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
       }
   };
 
+  // Delete confirmation handlers
+  const handleDeleteRequest = (fileId: string, fileName: string) => {
+      setDeleteConfirm({ isOpen: true, fileId, fileName });
+  };
+
+  const handleDeleteConfirm = () => {
+      if (deleteConfirm.fileId) {
+          onDeleteFile(deleteConfirm.fileId);
+          setDeleteConfirm({ isOpen: false, fileId: null, fileName: '' });
+      }
+  };
+
+  const handleDeleteCancel = () => {
+      setDeleteConfirm({ isOpen: false, fileId: null, fileName: '' });
+  };
+
   // Drag and Drop Logic
   const handleDragStart = (e: React.DragEvent, nodeId: string) => {
     e.dataTransfer.setData('text/plain', nodeId);
@@ -615,6 +802,37 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
         )}
 
+        {/* Delete Confirmation Modal */}
+        {deleteConfirm.isOpen && (
+            <div className="absolute inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center">
+                <div className="w-72 bg-white dark:bg-cyber-800 rounded-lg shadow-xl border border-red-200 dark:border-red-900/50 p-4 animate-slideDown">
+                    <div className="flex items-center gap-2 mb-3">
+                        <Trash2 size={18} className="text-red-500" />
+                        <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                            确认删除
+                        </h3>
+                    </div>
+                    <p className="text-xs text-slate-600 dark:text-slate-400 mb-4">
+                        确定要删除文件 <span className="font-semibold text-red-600 dark:text-red-400">"{deleteConfirm.fileName}"</span> 吗？此操作无法撤销。
+                    </p>
+                    <div className="flex gap-2 justify-end">
+                        <button
+                            onClick={handleDeleteCancel}
+                            className="px-3 py-1.5 text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-cyber-700 rounded transition-colors"
+                        >
+                            取消
+                        </button>
+                        <button
+                            onClick={handleDeleteConfirm}
+                            className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded text-xs font-medium transition-colors"
+                        >
+                            删除
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
         {/* Header Tabs */}
         <div className="h-14 flex items-center px-2 border-b border-paper-200 dark:border-cyber-700 shrink-0 gap-1 pt-2">
             <button
@@ -682,8 +900,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                  </button>
                  
                  <button onClick={() => quizInputRef.current?.click()} className="col-span-2 flex items-center justify-center gap-1.5 px-3 py-2 bg-white dark:bg-cyber-900 border border-paper-200 dark:border-cyber-700 rounded-lg text-slate-600 dark:text-slate-300 hover:border-violet-400 transition-colors text-xs font-medium">
-                      <GraduationCap size={14} className="text-violet-400" /> {t.quiz}
-                  </button>
+                       <GraduationCap size={14} className="text-violet-400" /> {t.quiz}
+                   </button>
+
+{onOpenReview && (
+                      <button
+                        onClick={onOpenReview}
+                        className="col-span-2 flex items-center justify-center gap-1.5 px-3 py-2 bg-white dark:bg-cyber-900 border border-paper-200 dark:border-cyber-700 rounded-lg text-slate-600 dark:text-slate-300 hover:border-emerald-400 transition-colors text-xs font-medium"
+                      >
+                        <BookOpen size={14} className="text-emerald-400" /> {t.review}
+                      </button>
+                    )}
                </div>
                
                {/* Hidden Inputs */}
@@ -692,44 +919,72 @@ export const Sidebar: React.FC<SidebarProps> = ({
                <input type="file" accept=".md,.markdown,.txt,.csv,.pdf,.docx,.doc" multiple ref={filesInputRef} className="hidden" onChange={handleFilesUpload} />
                <input type="file" ref={dirInputRef} className="hidden" onChange={handleDirUpload} multiple {...({ webkitdirectory: "", directory: "" } as any)} />
 
-               {/* Tree */}
-               <div className="pb-10 min-h-[100px] flex flex-col">
-                   {visibleFlatNodes.length === 0 ? (
-                       <div className="text-center py-8 text-slate-400 text-xs italic">
-                           {searchQuery ? 'No matching files' : 'No files open'}
-                       </div>
-                   ) : (
-                       visibleFlatNodes.map((node) => (
-                           <FileTreeRow 
-                               key={node.id} 
-                               node={node} 
-                               activeFileId={activeFileId} 
-                               onSelect={onSelectFile}
-                               onDelete={onDeleteFile}
-                               onToggle={toggleFolder}
-                               onRequestCreate={handleOpenCreation}
-                               onDragStart={handleDragStart}
-                               onDragOver={handleDragOver}
-                               onDrop={handleDrop}
-                               isDropTarget={dragOverNodeId === node.id}
-                           />
-                       ))
-                    )}
-                    
-                    {/* Root Drop Zone - Only visible when dragging */}
-                    <div 
-                      className={`flex-1 border-2 border-dashed rounded-lg flex items-center justify-center text-xs text-slate-400 transition-all min-h-[60px] mt-4 ${isRootDropTarget ? 'border-cyan-400 bg-cyan-50 dark:bg-cyan-900/20' : 'border-transparent'}`}
-                      onDragOver={(e) => handleDragOver(e, null)}
-                      onDrop={(e) => handleDrop(e, null)}
-                    >
-                        {isRootDropTarget ? "Drop to Root Directory" : ""}
-                    </div>
+                {/* Tree */}
+                 <div className="pb-10 min-h-[100px] flex flex-col">
+                     {visibleFlatNodes.length === 0 ? (
+                         <div className="text-center py-8 text-slate-400 text-xs italic">
+                             {searchQuery ? 'No matching files' : 'No files open'}
+                         </div>
+                      ) : (
+                          visibleFlatNodes.map((node) => (
+                              <FileTreeRow
+                                  key={node.id}
+                                  node={node}
+                                  activeFileId={activeFileId}
+                                  onSelect={onSelectFile}
+                                  onDelete={handleDeleteRequest}
+                                  onToggle={toggleFolder}
+                                  onRequestCreate={handleOpenCreation}
+                                  onDragStart={handleDragStart}
+                                  onDragOver={handleDragOver}
+                                  onDrop={handleDrop}
+                                  isDropTarget={dragOverNodeId === node.id}
+                                  onShowContextMenu={(fileId, fileName, x, y) => {
+                                    setContextMenu({ x, y, fileId, fileName });
+                                  }}
+                              />
+                          ))
+                      )}
+                     
+                     {/* Root Drop Zone - Only visible when dragging */}
+                     <div 
+                       className={`flex-1 border-2 border-dashed rounded-lg flex items-center justify-center text-xs text-slate-400 transition-all min-h-[60px] mt-4 ${isRootDropTarget ? 'border-cyan-400 bg-cyan-50 dark:bg-cyan-900/20' : 'border-transparent'}`}
+                       onDragOver={(e) => handleDragOver(e, null)}
+                       onDrop={(e) => handleDrop(e, null)}
+                     >
+                         {isRootDropTarget ? "Drop to Root Directory" : ""}
+                     </div>
+                 </div>
 
-                    {/* AI Memory Library Section */}
-                    <MemoryLibrarySection
-                      language={language}
-                      onSelectMemory={onSelectFile}
+                {/* Tags Section */}
+                <div className="mt-2 border-t border-paper-200 dark:border-cyber-700 pt-2">
+                  <button
+                    onClick={() => setTagsExpanded(!tagsExpanded)}
+                    className="w-full flex items-center justify-between px-2 py-1.5 hover:bg-paper-200 dark:hover:bg-cyber-800 rounded transition-colors"
+                  >
+                    <span className="text-xs font-medium text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
+                      <Tag size={12} className="text-emerald-500" />
+                      {t.tags || 'Tags'}
+                    </span>
+                    <ChevronDown
+                      size={12}
+                      className={`text-slate-400 transition-transform ${tagsExpanded ? 'rotate-180' : ''}`}
                     />
+                  </button>
+                    {tagsExpanded && (
+                      <div className="mt-2 px-2">
+                        <TagsBrowser files={files} onSelectFile={onSelectFile} />
+                        {onOpenTagSuggestion && (
+                          <button
+                            onClick={onOpenTagSuggestion}
+                            className="mt-2 w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs bg-gradient-to-r from-cyan-500 to-violet-500 text-white rounded-lg hover:from-cyan-600 hover:to-violet-600 transition-all"
+                          >
+                            <Sparkles size={12} />
+                            {t.aiTagSuggestions || 'AI Suggest Tags'}
+                          </button>
+                        )}
+                      </div>
+                    )}
                 </div>
             </>
           )}
@@ -743,6 +998,35 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <p className="text-[10px] text-slate-400 dark:text-slate-500">{t.clickToInsert || 'Click to insert into editor'}</p>
               </div>
 
+              {/* User Custom Snippets */}
+              {snippets && snippets.length > 0 && (
+                <>
+                  <h4 className="text-xs font-semibold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider mb-2">
+                    {t.mySnippets || 'My Snippets'}
+                  </h4>
+                  <div className="space-y-1.5 mb-4">
+                    {snippets.map(snippet => (
+                      <div
+                        key={snippet.id}
+                        onClick={() => onInsertSnippet?.(snippet.content)}
+                        className="group flex items-center gap-2 px-3 py-2 rounded-lg border border-cyan-200 dark:border-cyan-800 bg-cyan-50 dark:bg-cyan-900/20 hover:border-cyan-400 hover:bg-cyan-100 dark:hover:bg-cyan-900/30 transition-all cursor-pointer"
+                      >
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-mono shrink-0 bg-cyan-100 dark:bg-cyan-800/50 text-cyan-700 dark:text-cyan-300">
+                          {snippet.category || 'custom'}
+                        </span>
+                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300 truncate">
+                          {snippet.name}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {/* Default Templates */}
+              <h4 className="text-xs font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wider mb-2">
+                {t.defaultTemplates || 'Default Templates'}
+              </h4>
               <div className="space-y-1.5">
                 {DEFAULT_SNIPPETS.map(snippet => (
                   <div
@@ -753,10 +1037,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono shrink-0 ${
                       snippet.category === 'code' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' :
                       snippet.category === 'text' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' :
+                      snippet.category === 'wikilink' ? 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400' :
                       'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400'
                     }`}>
                       {snippet.category === 'code' ? t.codeCategory || 'code' :
                        snippet.category === 'text' ? t.textCategory || 'text' :
+                       snippet.category === 'wikilink' ? t.wikiLinkCategory || 'wikilink' :
                        t.templateCategory || 'template'}
                     </span>
                     <span className="text-sm font-medium text-slate-700 dark:text-slate-300 truncate">
@@ -872,188 +1158,58 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <span>{files.length} Files</span>
             <span>TashanStone</span>
         </div>
+
+        {/* Context Menu */}
+        {contextMenu && (
+          <div
+            className="fixed z-50 bg-white dark:bg-cyber-800 rounded-lg shadow-xl border border-paper-200 dark:border-cyber-700 py-1 min-w-[160px]"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => {
+                onSelectFile(contextMenu.fileId!);
+                setContextMenu(null);
+              }}
+              className="w-full px-3 py-1.5 text-left text-sm text-slate-700 dark:text-slate-300 hover:bg-paper-100 dark:hover:bg-cyber-700 flex items-center gap-2"
+            >
+              <FileText size={14} />
+              Open
+            </button>
+            {onOpenSmartOrganize && (
+              <button
+                onClick={() => {
+                  const file = files.find(f => f.id === contextMenu.fileId);
+                  if (file) onOpenSmartOrganize(file);
+                  setContextMenu(null);
+                }}
+                className="w-full px-3 py-1.5 text-left text-sm text-slate-700 dark:text-slate-300 hover:bg-paper-100 dark:hover:bg-cyber-700 flex items-center gap-2"
+              >
+                <Sparkles size={14} className="text-violet-500" />
+                Smart Organize
+              </button>
+            )}
+            <div className="border-t border-paper-200 dark:border-cyber-700 my-1" />
+            <button
+              onClick={() => {
+                // Open delete confirmation dialog instead of direct delete
+                setDeleteConfirm({
+                  isOpen: true,
+                  fileId: contextMenu.fileId,
+                  fileName: contextMenu.fileName
+                });
+                setContextMenu(null);
+              }}
+              className="w-full px-3 py-1.5 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"
+              aria-label="Delete file"
+            >
+              <Trash2 size={14} />
+              Delete
+            </button>
+          </div>
+        )}
       </div>
     </>
-  );
-};
-
-// Memory Library Section Component
-interface MemoryLibrarySectionProps {
-  language?: Language;
-  onSelectMemory: (id: string) => void;
-}
-
-interface MemoryFileInfo {
-  id: string;
-  filePath: string;
-  name: string;
-  topics: string[];
-  importance: 'low' | 'medium' | 'high';
-  updated: number;
-}
-
-const MemoryLibrarySection: React.FC<MemoryLibrarySectionProps> = ({
-  language,
-  onSelectMemory,
-}) => {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [memories, setMemories] = useState<MemoryFileInfo[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-
-  const loadMemories = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      if (typeof window !== 'undefined' && (window as any).electronAPI?.file) {
-        const memoriesFolder = '.memories';
-        const files = await (window as any).electronAPI.file.listFiles(memoriesFolder);
-        
-        const memoryFiles: MemoryFileInfo[] = [];
-        for (const file of files || []) {
-          if (file.name?.endsWith('.md') && file.name.startsWith('memory_')) {
-            const content = await (window as any).electronAPI.file.readFile(file.path);
-            
-            let topics: string[] = [];
-            let importance: 'low' | 'medium' | 'high' = 'medium';
-            
-            if (content) {
-              const topicMatch = content.match(/topics:\s*(\[[^\]]*\])/);
-              if (topicMatch) {
-                try {
-                  topics = JSON.parse(topicMatch[1]);
-                } catch {}
-              }
-              
-              const impMatch = content.match(/importance:\s*(\w+)/);
-              if (impMatch) {
-                importance = impMatch[1] as 'low' | 'medium' | 'high';
-              }
-            }
-            
-            memoryFiles.push({
-              id: file.name.replace('.memories/', '').replace('.md', ''),
-              filePath: file.path,
-              name: file.name.replace('.memories/', '').replace('.md', ''),
-              topics,
-              importance,
-              updated: file.lastModified || Date.now(),
-            });
-          }
-        }
-        
-        memoryFiles.sort((a, b) => b.updated - a.updated);
-        setMemories(memoryFiles);
-      }
-    } catch (error) {
-      console.error('Failed to load memories:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (isExpanded) {
-      loadMemories();
-    }
-  }, [isExpanded, loadMemories]);
-
-  const filteredMemories = memories.filter(m =>
-    m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    m.topics.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
-
-  const getImportanceColor = (imp: string) => {
-    switch (imp) {
-      case 'high': return 'text-red-500 bg-red-100 dark:bg-red-900/30';
-      case 'medium': return 'text-amber-500 bg-amber-100 dark:bg-amber-900/30';
-      default: return 'text-slate-400 bg-slate-100 dark:bg-slate-800';
-    }
-  };
-
-  const formatDate = (timestamp: number) => {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    
-    if (days === 0) return 'Today';
-    if (days === 1) return 'Yesterday';
-    if (days < 7) return `${days} days ago`;
-    return date.toLocaleDateString();
-  };
-
-  return (
-    <div className="mt-4 border-t border-paper-200 dark:border-cyber-700 pt-3">
-      <button
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-paper-200 dark:hover:bg-cyber-700 transition-colors text-xs font-medium text-slate-600 dark:text-slate-300"
-      >
-        <ChevronRight
-          size={12}
-          className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`}
-        />
-        <Brain size={14} className="text-violet-500" />
-        <span>AI Memory Library</span>
-        <span className="ml-auto text-[10px] px-1.5 py-0.5 bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 rounded">
-          {memories.length}
-        </span>
-      </button>
-
-      {isExpanded && (
-        <div className="mt-2 ml-4 space-y-1">
-          {/* Search */}
-          <div className="relative mb-2">
-            <input
-              type="text"
-              placeholder="Search memories..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-7 pr-2 py-1 bg-paper-100 dark:bg-cyber-900/50 border border-paper-200 dark:border-cyber-700 rounded text-[10px] focus:outline-none focus:border-violet-500"
-            />
-            <Search size={10} className="absolute left-2 top-1.5 text-slate-400" />
-          </div>
-
-          {isLoading ? (
-            <div className="flex items-center gap-2 px-2 py-2 text-slate-400 text-xs">
-              <Loader2 size={12} className="animate-spin" />
-              Loading...
-            </div>
-          ) : filteredMemories.length === 0 ? (
-            <div className="px-2 py-3 text-center text-slate-400 text-[10px] italic">
-              {searchQuery ? 'No matching memories' : 'No memories yet'}
-            </div>
-          ) : (
-            filteredMemories.map((memory) => (
-              <div
-                key={memory.id}
-                onClick={() => onSelectMemory(memory.filePath)}
-                className="group flex items-center gap-2 px-2 py-1.5 rounded hover:bg-paper-200 dark:hover:bg-cyber-700 cursor-pointer transition-colors"
-              >
-                <Sparkles size={10} className="text-violet-400 shrink-0" />
-                <span className="text-xs text-slate-700 dark:text-slate-300 truncate flex-1">
-                  {memory.name}
-                </span>
-                <span className={`text-[9px] px-1 py-0.5 rounded ${getImportanceColor(memory.importance)}`}>
-                  {memory.importance}
-                </span>
-                <span className="text-[9px] text-slate-400 shrink-0">
-                  {formatDate(memory.updated)}
-                </span>
-              </div>
-            ))
-          )}
-
-          {/* Refresh button */}
-          <button
-            onClick={(e) => { e.stopPropagation(); loadMemories(); }}
-            className="w-full flex items-center justify-center gap-1 px-2 py-1 mt-2 text-[10px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-paper-200 dark:hover:bg-cyber-700 rounded transition-colors"
-          >
-            <RefreshCw size={10} className={isLoading ? 'animate-spin' : ''} />
-            Refresh
-          </button>
-        </div>
-      )}
-    </div>
   );
 };
 

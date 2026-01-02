@@ -110,10 +110,12 @@ export class VectorRepository {
     }
 
     /**
-     * 获取所有向量块（用于初始化向量存储）
-     * @returns 所有向量块数组
+     * 获取所有向量块（带分页，用于初始化向量存储）
+     * @param limit 每页数量，默认 1000
+     * @param offset 偏移量，默认 0
+     * @returns 分页的向量块数组
      */
-    getAllChunks(): VectorChunk[] {
+    getAllChunksPaginated(limit: number = 1000, offset: number = 0): VectorChunk[] {
         const db = getDatabase();
         try {
             const rows = db.prepare(`
@@ -121,13 +123,37 @@ export class VectorRepository {
                        chunk_start, chunk_end, file_name, file_last_modified, created_at
                 FROM vector_chunks
                 ORDER BY file_id, chunk_index ASC
-            `).all() as VectorChunkRow[];
+                LIMIT ? OFFSET ?
+            `).all(limit, offset) as VectorChunkRow[];
 
             return rows.map(this.rowToChunk);
         } catch (error) {
-            logger.error('getAllChunks failed', { error });
+            logger.error('getAllChunksPaginated failed', { limit, offset, error });
             return [];
         }
+    }
+
+    /**
+     * 获取所有向量块总数
+     * @returns 总数
+     */
+    getAllChunksCount(): number {
+        const db = getDatabase();
+        try {
+            const result = db.prepare(`SELECT COUNT(*) as count FROM vector_chunks`).get() as { count: number };
+            return result.count;
+        } catch (error) {
+            logger.error('getAllChunksCount failed', { error });
+            return 0;
+        }
+    }
+
+    /**
+     * 获取所有向量块（用于初始化向量存储）
+     * @returns 所有向量块数组
+     */
+    getAllChunks(): VectorChunk[] {
+        return this.getAllChunksPaginated(10000, 0);
     }
 
     /**

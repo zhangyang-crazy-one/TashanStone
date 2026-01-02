@@ -2,6 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { EditorPane, MarkdownFile } from '../types';
 import { Editor } from './Editor';
+import { CodeMirrorEditor } from './CodeMirrorEditor';
 import { Preview } from './Preview';
 import { translations, Language } from '../utils/translations';
 
@@ -13,9 +14,11 @@ interface SplitEditorProps {
   onCursorChange?: (fileId: string, position: { start: number; end: number }) => void;
   getCursorPosition?: (fileId: string) => { start: number; end: number } | undefined;
   onToggleMode?: (paneId: string) => void;
+  onSelectPane?: (paneId: string) => void;
   splitMode: 'none' | 'horizontal' | 'vertical';
   language?: Language;
   editorRef?: React.RefObject<HTMLTextAreaElement>;
+  useCodeMirror?: boolean;
 }
 
 export const SplitEditor: React.FC<SplitEditorProps> = ({
@@ -26,9 +29,11 @@ export const SplitEditor: React.FC<SplitEditorProps> = ({
   onCursorChange,
   getCursorPosition,
   onToggleMode,
+  onSelectPane,
   splitMode,
   language = 'en',
-  editorRef
+  editorRef,
+  useCodeMirror = false
 }) => {
   const t = translations[language];
   const [splitRatio, setSplitRatio] = useState(50);
@@ -93,37 +98,64 @@ export const SplitEditor: React.FC<SplitEditorProps> = ({
 
     return (
       <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-        {/* Panel Title Bar */}
-        <div className="h-9 px-4 flex items-center gap-2 border-b border-paper-200 dark:border-cyber-700 bg-paper-100 dark:bg-cyber-800 shrink-0">
-          <button
-            onClick={() => onToggleMode?.(pane.id)}
-            className="flex items-center gap-2 text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300 hover:bg-paper-200 dark:hover:bg-cyber-700 px-2 py-1 rounded transition-colors cursor-pointer"
-            title={pane.mode === 'editor' ? t.preview : t.editor}
-          >
-            {modeIcon}
-            <span className="text-xs font-semibold">{modeLabel}</span>
-          </button>
-          <div className="h-3 w-px bg-paper-300 dark:bg-cyber-600" />
-          <span className="text-xs text-slate-600 dark:text-slate-300 truncate flex-1" title={file.name}>
-            {file.name}
-          </span>
-        </div>
+        {/* Panel Title Bar - 只在分屏模式下显示，避免与 EditorTabs 重复 */}
+        {splitMode !== 'none' && (
+          <div className="h-9 px-4 flex items-center gap-2 border-b border-paper-200 dark:border-cyber-700 bg-paper-100 dark:bg-cyber-800 shrink-0">
+            <button
+              onClick={() => onToggleMode?.(pane.id)}
+              className="flex items-center gap-2 text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300 hover:bg-paper-200 dark:hover:bg-cyber-700 px-2 py-1 rounded transition-colors cursor-pointer"
+              title={pane.mode === 'editor' ? t.preview : t.editor}
+            >
+              {modeIcon}
+              <span className="text-xs font-semibold">{modeLabel}</span>
+            </button>
+            <div className="h-3 w-px bg-paper-300 dark:bg-cyber-600" />
+            <span className="text-xs text-slate-600 dark:text-slate-300 truncate flex-1" title={file.name}>
+              {file.name}
+            </span>
+          </div>
+        )}
 
         {/* Content */}
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
           {pane.mode === 'editor' ? (
-            <Editor
-              key={`editor-${file.id}-${pane.id}`}
-              ref={shouldPassRef ? editorRef : undefined}
-              content={file.content}
-              onChange={(content) => onContentChange(file.id, content)}
-              onCursorChange={(position) => onCursorChange?.(file.id, position)}
-              initialCursor={getCursorPosition?.(file.id) || file.cursorPosition}
-            />
+            useCodeMirror ? (
+              <CodeMirrorEditor
+                key={`cm-editor-${file.id}-${pane.id}`}
+                content={file.content}
+                onChange={(content) => onContentChange(file.id, content)}
+                onCursorChange={(position) => onCursorChange?.(file.id, position)}
+                initialCursor={getCursorPosition?.(file.id) || file.cursorPosition}
+                files={files}
+                onNavigate={(fileId) => {
+                  const targetPane = panes.find(p => p.fileId === fileId);
+                  if (targetPane && onSelectPane) {
+                    onSelectPane(targetPane.id);
+                  }
+                }}
+              />
+            ) : (
+              <Editor
+                key={`editor-${file.id}-${pane.id}`}
+                ref={shouldPassRef ? editorRef : undefined}
+                content={file.content}
+                onChange={(content) => onContentChange(file.id, content)}
+                onCursorChange={(position) => onCursorChange?.(file.id, position)}
+                initialCursor={getCursorPosition?.(file.id) || file.cursorPosition}
+                files={files}
+                onNavigate={(fileId) => {
+                  const targetPane = panes.find(p => p.fileId === fileId);
+                  if (targetPane && onSelectPane) {
+                    onSelectPane(targetPane.id);
+                  }
+                }}
+              />
+            )
           ) : (
             <Preview
               key={`preview-${file.id}-${pane.id}`}
               content={file.content}
+              files={files}
               initialScrollRatio={(() => {
                 // 基于光标位置计算滚动比例
                 const cursorPos = getCursorPosition?.(file.id) || file.cursorPosition;

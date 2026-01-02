@@ -6,7 +6,6 @@ import { initializeDatabase, closeDatabase } from './database/index.js';
 import { MigrationManager, migrations } from './database/migrations.js';
 import { registerAllHandlers } from './ipc/index.js';
 import { registerMCPHandlers } from './mcp/handlers.js';
-import { registerLanceDBHandlers } from './ipc/lancedbHandlers.js';
 import { registerContextHandlers } from './ipc/contextHandlers.js';
 import { initLanceDB } from './lancedb/index.js';
 import { mcpManager } from './mcp/index.js';
@@ -170,7 +169,7 @@ function createWindow(): void {
         },
         // Use frameless window for custom title bar on all platforms
         frame: false,
-        show: false,
+        show: true,
         backgroundColor: '#0f172a'
     });
 
@@ -305,9 +304,9 @@ app.whenReady().then(() => {
     })();
 
     // Register IPC handlers
-    registerAllHandlers();
+    registerAllHandlers();  // This already includes registerLanceDBHandlers()
     registerMCPHandlers();
-    registerLanceDBHandlers();
+    // Note: registerLanceDBHandlers() is called inside registerAllHandlers()
     registerContextHandlers();
 
     // Window control IPC handlers

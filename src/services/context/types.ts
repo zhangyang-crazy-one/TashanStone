@@ -17,9 +17,17 @@ export interface ApiMessage {
   checkpoint_id?: string;
   tool_calls?: ToolCall[];
   tool_call_id?: string;
+  prune_info?: PruneInfo;
 }
 
 export type CompressionType = 'pruned' | 'compacted' | 'truncated';
+
+export interface PruneInfo {
+  timestamp: number;
+  originalTokens: number;
+  preserved: boolean;
+  originalContent?: string;
+}
 
 export interface ToolCall {
   id: string;

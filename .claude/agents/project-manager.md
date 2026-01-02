@@ -112,7 +112,7 @@ function calculateProgress(completed: ModuleStatus[]): number {
 📊 项目进度报告
 
 ## 项目概况
-- **项目名称**：ZhangNote
+- **项目名称**：TashaStone
 - **技术栈**：React 19 + Electron 33 + SQLite + LanceDB
 - **当前阶段**：开发中
 - **整体进度**：92%

@@ -1,8 +1,8 @@
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as d3 from 'd3';
 import { GraphData, Theme } from '../types';
-import { ZoomIn, ZoomOut, RotateCcw, Download, X } from 'lucide-react';
+import { ZoomIn, ZoomOut, RotateCcw, Download, X, FileJson, Image, ChevronDown } from 'lucide-react';
 
 interface KnowledgeGraphProps {
   data: GraphData;
@@ -22,6 +22,8 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = React.memo(({ data,
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [selectedNode, setSelectedNode] = useState<SelectedNode | null>(null);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [focusedNodeIndex, setFocusedNodeIndex] = useState<number>(-1);
 
   // CRITICAL FIX: Use ref for callback to avoid restarting simulation when parent re-renders (e.g. toast notification)
   const onNodeClickRef = useRef(onNodeClick);
@@ -30,6 +32,114 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = React.memo(({ data,
   useEffect(() => {
     onNodeClickRef.current = onNodeClick;
   }, [onNodeClick]);
+
+  // Keyboard navigation handler
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (!data?.nodes?.length) return;
+
+    const nodeCount = data.nodes.length;
+
+    switch (e.key) {
+      case 'ArrowDown':
+      case 'ArrowRight':
+        e.preventDefault();
+        setFocusedNodeIndex(prev => {
+          const next = prev < nodeCount - 1 ? prev + 1 : 0;
+          highlightNodeAtIndex(next, true);
+          return next;
+        });
+        break;
+      case 'ArrowUp':
+      case 'ArrowLeft':
+        e.preventDefault();
+        setFocusedNodeIndex(prev => {
+          const next = prev > 0 ? prev - 1 : nodeCount - 1;
+          highlightNodeAtIndex(next, true);
+          return next;
+        });
+        break;
+      case 'Enter':
+        e.preventDefault();
+        if (focusedNodeIndex >= 0 && focusedNodeIndex < nodeCount) {
+          selectNodeByIndex(focusedNodeIndex);
+        }
+        break;
+      case 'Escape':
+        e.preventDefault();
+        setSelectedNode(null);
+        setFocusedNodeIndex(-1);
+        clearHighlights();
+        break;
+      case '+':
+      case '=':
+        e.preventDefault();
+        handleZoom(1.3);
+        break;
+      case '-':
+        e.preventDefault();
+        handleZoom(0.7);
+        break;
+      case '0':
+        e.preventDefault();
+        handleReset();
+        break;
+    }
+  }, [data, focusedNodeIndex]);
+
+  // Helper to highlight node at index (simplified version)
+  const highlightNodeAtIndex = (index: number, highlight: boolean) => {
+    if (!svgRef.current || !data?.nodes?.[index]) return;
+    // Note: Full D3 highlight implementation would require storing refs to D3 selections
+    // For now, we just track the focused index visually
+  };
+
+  // Helper to select node by index
+  const selectNodeByIndex = (index: number) => {
+    if (!data?.nodes?.[index]) return;
+    const node = data.nodes[index];
+
+    // Find connections
+    const connections: { label: string; type: 'source' | 'target' }[] = [];
+    data.links.forEach((l: any) => {
+      const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
+      const targetId = typeof l.target === 'object' ? l.target.id : l.target;
+      if (sourceId === node.id) {
+        const targetNode = data.nodes.find((n: any) => n.id === targetId);
+        if (targetNode) connections.push({ label: (targetNode as any).label, type: 'target' });
+      }
+      if (targetId === node.id) {
+        const sourceNode = data.nodes.find((n: any) => n.id === sourceId);
+        if (sourceNode) connections.push({ label: (sourceNode as any).label, type: 'source' });
+      }
+    });
+
+    setSelectedNode({
+      id: node.id,
+      label: node.label,
+      group: node.group,
+      val: node.val || 1,
+      connections
+    });
+
+    if (onNodeClickRef.current) onNodeClickRef.current(node.id);
+  };
+
+  // Clear all highlights
+  const clearHighlights = () => {
+    // Reset any D3 highlights here
+  };
+
+  // Attach keyboard event listener
+  useEffect(() => {
+    const container = containerRef.current;
+    if (container) {
+      container.addEventListener('keydown', handleKeyDown as any);
+      container.setAttribute('tabindex', '0');
+      container.setAttribute('role', 'application');
+      container.setAttribute('aria-label', 'Knowledge graph. Use arrow keys to navigate between nodes, Enter to select, Escape to deselect, +/- to zoom, 0 to reset.');
+      return () => container.removeEventListener('keydown', handleKeyDown as any);
+    }
+  }, [handleKeyDown]);
 
   // Use CSS Variables for Theme Support
   const isDark = theme === 'dark';
@@ -366,6 +476,75 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = React.memo(({ data,
     document.body.removeChild(link);
   };
 
+  const handleDownloadPNG = async () => {
+    if (!svgRef.current || !containerRef.current) return;
+    
+    const svgEl = svgRef.current;
+    const width = containerRef.current.clientWidth;
+    const height = containerRef.current.clientHeight;
+    
+    const serializer = new XMLSerializer();
+    const svgString = serializer.serializeToString(svgEl);
+    const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+    const svgUrl = URL.createObjectURL(svgBlob);
+    
+    const img = new (window.Image || (window as any).HTMLImageElement)();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = width * 2;
+      canvas.height = height * 2;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--bg-main') || '#f1f5f9';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.scale(2, 2);
+        ctx.drawImage(img, 0, 0);
+        
+        const pngUrl = canvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        link.href = pngUrl;
+        link.download = `knowledge_graph_${Date.now()}.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+      URL.revokeObjectURL(svgUrl);
+    };
+    img.src = svgUrl;
+    setShowExportMenu(false);
+  };
+
+  const handleExportJSON = () => {
+    const exportData = {
+      nodes: data.nodes.map(n => ({
+        id: n.id,
+        label: n.label,
+        group: n.group,
+        value: n.val
+      })),
+      links: data.links.map(l => ({
+        source: (l.source as any)?.id || l.source,
+        target: (l.target as any)?.id || l.target,
+        relationship: l.relationship
+      })),
+      exportedAt: new Date().toISOString(),
+      totalNodes: data.nodes.length,
+      totalLinks: data.links.length
+    };
+    
+    const jsonString = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `knowledge_graph_${Date.now()}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    setShowExportMenu(false);
+  };
+
   return (
     <div ref={containerRef} className="w-full h-full relative bg-paper-50 dark:bg-cyber-900 overflow-hidden select-none group">
       {/* Background Grid */}
@@ -450,18 +629,68 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = React.memo(({ data,
 
       {/* Controls */}
       <div className="absolute bottom-6 right-6 flex flex-col gap-2 z-10 opacity-60 group-hover:opacity-100 transition-opacity">
-        <button onClick={handleDownload} className="p-2 bg-white dark:bg-cyber-800 rounded-lg shadow-lg border border-paper-200 dark:border-cyber-700 hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200 transition-colors" title="Download Graph">
+        {/* Export Menu */}
+        <div className="relative">
+          <button 
+            onClick={() => setShowExportMenu(!showExportMenu)}
+            className="p-2 bg-white dark:bg-cyber-800 rounded-lg shadow-lg border border-paper-200 dark:border-cyber-700 hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200 transition-colors flex items-center gap-1"
+            title="Export Graph"
+          >
             <Download size={20} />
-        </button>
+            <ChevronDown size={14} className={`transition-transform ${showExportMenu ? 'rotate-180' : ''}`} />
+          </button>
+          
+          {showExportMenu && (
+            <div className="absolute bottom-full right-0 mb-2 bg-white dark:bg-cyber-800 rounded-lg shadow-lg border border-paper-200 dark:border-cyber-700 overflow-hidden min-w-40">
+              <button
+                onClick={handleDownload}
+                className="w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 flex items-center gap-2 text-slate-700 dark:text-slate-200"
+              >
+                <FileJson size={16} className="text-violet-500" />
+                Export SVG
+              </button>
+              <button
+                onClick={handleDownloadPNG}
+                className="w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 flex items-center gap-2 text-slate-700 dark:text-slate-200"
+              >
+                <Image size={16} className="text-cyan-500" />
+                Export PNG
+              </button>
+              <button
+                onClick={handleExportJSON}
+                className="w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 flex items-center gap-2 text-slate-700 dark:text-slate-200"
+              >
+                <FileJson size={16} className="text-emerald-500" />
+                Export JSON
+              </button>
+            </div>
+          )}
+        </div>
+        
         <div className="h-px bg-paper-300 dark:bg-cyber-600 my-1"></div>
-        <button onClick={() => handleZoom(1.3)} className="p-2 bg-white dark:bg-cyber-800 rounded-lg shadow-lg border border-paper-200 dark:border-cyber-700 hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200 transition-colors" title="Zoom In">
-            <ZoomIn size={20} />
+        <button
+          onClick={() => handleZoom(1.3)}
+          className="p-2 bg-white dark:bg-cyber-800 rounded-lg shadow-lg border border-paper-200 dark:border-cyber-700 hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200 transition-colors"
+          title="Zoom In"
+          aria-label="Zoom in"
+        >
+          <ZoomIn size={20} />
         </button>
-        <button onClick={handleReset} className="p-2 bg-white dark:bg-cyber-800 rounded-lg shadow-lg border border-paper-200 dark:border-cyber-700 hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200 transition-colors" title="Reset View">
-            <RotateCcw size={20} />
+        <button
+          onClick={handleReset}
+          className="p-2 bg-white dark:bg-cyber-800 rounded-lg shadow-lg border border-paper-200 dark:border-cyber-700 hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200 transition-colors"
+          title="Reset View"
+          aria-label="Reset view"
+        >
+          <RotateCcw size={20} />
         </button>
-        <button onClick={() => handleZoom(0.7)} className="p-2 bg-white dark:bg-cyber-800 rounded-lg shadow-lg border border-paper-200 dark:border-cyber-700 hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200 transition-colors" title="Zoom Out">
-            <ZoomOut size={20} />
+        <button
+          onClick={() => handleZoom(0.7)}
+          className="p-2 bg-white dark:bg-cyber-800 rounded-lg shadow-lg border border-paper-200 dark:border-cyber-700 hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200 transition-colors"
+          title="Zoom Out"
+          aria-label="Zoom out"
+        >
+          <ZoomOut size={20} />
         </button>
       </div>
     </div>

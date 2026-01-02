@@ -1,9 +1,72 @@
-import { ipcMain, dialog, net } from 'electron';
+import { ipcMain, dialog, net, app } from 'electron';
 import fs from 'fs';
 import path from 'path';
 import { logger } from '../utils/logger.js';
 
 import type { MarkdownFile } from '../database/repositories/fileRepository.js';
+
+// Get the allowed base directory (userData)
+const ALLOWED_BASE_PATH = app.getPath('userData');
+
+/**
+ * Validate that a file path is within the allowed directory
+ * This prevents directory traversal attacks (e.g., ../../../etc/passwd)
+ * @param filePath The file path to validate
+ * @returns true if path is safe, false otherwise
+ */
+function validateFilePath(filePath: string): boolean {
+    try {
+        const resolvedPath = path.resolve(filePath);
+        const basePath = path.resolve(ALLOWED_BASE_PATH);
+
+        // Check if the resolved path is within the allowed base path
+        const isWithinBase = resolvedPath.startsWith(basePath);
+
+        if (!isWithinBase) {
+            logger.warn('Path validation failed - path outside allowed directory', {
+                filePath,
+                resolvedPath,
+                basePath
+            });
+            return false;
+        }
+
+        return true;
+    } catch (error) {
+        logger.error('Path validation error', error);
+        return false;
+    }
+}
+
+/**
+ * Validate that a directory path is within the allowed directory
+ * @param dirPath The directory path to validate
+ * @returns true if path is safe, false otherwise
+ */
+function validateDirPath(dirPath: string): boolean {
+    try {
+        const resolvedPath = path.resolve(dirPath);
+        const basePath = path.resolve(ALLOWED_BASE_PATH);
+
+        // For directories, allow user-selected paths (dialog-based)
+        // but still validate for read/write operations
+        const isWithinBase = resolvedPath.startsWith(basePath);
+
+        if (!isWithinBase) {
+            logger.warn('Directory path validation failed - path outside allowed directory', {
+                dirPath,
+                resolvedPath,
+                basePath
+            });
+            return false;
+        }
+
+        return true;
+    } catch (error) {
+        logger.error('Directory path validation error', error);
+        return false;
+    }
+}
 
 export interface FileFilter {
     name: string;
@@ -40,6 +103,11 @@ export function registerFileHandlers(): void {
     // Read a single file
     ipcMain.handle('fs:readFile', async (_, filePath: string) => {
         try {
+            // Validate path is within allowed directory
+            if (!validateFilePath(filePath)) {
+                throw new Error('Access denied: file path outside allowed directory');
+            }
+
             const content = fs.readFileSync(filePath, 'utf-8');
             return content;
         } catch (error) {
@@ -51,6 +119,11 @@ export function registerFileHandlers(): void {
     // Write content to a file
     ipcMain.handle('fs:writeFile', async (_, filePath: string, content: string) => {
         try {
+            // Validate path is within allowed directory
+            if (!validateFilePath(filePath)) {
+                throw new Error('Access denied: file path outside allowed directory');
+            }
+
             fs.writeFileSync(filePath, content, 'utf-8');
             return true;
         } catch (error) {
@@ -62,6 +135,11 @@ export function registerFileHandlers(): void {
     // Delete a file
     ipcMain.handle('fs:deleteFile', async (_, filePath: string) => {
         try {
+            // Validate path is within allowed directory
+            if (!validateFilePath(filePath)) {
+                throw new Error('Access denied: file path outside allowed directory');
+            }
+
             if (fs.existsSync(filePath)) {
                 fs.unlinkSync(filePath);
                 return true;

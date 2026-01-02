@@ -18,12 +18,22 @@ import { AnalyticsDashboard } from './components/AnalyticsDashboard';
 import { LearningRoadmap } from './components/LearningRoadmap';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { VoiceTranscriptionModal } from './components/VoiceTranscriptionModal';
-import { ViewMode, AIState, MarkdownFile, AIConfig, ChatMessage, GraphData, AppTheme, Quiz, RAGStats, OCRStats, AppShortcut, RAGResultData, EditorPane, Snippet, StudyPlan, ExamResult, KnowledgePointStat } from './types';
-import { polishContent, expandContent, generateAIResponse, generateAIResponseStream, generateKnowledgeGraph, synthesizeKnowledgeBase, generateQuiz, generateMindMap, extractQuizFromRawContent, compactConversation } from './services/aiService';
+import { BacklinkPanel } from './components/BacklinkPanel';
+import { QuestionBankModal } from './components/QuestionBankModal';
+import { TagSuggestionModal } from './components/TagSuggestionModal';
+import { SmartOrganizeModal } from './components/SmartOrganizeModal';
+import { SearchModal } from './components/SearchModal';
+import { StudyPlanPanel } from './components/StudyPlanPanel';
+import { ViewMode, AIState, MarkdownFile, AIConfig, ChatMessage, GraphData, AppTheme, Quiz, RAGStats, OCRStats, AppShortcut, RAGResultData, EditorPane, Snippet, StudyPlan, ExamResult, KnowledgePointStat, QuestionBank, QuizQuestion } from './types';
+import { polishContent, expandContent, generateAIResponse, generateAIResponseStream, generateKnowledgeGraph, synthesizeKnowledgeBase, generateQuiz, generateMindMap, extractQuizFromRawContent, compactConversation, searchPermanentMemories, autoCreateMemoryFromSession, initPersistentMemory, getEmbedding } from './services/aiService';
 import { applyTheme, getAllThemes, getSavedThemeId, saveCustomTheme, deleteCustomTheme, DEFAULT_THEMES, getLastUsedThemeIdForMode } from './services/themeService';
 import { readDirectory, readDirectoryEnhanced, saveFileToDisk, processPdfFile, extractTextFromFile, parseCsvToQuiz, isExtensionSupported } from './services/fileService';
 import { VectorStore } from './services/ragService';
+import { questionBankService } from './src/services/quiz/questionBankService';
 import { mcpService } from './src/services/mcpService';
+import { extractWikiLinks, extractTags } from './src/types/wiki';
+import { Backlink } from './src/types/wiki';
+import { buildKnowledgeIndexFromFiles, generateFileLinkGraph } from './src/services/wiki/wikiLinkService';
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
 import { translations, Language } from './utils/translations';
 
@@ -61,7 +71,9 @@ const DEFAULT_SHORTCUTS: AppShortcut[] = [
   { id: 'chat', label: 'Toggle Chat', keys: 'Alt+C', actionId: 'toggle_chat' },
   { id: 'new_file', label: 'New File', keys: 'Alt+N', actionId: 'new_file' },
   { id: 'polish', label: 'AI Polish', keys: 'Alt+P', actionId: 'ai_polish' },
-  { id: 'graph', label: 'Build Graph', keys: 'Alt+G', actionId: 'build_graph' }
+  { id: 'graph', label: 'Build Graph', keys: 'Alt+G', actionId: 'build_graph' },
+  { id: 'smart_organize', label: 'Smart Organize', keys: 'Alt+O', actionId: 'smart_organize' },
+  { id: 'search', label: 'Search Files', keys: 'Ctrl+F', actionId: 'search' }
 ];
 
 interface FileHistory {
@@ -89,6 +101,14 @@ const App: React.FC = () => {
       applyTheme(currentTheme);
     }
   }, [activeThemeId, themes]);
+
+  // Expose searchPermanentMemories to window for ChatPanel memory search
+  useEffect(() => {
+    (window as any).searchPermanentMemories = searchPermanentMemories;
+    return () => {
+      delete (window as any).searchPermanentMemories;
+    };
+  }, []);
 
   // NOTE: Authentication check moved after aiConfig declaration (around line 200+)
 
@@ -229,6 +249,7 @@ const App: React.FC = () => {
   }, [shortcuts]);
 
   const [graphData, setGraphData] = useState<GraphData>({ nodes: [], links: [] });
+  const [graphType, setGraphType] = useState<'concept' | 'filelink'>('concept');
   const [currentQuiz, setCurrentQuiz] = useState<Quiz | null>(null);
   const [quizContext, setQuizContext] = useState<string>(''); // Stores raw text for quiz generation context
   const [mindMapContent, setMindMapContent] = useState<string>('');
@@ -263,6 +284,30 @@ const App: React.FC = () => {
     } catch { return []; }
   });
 
+  // Backlinks State
+  const [backlinks, setBacklinks] = useState<Backlink[]>([]);
+
+  // QuestionBank State
+  const [isQuestionBankOpen, setIsQuestionBankOpen] = useState(false);
+  const [questionBanks, setQuestionBanks] = useState<QuestionBank[]>([]);
+
+  // TagSuggestion State
+  const [isTagSuggestionOpen, setIsTagSuggestionOpen] = useState(false);
+
+  // SmartOrganize State
+  const [isSmartOrganizeOpen, setIsSmartOrganizeOpen] = useState(false);
+  const [smartOrganizeFile, setSmartOrganizeFile] = useState<MarkdownFile | null>(null);
+
+  // StudyPlan/Review State
+  const [isStudyPlanOpen, setIsStudyPlanOpen] = useState(false);
+
+  // Handle Smart Organize file updates
+  const handleSmartOrganizeUpdate = (fileId: string, updates: Partial<MarkdownFile>) => {
+    setFiles(prev => prev.map(f =>
+      f.id === fileId ? { ...f, ...updates } : f
+    ));
+  };
+
   // Streaming State
   const [isStreaming, setIsStreaming] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -277,13 +322,16 @@ const App: React.FC = () => {
 
   // UI State
   const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.Split);
+  const [isSaving, setIsSaving] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isVoiceTranscriptionOpen, setIsVoiceTranscriptionOpen] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [aiState, setAiState] = useState<AIState>({ isThinking: false, error: null, message: null });
   const [ragStats, setRagStats] = useState<RAGStats>({ totalFiles: 0, indexedFiles: 0, totalChunks: 0, isIndexing: false });
   const [ocrStats, setOcrStats] = useState<OCRStats>({ isProcessing: false, totalPages: 0, processedPages: 0 });
+  const [useCodeMirror, setUseCodeMirror] = useState(false);
 
   // Multi-File Editor State
   const [openPanes, setOpenPanes] = useState<EditorPane[]>(() => {
@@ -354,13 +402,48 @@ const App: React.FC = () => {
      const indexedCount = vectorStore.getStats().indexedFiles;
      const totalChunks = vectorStore.getStats().totalChunks;
      
-     setRagStats(prev => ({
-         ...prev,
-         totalFiles: validFiles.length,
-         indexedFiles: indexedCount,
-         totalChunks: totalChunks
-     }));
-  }, [files, vectorStore]);
+      setRagStats(prev => ({
+          ...prev,
+          totalFiles: validFiles.length,
+          indexedFiles: indexedCount,
+          totalChunks: totalChunks
+      }));
+   }, [files, vectorStore]);
+
+   // Update backlinks when active file changes
+   useEffect(() => {
+     if (!activeFile) {
+       setBacklinks([]);
+       return;
+     }
+
+     const currentFileName = activeFile.name.toLowerCase();
+     const currentFilePath = activeFile.path?.toLowerCase() || '';
+
+     const newBacklinks: Backlink[] = [];
+
+     files.forEach(file => {
+       if (file.id === activeFileId) return;
+
+       const links = extractWikiLinks(file.content);
+       links.forEach(link => {
+         const linkTarget = link.target.toLowerCase();
+         if (linkTarget === currentFileName ||
+             linkTarget === currentFilePath ||
+             linkTarget.endsWith(`/${currentFileName}`) ||
+             linkTarget === `${currentFileName}.md`) {
+           newBacklinks.push({
+             sourceFileId: file.id,
+             sourceFileName: file.name,
+             linkType: 'wikilink',
+             context: link.alias || link.target
+           });
+         }
+       });
+     });
+
+     setBacklinks(newBacklinks);
+   }, [activeFileId, files]);
 
   // Persist Data
   useEffect(() => {
@@ -416,7 +499,7 @@ const App: React.FC = () => {
     }
   }, [openPanes.length, files.length, activeFileId]);
 
-  // Initialize VectorStore and MCP on startup
+  // Initialize VectorStore, MCP and Persistent Memory on startup
   useEffect(() => {
     const initServices = async () => {
       // Initialize VectorStore
@@ -425,6 +508,14 @@ const App: React.FC = () => {
         console.log('[VectorStore] Initialized');
       } catch (err) {
         console.error('[VectorStore] Init failed:', err);
+      }
+
+      // Initialize Persistent Memory Service
+      try {
+        await initPersistentMemory();
+        console.log('[PersistentMemory] Initialized');
+      } catch (err) {
+        console.error('[PersistentMemory] Init failed:', err);
       }
 
       // Initialize MCP
@@ -440,6 +531,44 @@ const App: React.FC = () => {
         } catch (e) {
           console.error('[MCP] Error loading configuration on startup:', e);
         }
+      }
+
+      // Initialize Context Memory with Long-Term Storage
+      try {
+        const { initializeContextMemory } = await import('./services/aiService');
+        const { LanceDBMemoryStorage } = await import('./src/services/context/long-term-memory');
+        
+        const longTermStorage = new LanceDBMemoryStorage();
+        const initialized = await longTermStorage.initialize();
+        
+        if (initialized) {
+          initializeContextMemory({ longTermStorage });
+          console.log('[ContextMemory] Initialized with LanceDB long-term storage');
+        } else {
+          initializeContextMemory();
+          console.warn('[ContextMemory] LanceDB not available, using in-memory only');
+        }
+      } catch (err) {
+        console.error('[ContextMemory] Init failed:', err);
+      }
+
+      // Initialize Memory Auto Upgrade Service
+      try {
+        const { memoryAutoUpgradeService } = await import('./src/services/context/memoryAutoUpgrade');
+        memoryAutoUpgradeService.start();
+        console.log('[MemoryAutoUpgrade] Service started');
+      } catch (err) {
+        console.error('[MemoryAutoUpgrade] Start failed:', err);
+      }
+
+      // Initialize QuestionBank Service
+      try {
+        await questionBankService.initialize();
+        const banks = questionBankService.getAllBanks();
+        setQuestionBanks(banks);
+        console.log('[QuestionBank] Initialized with', banks.length, 'banks');
+      } catch (err) {
+        console.error('[QuestionBank] Init failed:', err);
       }
     };
     initServices();
@@ -623,7 +752,7 @@ const App: React.FC = () => {
     );
   };
 
-  const updateActiveFile = (content: string, skipHistory = false) => {
+  const updateActiveFile = (content: string, cursorPosition?: { start: number; end: number }, skipHistory = false) => {
     if (!skipHistory) {
       const now = Date.now();
       if (now - lastEditTimeRef.current > HISTORY_DEBOUNCE) {
@@ -645,12 +774,20 @@ const App: React.FC = () => {
     }
 
     const updated = files.map(f =>
-      f.id === activeFileId ? { ...f, content, lastModified: Date.now() } : f
+      f.id === activeFileId 
+        ? { ...f, content, lastModified: Date.now(), cursorPosition: cursorPosition || f.cursorPosition } 
+        : f
     );
+    
+    // 同步更新 ref
+    if (cursorPosition && activeFileId) {
+      cursorPositionsRef.current.set(activeFileId, cursorPosition);
+    }
+    
     setFiles(updated);
   };
 
-  // 保存光标位置
+// 保存光标位置
   const handleCursorChange = (fileId: string, position: { start: number; end: number }) => {
     // 1. 同步更新 ref（立即生效，不受 React 批处理影响）
     cursorPositionsRef.current.set(fileId, position);
@@ -658,6 +795,56 @@ const App: React.FC = () => {
     setFiles(prev => prev.map(f =>
       f.id === fileId ? { ...f, cursorPosition: position } : f
     ));
+  };
+
+  // 切换编辑器模式前保存光标位置
+  const handleToggleCodeMirror = (enabled: boolean) => {
+    // 强制失去焦点以确保触发 blur 事件
+    if (editorRef.current) {
+      editorRef.current.blur();
+    }
+    
+    // 等待一小段时间让 blur 事件完成
+    setTimeout(() => {
+      // 尝试从多个来源获取光标位置
+      let position: { start: number; end: number } | undefined;
+      
+      // 1. 优先从 editorRef.current 获取（如果是 Plain 编辑器）
+      if (!position && activeFileId && editorRef.current) {
+        const textarea = editorRef.current;
+        if (textarea) {
+          position = {
+            start: textarea.selectionStart,
+            end: textarea.selectionEnd
+          };
+          console.log('[Toggle] 从 textarea 获取位置:', position);
+        }
+      }
+      
+      // 2. 如果 editorRef 没有，尝试从 cursorPositionsRef 获取
+      if (!position && activeFileId) {
+        position = cursorPositionsRef.current.get(activeFileId);
+        console.log('[Toggle] 从 ref 获取位置:', position);
+      }
+      
+      // 3. 如果都没有，尝试从 files state 获取
+      if (!position && activeFileId) {
+        const file = files.find(f => f.id === activeFileId);
+        position = file?.cursorPosition;
+        console.log('[Toggle] 从 files state 获取位置:', position);
+      }
+      
+      // 4. 如果有有效位置，保存它
+      if (activeFileId && position) {
+        cursorPositionsRef.current.set(activeFileId, position);
+        setFiles(prev => prev.map(f =>
+          f.id === activeFileId ? { ...f, cursorPosition: position! } : f
+        ));
+      }
+      
+      // 然后切换模式
+      setUseCodeMirror(enabled);
+    }, 50);
   };
 
   // 获取光标位置（优先从同步 ref 读取）
@@ -686,7 +873,7 @@ const App: React.FC = () => {
       }
     }));
 
-    updateActiveFile(previous, true);
+    updateActiveFile(previous, undefined, true);
   };
 
   const handleRedo = () => {
@@ -705,7 +892,7 @@ const App: React.FC = () => {
       }
     }));
 
-    updateActiveFile(next, true);
+    updateActiveFile(next, undefined, true);
   };
 
   const saveSnapshot = () => {
@@ -1189,6 +1376,22 @@ const App: React.FC = () => {
     }
   };
 
+  const handleApplyTags = (tags: string[]) => {
+    const currentContent = getActivePaneContent();
+    const existingTags = extractTags(currentContent);
+    const newTags = tags.filter(tag => !existingTags.includes(tag));
+    
+    if (newTags.length === 0) {
+      showToast('No new tags to add', false);
+      return;
+    }
+
+    const tagString = newTags.map(t => `#${t}`).join(' ');
+    const newContent = currentContent + '\n' + tagString;
+    updateActiveFile(newContent);
+    showToast(`Added ${newTags.length} tag(s)`, false);
+  };
+
   const handleTextFormat = (startTag: string, endTag: string) => {
       const textarea = editorRef.current;
       if (!textarea) return;
@@ -1292,9 +1495,101 @@ const App: React.FC = () => {
 
   const handleInsertSnippet = (content: string) => {
     if (!activeFile) return;
-    const newContent = activeFile.content + '\n\n' + content;
-    updateActiveFile(newContent);
+    
+    // 获取当前光标位置，默认为文件末尾
+    const cursorPos = activeFile.cursorPosition || {
+      start: activeFile.content.length,
+      end: activeFile.content.length
+    };
+    
+    // 在光标位置插入内容
+    const before = activeFile.content.substring(0, cursorPos.start);
+    const after = activeFile.content.substring(cursorPos.end);
+    
+    const newContent = before + content + after;
+    
+    // 计算新的光标位置（插入内容之后）
+    const newCursorPos = {
+      start: cursorPos.start + content.length,
+      end: cursorPos.start + content.length
+    };
+    
+    updateActiveFile(newContent, newCursorPos);
     showToast('Snippet inserted');
+  };
+
+  // QuestionBank handlers
+  const handleCreateQuestionBank = async (name: string, description?: string) => {
+    try {
+      const bank = await questionBankService.createBank(name, description);
+      setQuestionBanks(prev => [...prev, bank]);
+      showToast(`Created bank: ${name}`);
+    } catch (error: any) {
+      showToast(`Failed to create bank: ${error.message}`, true);
+    }
+  };
+
+  const handleDeleteQuestionBank = async (bankId: string) => {
+    try {
+      const success = await questionBankService.deleteBank(bankId);
+      if (success) {
+        setQuestionBanks(prev => prev.filter(b => b.id !== bankId));
+        showToast('Bank deleted');
+      }
+    } catch (error: any) {
+      showToast(`Failed to delete bank: ${error.message}`, true);
+    }
+  };
+
+  const handleUpdateQuestionBank = async (bankId: string, updates: Partial<QuestionBank>) => {
+    try {
+      const bank = await questionBankService.updateBank(bankId, updates);
+      if (bank) {
+        setQuestionBanks(prev => prev.map(b => b.id === bankId ? bank : b));
+      }
+    } catch (error: any) {
+      showToast(`Failed to update bank: ${error.message}`, true);
+    }
+  };
+
+  const handleGenerateQuestions = async (bankId: string, sourceFileId: string, count?: number, difficulty?: string) => {
+    const sourceFile = files.find(f => f.id === sourceFileId);
+    if (!sourceFile || !sourceFile.content.trim()) {
+      throw new Error('Please select a file with content');
+    }
+
+    setAiState({ isThinking: true, message: 'Generating questions...', error: null });
+
+    try {
+      const questions = await questionBankService.generateAndAddQuestions(
+        bankId,
+        sourceFile.content,
+        aiConfig,
+        { count: count || 5, difficulty }
+      );
+
+      const banks = questionBankService.getAllBanks();
+      setQuestionBanks(banks);
+
+      setAiState({ isThinking: false, message: null, error: null });
+      showToast(`Generated ${questions.length} questions`);
+    } catch (error: any) {
+      setAiState({ isThinking: false, message: null, error: error.message });
+      throw error;
+    }
+  };
+
+  const handleRemoveQuestion = async (bankId: string, questionId: string) => {
+    try {
+      const success = await questionBankService.removeQuestion(bankId, questionId);
+      if (success) {
+        const banks = questionBankService.getAllBanks();
+        setQuestionBanks(banks);
+        showToast('Question removed');
+      }
+    } catch (error: any) {
+      showToast(`Failed to remove question: ${error.message}`, true);
+    }
   };
 
   // Streaming control handler
@@ -1328,9 +1623,11 @@ const App: React.FC = () => {
      finally { setAiState(p => ({...p, isThinking: false, message: null})); }
   };
 
-  const performGraph = async (useActiveFileOnly: boolean = false) => {
+  const performGraph = async (useActiveFileOnly: boolean = false, graphTypeOverride?: 'concept' | 'filelink') => {
+      const selectedGraphType = graphTypeOverride || graphType;
+      
       try {
-        setAiState({ isThinking: true, message: "Analyzing Graph...", error: null });
+        setAiState({ isThinking: true, message: selectedGraphType === 'filelink' ? "Building File Links..." : "Analyzing Graph...", error: null });
 
         // 使用活动面板的文件内容
         const currentContent = getActivePaneContent();
@@ -1349,12 +1646,23 @@ const App: React.FC = () => {
           }
         }
 
-        const data = await generateKnowledgeGraph(filesToAnalyze, aiConfig);
+        let data: GraphData;
+        
+        if (selectedGraphType === 'filelink') {
+          // 基于 WikiLink 生成文件级链接图谱
+          const index = buildKnowledgeIndexFromFiles(filesToAnalyze);
+          data = generateFileLinkGraph(filesToAnalyze, index);
+        } else {
+          // AI 生成概念级知识图谱
+          data = await generateKnowledgeGraph(filesToAnalyze, aiConfig);
+        }
+        
         setGraphData(data);
+        setGraphType(selectedGraphType);
         setViewMode(ViewMode.Graph);
-     } catch(e:any) { showToast(e.message, true); }
-     finally { setAiState(p => ({...p, isThinking: false, message: null})); }
-  };
+      } catch(e:any) { showToast(e.message, true); }
+      finally { setAiState(p => ({...p, isThinking: false, message: null})); }
+   };
 
   const performSynthesize = async () => {
      try {
@@ -1884,8 +2192,46 @@ IMPORTANT:
          return;
      }
 
-     setAiState({ isThinking: true, message: "Summarizing conversation...", error: null });
+     setAiState({ isThinking: true, message: "Analyzing conversation for permanent memory...", error: null });
+
      try {
+         // Step 1: Try to auto-create permanent memory before compacting
+         // This preserves important insights from the session
+         if (chatMessages.length >= 5) {
+           const sessionId = `session_${Date.now()}`;
+
+           // Create embedding service using getEmbedding from aiService
+           const embeddingService = async (text: string): Promise<number[]> => {
+             try {
+               return await getEmbedding(text, aiConfig);
+             } catch (error) {
+               console.warn('[AutoMemory] Embedding failed:', error);
+               return [];
+             }
+           };
+
+           // Initialize persistent memory service
+           await initPersistentMemory();
+
+           const memory = await autoCreateMemoryFromSession(
+             sessionId,
+             chatMessages.map(m => ({
+               role: m.role as 'user' | 'assistant' | 'system',
+               content: m.content,
+               timestamp: m.timestamp
+             })),
+             embeddingService
+           );
+
+           if (memory) {
+             showToast(lang === 'zh'
+               ? `已创建永久记忆: ${memory.topics.slice(0, 2).join(', ')}`
+               : `Created permanent memory: ${memory.topics.slice(0, 2).join(', ')}`);
+           }
+         }
+
+         // Step 2: Compact the conversation
+         setAiState({ isThinking: true, message: "Summarizing conversation...", error: null });
          const compacted = await compactConversation(chatMessages, aiConfig);
          setChatMessages(compacted);
          showToast("Context compacted.");
@@ -1902,7 +2248,11 @@ IMPORTANT:
       case 'save':
         // Explicit save to disk
         if (activeFile.isLocal && activeFile.handle) {
-          saveFileToDisk(activeFile).then(() => showToast('File Saved', false));
+          setIsSaving(true);
+          saveFileToDisk(activeFile).then(() => {
+            showToast('File Saved', false);
+            setIsSaving(false);
+          }).catch(() => setIsSaving(false));
         } else {
           showToast('Saved locally', false);
         }
@@ -1924,6 +2274,18 @@ IMPORTANT:
         break;
       case 'build_graph':
         if (!aiState.isThinking) performGraph();
+        break;
+      case 'smart_organize':
+        if (activeFileId) {
+          const file = files.find(f => f.id === activeFileId);
+          if (file) {
+            setSmartOrganizeFile(file);
+            setIsSmartOrganizeOpen(true);
+          }
+        }
+        break;
+      case 'search':
+        setIsSearchOpen(true);
         break;
       default:
         console.warn(`Unknown action ID: ${actionId}`);
@@ -1968,6 +2330,59 @@ IMPORTANT:
   const handleResetShortcuts = () => {
     setShortcuts(DEFAULT_SHORTCUTS);
   };
+
+  // --- WikiLink Navigation Handler ---
+  useEffect(() => {
+    const handleWikiLinkNavigation = (e: CustomEvent) => {
+      const { target } = e.detail;
+      if (!target) return;
+
+      const normalizedTarget = target.toLowerCase();
+
+      // Handle exam links
+      if (normalizedTarget.startsWith('exam:')) {
+        const examName = target.substring(5).trim();
+        // Find exam file or create navigation
+        const examFile = files.find(f => 
+          f.name.toLowerCase() === examName.toLowerCase() ||
+          f.name.toLowerCase().includes(examName.toLowerCase())
+        );
+        if (examFile) {
+          openFileInPane(examFile.id);
+        } else {
+          showToast(`Exam not found: ${examName}`, true);
+        }
+        return;
+      }
+
+      // Handle question links
+      if (normalizedTarget.startsWith('question:')) {
+        const questionId = target.substring(9).trim();
+        showToast(`Question reference: ${questionId}`);
+        return;
+      }
+
+      // Handle regular wiki links
+      const targetFile = files.find(f => {
+        const name = f.name.toLowerCase();
+        const path = f.path?.toLowerCase() || '';
+        return name === normalizedTarget || 
+               path.endsWith(`/${normalizedTarget}`) ||
+               name.includes(`/${normalizedTarget}`) ||
+               name === `${normalizedTarget}.md` ||
+               path === `${normalizedTarget}.md`;
+      });
+
+      if (targetFile) {
+        openFileInPane(targetFile.id);
+      } else {
+        showToast(`Page not found: ${target}`, true);
+      }
+    };
+
+    window.addEventListener('navigate-to-wikilink', handleWikiLinkNavigation as EventListener);
+    return () => window.removeEventListener('navigate-to-wikilink', handleWikiLinkNavigation as EventListener);
+  }, [files, showToast]);
 
   const currentThemeObj = themes.find(t => t.id === activeThemeId) || themes[0];
 
@@ -2018,6 +2433,12 @@ IMPORTANT:
         onCreateSnippet={handleCreateSnippet}
         onDeleteSnippet={handleDeleteSnippet}
         onInsertSnippet={handleInsertSnippet}
+        onOpenTagSuggestion={() => setIsTagSuggestionOpen(true)}
+        onOpenSmartOrganize={(file) => {
+          setSmartOrganizeFile(file);
+          setIsSmartOrganizeOpen(true);
+        }}
+        onOpenReview={() => setIsStudyPlanOpen(true)}
       />
 
       <div className="flex-1 flex flex-col h-full overflow-hidden relative">
@@ -2067,6 +2488,9 @@ IMPORTANT:
           splitMode={splitMode}
           onSplitModeChange={setSplitMode}
           onVoiceTranscription={() => setIsVoiceTranscriptionOpen(true)}
+          onOpenQuestionBank={() => setIsQuestionBankOpen(true)}
+useCodeMirror={useCodeMirror}
+          onToggleCodeMirror={handleToggleCodeMirror}
         />
 
         {/* Editor Tabs */}
@@ -2150,10 +2574,25 @@ IMPORTANT:
               onCursorChange={handleCursorChange}
               getCursorPosition={getCursorPosition}
               onToggleMode={togglePaneMode}
+              onSelectPane={selectPane}
               splitMode={splitMode}
               language={lang}
               editorRef={editorRef}
+              useCodeMirror={useCodeMirror}
             />
+          )}
+
+          {/* Backlinks Panel */}
+          {backlinks.length > 0 && (viewMode === ViewMode.Editor || viewMode === ViewMode.Split || viewMode === ViewMode.Preview) && (
+            <div className="w-64 border-l border-paper-200 dark:border-cyber-700 bg-paper-50 dark:bg-cyber-900 overflow-y-auto">
+              <BacklinkPanel
+                currentFileName={activeFile?.name || ''}
+                backlinks={backlinks}
+                onNavigate={(fileId) => {
+                  openFileInPane(fileId);
+                }}
+              />
+            </div>
           )}
 
           <ChatPanel
@@ -2266,6 +2705,61 @@ IMPORTANT:
           setActiveFileId(newFile.id);
           showToast(translations[lang].transcription.savedToFile, false);
         }}
+        language={lang}
+      />
+
+      <QuestionBankModal
+        isOpen={isQuestionBankOpen}
+        onClose={() => setIsQuestionBankOpen(false)}
+        banks={questionBanks}
+        onCreateBank={handleCreateQuestionBank}
+        onDeleteBank={handleDeleteQuestionBank}
+        onUpdateBank={handleUpdateQuestionBank}
+        onAddQuestionsToBank={async () => {}}
+        onGenerateQuestions={handleGenerateQuestions}
+        onRemoveQuestion={handleRemoveQuestion}
+        files={files}
+        aiConfig={aiConfig}
+        onShowToast={showToast}
+        language={lang}
+      />
+
+      <TagSuggestionModal
+        isOpen={isTagSuggestionOpen}
+        onClose={() => setIsTagSuggestionOpen(false)}
+        content={getActivePaneContent()}
+        aiConfig={aiConfig}
+        existingTags={extractTags(getActivePaneContent())}
+        onApplyTags={handleApplyTags}
+        onShowToast={showToast}
+        language={lang}
+      />
+
+      <SmartOrganizeModal
+        isOpen={isSmartOrganizeOpen}
+        onClose={() => { setIsSmartOrganizeOpen(false); setSmartOrganizeFile(null); }}
+        file={smartOrganizeFile || DEFAULT_FILE}
+        aiConfig={aiConfig}
+        onUpdateFile={handleSmartOrganizeUpdate}
+        onApplySuggestions={() => {}}
+        allFiles={files}
+        language={lang}
+      />
+
+      <SearchModal
+        isOpen={isSearchOpen}
+        onClose={() => setIsSearchOpen(false)}
+        files={files}
+        onSelectFile={openFileInPane}
+      />
+
+      <StudyPlanPanel
+        isOpen={isStudyPlanOpen}
+        onClose={() => setIsStudyPlanOpen(false)}
+        studyPlans={studyPlans}
+        onCompleteTask={handleCompleteTask}
+        onCreatePlan={handleCreatePlan}
+        onDeletePlan={handleDeletePlan}
         language={lang}
       />
     </div>

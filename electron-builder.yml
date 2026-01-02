@@ -97,7 +97,7 @@ nsis:
   installerHeaderIcon: build/icon.ico
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: TashanStone
+  shortcutName: Tashan Stone
   installerLanguages:
     - en_US
     - zh_CN

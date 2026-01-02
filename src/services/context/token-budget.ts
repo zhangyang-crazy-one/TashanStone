@@ -55,6 +55,10 @@ export class TokenBudget {
     return this.fallbackTokenCount(text);
   }
 
+  estimateTokensSync(text: string): number {
+    return this.fallbackTokenCount(text);
+  }
+
   fallbackTokenCount(text: string): number {
     return Math.ceil(text.length / 4);
   }

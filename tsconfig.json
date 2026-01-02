@@ -21,8 +21,15 @@
       ]
     },
     "allowImportingTsExtensions": true,
-    "noEmit": true
+    "noEmit": true,
+    "types": ["vitest/globals"]
   },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "test/**/*.ts",
+    "test/**/*.d.ts"
+  ],
   "exclude": [
     "New_Features",
     "node_modules",

@@ -22,7 +22,7 @@
 # 👋 欢迎回到项目
 
 ## 项目信息
-- **项目名称**：ZhangNote
+- **项目名称**：TashaStone
 - **技术栈**：React 19 + Electron 33 + SQLite + LanceDB
 - **当前版本**：1.6.0
 

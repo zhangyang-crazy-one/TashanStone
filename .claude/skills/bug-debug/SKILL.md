@@ -69,11 +69,32 @@ debugger;
 
 | 环境 | 日志路径 |
 |------|----------|
-| Windows | `%APPDATA%/zhangnote/logs/` |
-| macOS | `~/Library/Application Support/zhangnote/logs/` |
-| Linux | `~/.config/zhangnote/logs/` |
+| Windows | `%APPDATA%/tashanstone/logs/` |
+| macOS | `~/Library/Application Support/tashanstone/logs/` |
+| Linux | `~/.config/tashanstone/logs/` |
 
-### 4. 常见错误排查
+### 4. Memory 调试
+
+Memory 文件存储在 `%APPDATA%/tashanstone/.memories/`：
+
+```typescript
+// 调试 Memory 保存
+console.log('[Memory] 调用 update IPC, id:', memory.id);
+console.log('[Memory] update 返回值:', JSON.stringify(result));
+
+// 常见问题：保存成功但内容未更新
+// 原因：保存后未同步更新本地状态
+// 解决：在 IPC 成功后调用 setPreviewMemory()
+if (result?.success) {
+  setPreviewMemory(prev => prev ? {
+    ...prev,
+    content: memory.content,
+    updatedAt: Date.now()
+  } : null);
+}
+```
+
+### 5. 常见错误排查
 
 #### 错误：Cannot find module 'better-sqlite3'
 

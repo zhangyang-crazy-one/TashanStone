@@ -21,6 +21,7 @@ import {
   PersistentMemoryService,
   createPersistentMemoryService,
   MemoryDocument,
+  toolDistinctionGuide,
 } from "../src/services/context";
 
 // --- Types for MCP ---
@@ -1099,7 +1100,84 @@ const chunkText = (text: string, chunkSize: number = 800, overlap: number = 100)
     return chunks;
 };
 
-// --- EMBEDDING SUPPORT ---
+// --- EMBEDDING LRU CACHE ---
+// P0 Performance Optimization: Cache embeddings to avoid redundant API calls
+
+interface CacheEntry {
+  embedding: number[];
+  timestamp: number;
+}
+
+class EmbeddingCache {
+  private cache: Map<string, CacheEntry>;
+  private maxSize: number;
+  private maxAge: number; // milliseconds
+
+  constructor(maxSize: number = 1000, maxAgeMinutes: number = 60) {
+    this.cache = new Map();
+    this.maxSize = maxSize;
+    this.maxAge = maxAgeMinutes * 60 * 1000;
+  }
+
+  private hash(text: string): string {
+    // Simple hash for cache key
+    let hash = 0;
+    for (let i = 0; i < text.length; i++) {
+      const char = text.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash;
+    }
+    return hash.toString(36);
+  }
+
+  get(text: string): number[] | null {
+    const key = this.hash(text);
+    const entry = this.cache.get(key);
+    
+    if (!entry) return null;
+
+    // Check if expired
+    if (Date.now() - entry.timestamp > this.maxAge) {
+      this.cache.delete(key);
+      return null;
+    }
+
+    // Move to end (most recently used)
+    this.cache.delete(key);
+    this.cache.set(key, entry);
+
+    return entry.embedding;
+  }
+
+  set(text: string, embedding: number[]): void {
+    const key = this.hash(text);
+
+    // Remove oldest if at capacity
+    if (this.cache.size >= this.maxSize) {
+      const oldestKey = this.cache.keys().next().value;
+      this.cache.delete(oldestKey);
+    }
+
+    this.cache.set(key, {
+      embedding,
+      timestamp: Date.now()
+    });
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+
+  stats(): { size: number; maxSize: number } {
+    return {
+      size: this.cache.size,
+      maxSize: this.maxSize
+    };
+  }
+}
+
+// Global embedding cache instance
+const embeddingCache = new EmbeddingCache(500, 60); // 500 entries, 60 minutes
 
 // Helper function to get embeddings from Ollama (used as fallback)
 // Ollama API uses /api/embed with { model, input } format (not /api/embeddings with prompt)
@@ -1128,6 +1206,14 @@ const getOllamaEmbedding = async (text: string, embeddingModel?: string): Promis
 export const getEmbedding = async (text: string, config: AIConfig): Promise<number[]> => {
     const cleanText = text.replace(/\n/g, ' ').trim().substring(0, 8000); // Truncate safe limit
 
+    // P0: Check cache first
+    const cached = embeddingCache.get(cleanText);
+    if (cached) {
+      console.log(`[EmbeddingCache] HIT (${embeddingCache.stats().size}/${embeddingCache.stats().maxSize})`);
+      return cached;
+    }
+    console.log(`[EmbeddingCache] MISS for text length: ${cleanText.length}`);
+
     // Use embeddingProvider if set, otherwise fall back to main provider
     const embeddingProvider = config.embeddingProvider || config.provider;
     const embeddingModel = config.embeddingModel;
@@ -1142,7 +1228,9 @@ export const getEmbedding = async (text: string, config: AIConfig): Promise<numb
                 model: modelName,
                 contents: [{ parts: [{ text: cleanText }] }]
             });
-            return result.embeddings?.[0]?.values || [];
+            const embedding = result.embeddings?.[0]?.values || [];
+            embeddingCache.set(cleanText, embedding);
+            return embedding;
         } catch (e: any) {
             console.error("Gemini Embedding Error", e);
             throw new Error(`Embedding Failed: ${e.message}`);
@@ -1167,7 +1255,9 @@ export const getEmbedding = async (text: string, config: AIConfig): Promise<numb
                 return await getOllamaEmbedding(cleanText, embeddingModel);
             }
             const data = await response.json();
-            return data.data[0].embedding;
+            const embedding = data.data[0].embedding;
+            embeddingCache.set(cleanText, embedding);
+            return embedding;
         } catch (e: any) {
             console.error("OpenAI Embedding Error", e);
             // Fallback to Ollama on any error
@@ -1207,14 +1297,18 @@ export const getEmbedding = async (text: string, config: AIConfig): Promise<numb
                     if (!responseFallback.ok) throw new Error("Ollama Embedding Failed");
                     const data = await responseFallback.json();
                     // Ollama /api/embed returns { embeddings: [[...]] }
-                    return data.embeddings?.[0] || [];
+                    const fallbackEmbedding = data.embeddings?.[0] || [];
+                    embeddingCache.set(cleanText, fallbackEmbedding);
+                    return fallbackEmbedding;
                  } else {
                      throw new Error(`Ollama Embedding Failed: ${response.statusText}`);
                  }
             }
             const data = await response.json();
             // Ollama /api/embed returns { embeddings: [[...]] }
-            return data.embeddings?.[0] || [];
+            const embedding = data.embeddings?.[0] || [];
+            embeddingCache.set(cleanText, embedding);
+            return embedding;
         } catch (e: any) {
              console.error("Ollama Embedding Error", e);
              throw e;
@@ -1321,55 +1415,7 @@ export async function* generateAIResponseStream(
     ? `\n\n## Your Available Tools\n\nYou are equipped with ${rawTools.length} external tools that you CAN and SHOULD use when appropriate. These tools are already connected and ready to use.\n\nWhen you need to use a tool, output a tool call in this exact JSON format:\n\`\`\`tool_call\n{"tool": "tool_name", "arguments": {...}}\n\`\`\`\n\n**Available Tools:**\n${mcpToolDescriptions}${toolGuide}\n\n**Important:** You HAVE these tools - they are not hypothetical. Do NOT say "I don't have access to..." for tools listed above.`
     : '';
 
-  const toolDistinctionGuide = config.language === 'zh'
-    ? `
-
----
-
-**⚠️ 重要：工具使用规则**
-
-你有两类不同的工具：
-
-1. **应用内文件工具**（create_file, update_file, read_file, search_files, delete_file）：
-   - 只能操作应用内部的笔记文件
-   - 当前可用文件：用户的 Markdown 笔记
-   - 用于：创建/编辑用户笔记
-
-2. **MCP 外部工具**（navigate_page, take_snapshot, evaluate_script 等）：
-   - 操作外部浏览器、网页、外部文件系统
-   - 与应用内文件完全隔离
-   - 用于：网页浏览、数据抓取
-
-**规则**：
-- 不要尝试用 read_file 读取通过 MCP 工具获取的数据
-- 如果需要保存抓取的数据，使用 create_file 创建新笔记
-- MCP 工具的输出已经在对话中，不需要再次"读取"
-`
-    : `
-
----
-
-**⚠️ Important: Tool Usage Rules**
-
-You have TWO types of tools:
-
-1. **App Internal File Tools** (create_file, update_file, read_file, search_files, delete_file):
-   - Only operate on internal note files within the app
-   - Available files: User's Markdown notes
-   - Use for: Creating/editing user notes
-
-2. **MCP External Tools** (navigate_page, take_snapshot, evaluate_script, etc.):
-   - Operate on external browser, webpages, external filesystem
-   - Completely isolated from app files
-   - Use for: Web browsing, data scraping
-
-**Rules**:
-- Do NOT use read_file to read data obtained via MCP tools
-- If you need to save scraped data, use create_file to create a new note
-- MCP tool outputs are already in the conversation, no need to "read" again
-`;
-
-  const finalSystemInstruction = (systemInstruction || "") + mcpPromptAddition + toolDistinctionGuide + langInstruction;
+  const finalSystemInstruction = (systemInstruction || "") + mcpPromptAddition + toolDistinctionGuide(config.language === 'zh' ? 'zh' : 'en') + langInstruction;
 
   // Route to appropriate streaming function
   if (config.provider === 'gemini') {
@@ -1446,55 +1492,7 @@ export const generateAIResponse = async (
     ? `\n\n## Your Available Tools\n\nYou are equipped with ${rawTools2.length} external tools that you CAN and SHOULD use when appropriate. These tools are already connected and ready to use.\n\n**Available Tools:**\n${mcpToolDescriptions}${toolGuide2}\n\n**Important:**\n- You HAVE these tools - they are not hypothetical. When a task requires browser control, web navigation, or other tool capabilities, USE them.\n- Simply call the tool by name with the required parameters. The system will execute it and return results.\n- Do NOT say "I don't have access to..." for tools listed above - you DO have access.`
     : '';
 
-  const toolDistinctionGuide = config.language === 'zh'
-    ? `
-
----
-
-**⚠️ 重要：工具使用规则**
-
-你有两类不同的工具：
-
-1. **应用内文件工具**（create_file, update_file, read_file, search_files, delete_file）：
-   - 只能操作应用内部的笔记文件
-   - 当前可用文件：用户的 Markdown 笔记
-   - 用于：创建/编辑用户笔记
-
-2. **MCP 外部工具**（navigate_page, take_snapshot, evaluate_script 等）：
-   - 操作外部浏览器、网页、外部文件系统
-   - 与应用内文件完全隔离
-   - 用于：网页浏览、数据抓取
-
-**规则**：
-- 不要尝试用 read_file 读取通过 MCP 工具获取的数据
-- 如果需要保存抓取的数据，使用 create_file 创建新笔记
-- MCP 工具的输出已经在对话中，不需要再次"读取"
-`
-    : `
-
----
-
-**⚠️ Important: Tool Usage Rules**
-
-You have TWO types of tools:
-
-1. **App Internal File Tools** (create_file, update_file, read_file, search_files, delete_file):
-   - Only operate on internal note files within the app
-   - Available files: User's Markdown notes
-   - Use for: Creating/editing user notes
-
-2. **MCP External Tools** (navigate_page, take_snapshot, evaluate_script, etc.):
-   - Operate on external browser, webpages, external filesystem
-   - Completely isolated from app files
-   - Use for: Web browsing, data scraping
-
-**Rules**:
-- Do NOT use read_file to read data obtained via MCP tools
-- If you need to save scraped data, use create_file to create a new note
-- MCP tool outputs are already in the conversation, no need to "read" again
-`;
-
-  const finalSystemInstruction = (systemInstruction || "") + mcpPromptAddition + toolDistinctionGuide + langInstruction;
+  const finalSystemInstruction = (systemInstruction || "") + mcpPromptAddition + toolDistinctionGuide(config.language === 'zh' ? 'zh' : 'en') + langInstruction;
 
   // Create Unified Tool Callback
   // IMPORTANT: 所有工具调用都必须经过 toolsCallback 以便 UI 能显示实时反馈
@@ -2904,7 +2902,9 @@ const validateAndFixQuestion = (q: any, index: number, prefix: string): QuizQues
         question: q.question.trim(),
         options: (type === 'single' || type === 'multiple') ? q.options : undefined,
         correctAnswer,
-        explanation: q.explanation
+        explanation: q.explanation,
+        timesUsed: 0,
+        successRate: 0
     };
 };
 
@@ -3097,20 +3097,22 @@ export const extractQuizFromRawContent = async (content: string, config: AIConfi
        // Handle cases where AI returns array directly vs object wrapper
        const questions = Array.isArray(result) ? result : (result.questions || []);
 
-       // If extraction found valid questions, return them
-       if (questions.length > 0) {
-           return {
-               id: `quiz-extracted-${Date.now()}`,
-               title: "Extracted Quiz",
-               description: "Extracted from current file.",
-               questions: questions.map((q: any, i: number) => ({
-                   ...q,
-                   id: q.id || `ext-${i}`,
-                   type: q.options && q.options.length > 0 ? 'single' : 'text'
-               })),
-               isGraded: false
-           };
-       }
+        // If extraction found valid questions, return them
+        if (questions.length > 0) {
+            return {
+                id: `quiz-extracted-${Date.now()}`,
+                title: "Extracted Quiz",
+                description: "Extracted from current file.",
+                questions: questions.map((q: any, i: number) => ({
+                    ...q,
+                    id: q.id || `ext-${i}`,
+                    type: q.options && q.options.length > 0 ? 'single' : 'text',
+                    timesUsed: 0,
+                    successRate: 0
+                })),
+                isGraded: false
+            };
+        }
        // If extraction returned empty, fall through to generation mode
        console.log('[Quiz] Extraction returned no questions, falling back to generation mode');
    }
@@ -3189,14 +3191,108 @@ Reference: ${context.substring(0, 30000)}`;
 // Context Engineering Integration
 // ========================
 
+// P0 Performance Optimization: LRU Cache for Context Managers
+// Prevent sessionContextManagers from growing indefinitely
+
+interface ContextManagerEntry {
+  manager: ContextManager;
+  lastAccessed: number;
+}
+
+class LRUSessionCache {
+  private cache: Map<string, ContextManagerEntry>;
+  private maxSize: number;
+  private maxAge: number; // milliseconds
+
+  constructor(maxSize: number = 50, maxAgeMinutes: number = 30) {
+    this.cache = new Map();
+    this.maxSize = maxSize;
+    this.maxAge = maxAgeMinutes * 60 * 1000;
+  }
+
+  get(sessionId: string): ContextManager | undefined {
+    const entry = this.cache.get(sessionId);
+    if (!entry) return undefined;
+
+    // Check if expired
+    if (Date.now() - entry.lastAccessed > this.maxAge) {
+      this.cache.delete(sessionId);
+      return undefined;
+    }
+
+    // Update access time (move to end)
+    entry.lastAccessed = Date.now();
+    this.cache.delete(sessionId);
+    this.cache.set(sessionId, entry);
+
+    return entry.manager;
+  }
+
+  set(sessionId: string, manager: ContextManager): void {
+    // Remove oldest if at capacity
+    if (this.cache.size >= this.maxSize) {
+      const oldestKey = this.cache.keys().next().value;
+      const oldest = this.cache.get(oldestKey);
+      if (oldest && Date.now() - oldest.lastAccessed > this.maxAge) {
+        // Only remove if expired, otherwise keep it
+        this.cache.delete(oldestKey);
+      } else {
+        // Force remove oldest even if not expired
+        this.cache.delete(oldestKey);
+      }
+    }
+
+    this.cache.set(sessionId, {
+      manager,
+      lastAccessed: Date.now()
+    });
+  }
+
+  delete(sessionId: string): boolean {
+    return this.cache.delete(sessionId);
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+
+  stats(): { size: number; maxSize: number; oldestAge: number | null } {
+    let oldestAge: number | null = null;
+    if (this.cache.size > 0) {
+      const oldest = Array.from(this.cache.values())
+        .reduce((min, entry) => Math.min(min, Date.now() - entry.lastAccessed), Infinity);
+      oldestAge = oldest;
+    }
+    return {
+      size: this.cache.size,
+      maxSize: this.maxSize,
+      oldestAge
+    };
+  }
+}
+
+// Global session cache with 50 sessions, 30 minutes expiry
+const sessionContextCache = new LRUSessionCache(50, 30);
+
+// Legacy map for backward compatibility during migration
 const sessionContextManagers: Map<string, ContextManager> = new Map();
 
 export function getContextManager(sessionId: string): ContextManager {
-  let manager = sessionContextManagers.get(sessionId);
+  // Try new cache first
+  let manager = sessionContextCache.get(sessionId);
+  
+  // Fallback to legacy map during migration
   if (!manager) {
-    manager = createContextManager(sessionId);
-    sessionContextManagers.set(sessionId, manager);
+    manager = sessionContextManagers.get(sessionId);
+    if (!manager) {
+      manager = createContextManager(sessionId);
+    }
   }
+  
+  // Update both caches
+  sessionContextCache.set(sessionId, manager);
+  sessionContextManagers.set(sessionId, manager);
+  
   return manager;
 }
 
@@ -3205,16 +3301,28 @@ export function createContextManagerForSession(
   config?: Partial<ContextConfig>
 ): ContextManager {
   const manager = createContextManager(sessionId, config);
+  
+  // Update both caches
+  sessionContextCache.set(sessionId, manager);
   sessionContextManagers.set(sessionId, manager);
+  
   return manager;
 }
 
 export function removeContextManager(sessionId: string): void {
+  sessionContextCache.delete(sessionId);
   sessionContextManagers.delete(sessionId);
 }
 
 export function clearAllContextManagers(): void {
+  sessionContextCache.clear();
   sessionContextManagers.clear();
+}
+
+export function getContextCacheStats(): { cache: { size: number; maxSize: number; oldestAge: number | null } } {
+  return {
+    cache: sessionContextCache.stats()
+  };
 }
 
 export async function manageContextForSession(
@@ -3472,10 +3580,11 @@ export function initializeContextMemory(
   options?: {
     maxTokens?: number;
     midTermMaxAge?: number;
+    longTermStorage?: any; // LongTermMemoryStorage
   }
 ): ContextMemoryService {
   const midTermStorage = new InMemoryStorage();
-  contextMemoryService = new ContextMemoryService(midTermStorage, undefined);
+  contextMemoryService = new ContextMemoryService(midTermStorage, options?.longTermStorage);
   return contextMemoryService;
 }
 
@@ -3829,3 +3938,366 @@ function shouldPromoteToPermanentMemory(
 
   return score >= 3 || sessionLength >= 15;
 }
+
+// --- AI Tag Suggestion ---
+
+/**
+  * 使用 AI 为给定内容生成标签建议
+   */
+  export async function suggestTags(content: string, config: AIConfig): Promise<string[]> {
+    if (!content || content.trim().length < 50) {
+      return [];
+    }
+
+    // 如果内容太长，截取前2000字符进行分析
+    const analysisContent = content.length > 2000 ? content.substring(0, 2000) : content;
+
+    // 根据语言设置生成 system prompt
+    const isChinese = config.language === 'zh';
+    
+    const systemPrompt = isChinese
+      ? `你是一个标签助手。分析内容并推荐最多5个相关标签。
+
+规则：
+1. 使用小写英文标签
+2. 使用连字符代替空格（例如："machine-learning" 而不是 "machine learning"）
+3. 保持标签简短（1-3个单词）
+4. 包含主题、类型和技术标签
+5. 避免通用标签如 "article"、"content"、"text"
+
+输出格式：只需一个 JSON 字符串数组，例如：["react", "typescript", "tutorial"]`
+      : `You are a tagging assistant. Analyze the content and suggest up to 5 relevant tags.
+
+Rules:
+1. Use lowercase English tags
+2. Use hyphens instead of spaces (e.g., "machine-learning" not "machine learning")
+3. Keep tags short (1-3 words)
+4. Include topic, type, and technology tags
+5. Avoid generic tags like "article", "content", "text"
+
+Output format: Just a JSON array of strings, e.g., ["react", "typescript", "tutorial"]`;
+
+    try {
+      if (config.provider === 'gemini') {
+        const client = new GoogleGenAI({ apiKey: config.apiKey || '' });
+        
+        const response = await client.models.generateContent({
+          model: config.model || 'gemini-2.5-flash',
+          contents: [{
+            parts: [{ text: `Analyze this content and suggest 5 relevant tags:\n\n${analysisContent}` }]
+          }],
+          config: {
+            systemInstruction: systemPrompt,
+            temperature: 0.3,
+          }
+        });
+
+      const text = response.text?.trim() || '';
+      
+      // 尝试解析 JSON 数组
+      const jsonMatch = text.match(/\[.*\]/s);
+      if (jsonMatch) {
+        try {
+          const tags = JSON.parse(jsonMatch[0]);
+          if (Array.isArray(tags) && tags.length > 0) {
+            return tags.slice(0, 5).map((t: string) => t.toLowerCase().trim());
+          }
+        } catch {
+          // JSON 解析失败，尝试手动解析
+        }
+      }
+
+      // 备用解析：提取逗号分隔的标签
+      const fallbackTags = text
+        .replace(/[\[\]"'`]/g, '')
+        .split(',')
+        .map(t => t.trim().toLowerCase())
+        .filter(t => t.length > 0 && t.length < 30);
+      
+      return fallbackTags.slice(0, 5);
+    } else if (config.provider === 'ollama' || config.baseUrl?.includes('localhost')) {
+      // Ollama 或其他兼容 OpenAI 的 API
+      const baseUrl = config.baseUrl || 'http://localhost:11434';
+      
+      const prompt = isChinese
+        ? `分析以下内容，推荐最多5个相关标签（小写英文，用连字符）：\n\n${analysisContent}\n\n请以JSON数组格式返回，如：["tag1", "tag2"]`
+        : `Analyze this content and suggest 5 relevant tags (lowercase, hyphens instead of spaces):\n\n${analysisContent}\n\nRespond with JSON array: ["tag1", "tag2"]`;
+      
+      const response = await platformFetch(`${baseUrl}/api/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: config.model || 'llama3',
+          prompt: prompt,
+          stream: false,
+          options: {
+            temperature: 0.3
+          }
+        })
+      });
+
+      const data = await response.json();
+      const text = data.response?.trim() || '';
+      
+      // 解析 JSON 数组
+      const jsonMatch = text.match(/\[.*\]/s);
+      if (jsonMatch) {
+        try {
+          const tags = JSON.parse(jsonMatch[0]);
+          if (Array.isArray(tags)) {
+            return tags.slice(0, 5).map((t: string) => t.toLowerCase().trim());
+          }
+        } catch {}
+      }
+      
+      return [];
+      } else if (config.provider === 'openai' || config.provider === 'anthropic') {
+        // OpenAI 或 Anthropic 兼容的 API
+        const baseUrl = config.baseUrl;
+        if (!baseUrl) {
+          console.error('[suggestTags] baseUrl is required for', config.provider);
+          return [];
+        }
+
+        const isAnthropic = config.provider === 'anthropic';
+        
+        // 智能构建端点 URL
+        const buildEndpoint = (defaultPath: string): string => {
+          const trimmedUrl = baseUrl.replace(/\/$/, '');
+          if (trimmedUrl.endsWith('/v1/messages') || trimmedUrl.endsWith('/chat/completions')) {
+            return trimmedUrl;
+          }
+          return `${trimmedUrl}${defaultPath}`;
+        };
+
+        if (isAnthropic) {
+          // Anthropic API 格式
+          const endpoint = buildEndpoint('/v1/messages');
+          
+          const userPrompt = isChinese
+            ? `分析以下内容，推荐最多5个相关标签：\n\n${analysisContent}`
+            : `Analyze this content and suggest 5 relevant tags:\n\n${analysisContent}`;
+          
+          const response = await platformFetch(endpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-key': config.apiKey || '',
+              'anthropic-version': '2023-06-01'
+            },
+            body: JSON.stringify({
+              model: config.model,
+              max_tokens: 200,
+              temperature: 0.3,
+              system: systemPrompt,
+              messages: [
+                { role: 'user', content: userPrompt }
+              ]
+            })
+          });
+
+          if (!response.ok) {
+            console.error('[suggestTags] Anthropic API error:', response.status, response.statusText, 'Endpoint:', endpoint);
+            return [];
+          }
+
+          const data = await response.json();
+          
+          // Anthropic 响应格式: content 是数组，每个元素有 type 和 text
+          // MiniMaxi 可能使用 thinking 扩展
+          let text = '';
+          if (Array.isArray(data.content)) {
+            // 标准 Anthropic 格式
+            const textBlocks = data.content.filter((block: any) => block.type === 'text');
+            if (textBlocks.length > 0) {
+              text = textBlocks.map((b: any) => b.text).join('').trim();
+            } else {
+              // MiniMaxi thinking 扩展格式
+              const thinkingBlocks = data.content.filter((block: any) => block.type === 'thinking' || block.thinking);
+              if (thinkingBlocks.length > 0) {
+                text = thinkingBlocks.map((b: any) => b.thinking || b.text || '').join('').trim();
+              }
+            }
+          } else if (typeof data.content === 'string') {
+            text = data.content.trim();
+          }
+          
+          console.log('[suggestTags] Extracted thinking text:', text);
+          
+          // 从 thinking 内容中提取标签
+          // MiniMaxi 格式通常是：
+          // 1. weather-forecast (description)
+          // 2. beijing (description)
+          
+          const tags: string[] = [];
+          
+          // 模式1: "1. tag-name (description)" 或 "1. tag-name - description"
+          // 提取 tag-name（第一个空格或括号之前的内容）
+          const listPattern = /^[\s]*[\d.]+\s*([a-zA-Z0-9-]+)/gm;
+          const listMatches = text.matchAll(listPattern);
+          
+          for (const match of listMatches) {
+            if (match[1]) {
+              const tag = match[1].toLowerCase();
+              // 排除一些明显的非标签词
+              if (tag.length > 1 && tag !== 'the' && tag !== 'it' && tag !== 'this') {
+                tags.push(tag);
+              }
+            }
+          }
+          
+          console.log('[suggestTags] Tags from list pattern:', tags);
+          
+          // 模式2: 如果列表模式没找到，尝试 JSON 数组
+          if (tags.length === 0) {
+            const jsonMatches = text.match(/\[([^\]]+)\]/g);
+            if (jsonMatches && jsonMatches.length > 0) {
+              for (const jsonStr of jsonMatches) {
+                try {
+                  const parsed = JSON.parse(jsonStr);
+                  if (Array.isArray(parsed)) {
+                    tags.push(...parsed.map((t: string) => t.toLowerCase().trim()));
+                  }
+                } catch {}
+              }
+            }
+          }
+          
+          console.log('[suggestTags] Final extracted tags:', tags.slice(0, 5));
+          
+          if (tags.length > 0) {
+            return tags.slice(0, 5).map(t => t.toLowerCase().trim());
+          }
+          
+          // 如果还是没找到，尝试从 thinking 内容末尾提取
+          // 通常标签会在最后几行
+          const lines = text.split('\n').filter(l => l.trim().length > 0);
+          const lastLines = lines.slice(-5);
+          
+          for (const line of lastLines) {
+            // 匹配 "tag1, tag2, tag3" 格式
+            const commaTags = line.split(',').map(t => t.trim().toLowerCase().replace(/[^a-zA-Z0-9-]/g, ''));
+            for (const tag of commaTags) {
+              if (tag.length > 1 && tag.length < 30 && !tags.includes(tag)) {
+                tags.push(tag);
+              }
+            }
+          }
+          
+          console.log('[suggestTags] Tags from last lines:', tags.slice(0, 5));
+          
+          return tags.slice(0, 5).map(t => t.toLowerCase().trim());
+        } else {
+          // OpenAI API 格式
+          const endpoint = buildEndpoint('/chat/completions');
+          
+          const userPrompt = isChinese
+            ? `分析以下内容，推荐最多5个相关标签：\n\n${analysisContent}`
+            : `Analyze this content and suggest 5 relevant tags:\n\n${analysisContent}`;
+          
+          const response = await platformFetch(endpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(config.apiKey ? { 'Authorization': `Bearer ${config.apiKey}` } : {})
+            },
+            body: JSON.stringify({
+              model: config.model,
+              messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userPrompt }
+              ],
+              temperature: 0.3,
+              max_tokens: 200
+            })
+          });
+
+          if (!response.ok) {
+            console.error('[suggestTags] OpenAI API error:', response.status, response.statusText, 'Endpoint:', endpoint);
+            return [];
+          }
+
+          const contentType = response.headers.get('content-type') || '';
+          if (!contentType.includes('application/json')) {
+            console.error('[suggestTags] Unexpected content-type:', contentType);
+            return [];
+          }
+
+          const data = await response.json();
+          const text = data.choices?.[0]?.message?.content?.trim() || '';
+          
+          const jsonMatch = text.match(/\[.*\]/s);
+          if (jsonMatch) {
+            try {
+              const tags = JSON.parse(jsonMatch[0]);
+              if (Array.isArray(tags)) {
+                return tags.slice(0, 5).map((t: string) => t.toLowerCase().trim());
+              }
+            } catch {}
+          }
+          
+          return [];
+        }
+      } else {
+        // 未知的 provider，尝试使用 baseUrl 作为通用 OpenAI 兼容端点
+        const baseUrl = config.baseUrl;
+        if (!baseUrl) {
+          console.error('[suggestTags] Unknown provider and no baseUrl configured');
+          return [];
+        }
+
+        const trimmedUrl = baseUrl.replace(/\/$/, '');
+        const endpoint = trimmedUrl.endsWith('/chat/completions') 
+          ? trimmedUrl 
+          : `${trimmedUrl}/chat/completions`;
+
+        const response = await platformFetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(config.apiKey ? { 'Authorization': `Bearer ${config.apiKey}` } : {})
+          },
+          body: JSON.stringify({
+            model: config.model || 'gpt-4',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: isChinese
+                ? `分析以下内容，推荐最多5个相关标签：\n\n${analysisContent}`
+                : `Analyze this content and suggest 5 relevant tags:\n\n${analysisContent}` }
+            ],
+            temperature: 0.3,
+            max_tokens: 200
+          })
+        });
+
+        if (!response.ok) {
+          console.error('[suggestTags] API error:', response.status, response.statusText);
+          return [];
+        }
+
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          console.error('[suggestTags] Unexpected content-type:', contentType);
+          return [];
+        }
+
+        const data = await response.json();
+        const text = data.choices?.[0]?.message?.content?.trim() || '';
+        
+        const jsonMatch = text.match(/\[.*\]/s);
+        if (jsonMatch) {
+          try {
+            const tags = JSON.parse(jsonMatch[0]);
+            if (Array.isArray(tags)) {
+              return tags.slice(0, 5).map((t: string) => t.toLowerCase().trim());
+            }
+          } catch {}
+        }
+        
+        return [];
+      }
+    } catch (error) {
+      console.error('[suggestTags] Error:', error);
+      return [];
+    }
+  }

@@ -214,3 +214,354 @@ export function throttle<T extends (...args: any[]) => any>(
     }
   };
 }
+
+export interface SSEConfig {
+  reconnectInterval: number;
+  maxRetries: number;
+  heartbeatInterval: number;
+}
+
+const DEFAULT_SSE_CONFIG: SSEConfig = {
+  reconnectInterval: 3000,
+  maxRetries: 5,
+  heartbeatInterval: 30000,
+};
+
+export type StreamState = 'idle' | 'connecting' | 'streaming' | 'paused' | 'error';
+
+export interface StreamEvent {
+  type: 'chunk' | 'complete' | 'error' | 'heartbeat' | 'checkpoint';
+  data: string;
+  timestamp: number;
+  checkpointId?: string;
+}
+
+export interface InterruptInfo {
+  occurred: boolean;
+  timestamp: number;
+  reason?: string;
+  recoveryPosition?: number;
+}
+
+export class SSEStreamHandler {
+  private config: SSEConfig;
+  private state: StreamState = 'idle';
+  private eventSource: EventSource | null = null;
+  private reconnectAttempts: number = 0;
+  private listeners: Map<string, Set<(event: StreamEvent) => void>> = new Map();
+  private accumulatedChunk: string = '';
+  private heartbeatTimer: NodeJS.Timeout | null = null;
+  private interruptInfo: InterruptInfo = { occurred: false, timestamp: 0 };
+
+  constructor(config?: Partial<SSEConfig>) {
+    this.config = { ...DEFAULT_SSE_CONFIG, ...config };
+  }
+
+  connect(url: string, headers?: Record<string, string>): void {
+    if (this.state === 'streaming') {
+      this.disconnect();
+    }
+
+    this.state = 'connecting';
+    this.reconnectAttempts = 0;
+    this.emit({ type: 'checkpoint', data: 'connecting', timestamp: Date.now() });
+
+    try {
+      this.eventSource = new EventSource(url);
+
+      this.eventSource.onopen = () => {
+        this.state = 'streaming';
+        this.reconnectAttempts = 0;
+        this.startHeartbeat();
+        this.emit({ type: 'checkpoint', data: 'connected', timestamp: Date.now() });
+      };
+
+      this.eventSource.onmessage = (event) => {
+        this.handleMessage(event.data);
+      };
+
+      this.eventSource.onerror = (error) => {
+        this.handleError(error);
+      };
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
+  private handleMessage(data: string): void {
+    if (data === 'heartbeat') {
+      this.emit({ type: 'heartbeat', data: '', timestamp: Date.now() });
+      return;
+    }
+
+    this.accumulatedChunk += data;
+    this.emit({ type: 'chunk', data: data, timestamp: Date.now() });
+  }
+
+  private handleError(error: any): void {
+    this.state = 'error';
+    this.stopHeartbeat();
+    this.emit({ type: 'error', data: JSON.stringify(error), timestamp: Date.now() });
+
+    if (this.reconnectAttempts < this.config.maxRetries) {
+      this.reconnectAttempts++;
+      this.state = 'paused';
+      setTimeout(() => {
+        if (this.eventSource) {
+          this.eventSource.close();
+          this.eventSource = null;
+        }
+        this.state = 'connecting';
+      }, this.config.reconnectInterval * this.reconnectAttempts);
+    }
+  }
+
+  private startHeartbeat(): void {
+    this.stopHeartbeat();
+    this.heartbeatTimer = setInterval(() => {
+      this.emit({ type: 'heartbeat', data: '', timestamp: Date.now() });
+    }, this.config.heartbeatInterval);
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+  }
+
+  disconnect(): void {
+    this.stopHeartbeat();
+    if (this.eventSource) {
+      this.eventSource.close();
+      this.eventSource = null;
+    }
+    this.state = 'idle';
+    this.accumulatedChunk = '';
+  }
+
+  on(eventType: string, callback: (event: StreamEvent) => void): void {
+    if (!this.listeners.has(eventType)) {
+      this.listeners.set(eventType, new Set());
+    }
+    this.listeners.get(eventType)!.add(callback);
+  }
+
+  off(eventType: string, callback: (event: StreamEvent) => void): void {
+    const callbacks = this.listeners.get(eventType);
+    if (callbacks) {
+      callbacks.delete(callback);
+    }
+  }
+
+  private emit(event: StreamEvent): void {
+    const callbacks = this.listeners.get(event.type);
+    if (callbacks) {
+      callbacks.forEach(cb => cb(event));
+    }
+    const allCallbacks = this.listeners.get('*');
+    if (allCallbacks) {
+      allCallbacks.forEach(cb => cb(event));
+    }
+  }
+
+  getState(): StreamState {
+    return this.state;
+  }
+
+  recordInterrupt(reason?: string): void {
+    this.interruptInfo = {
+      occurred: true,
+      timestamp: Date.now(),
+      reason,
+      recoveryPosition: this.accumulatedChunk.length,
+    };
+    this.emit({ type: 'checkpoint', data: 'interrupt', timestamp: Date.now(), checkpointId: 'interrupt' });
+  }
+
+  getInterruptInfo(): InterruptInfo {
+    return { ...this.interruptInfo };
+  }
+
+  clearInterrupt(): void {
+    this.interruptInfo = { occurred: false, timestamp: 0 };
+  }
+
+  getAccumulatedChunk(): string {
+    return this.accumulatedChunk;
+  }
+}
+
+export interface StreamRecoveryConfig {
+  maxRecoveryAttempts: number;
+  recoveryTimeout: number;
+  checkpointInterval: number;
+}
+
+const DEFAULT_RECOVERY_CONFIG: StreamRecoveryConfig = {
+  maxRecoveryAttempts: 3,
+  recoveryTimeout: 10000,
+  checkpointInterval: 5000,
+};
+
+export class StreamRecoveryManager {
+  private config: StreamRecoveryConfig;
+  private checkpoints: Map<string, { position: number; timestamp: number; data: string }> = new Map();
+  private currentCheckpointId: string | null = null;
+  private recoveryAttempts: number = 0;
+
+  constructor(config?: Partial<StreamRecoveryConfig>) {
+    this.config = { ...DEFAULT_RECOVERY_CONFIG, ...config };
+  }
+
+  createCheckpoint(id: string, position: number, data: string): void {
+    this.checkpoints.set(id, {
+      position,
+      timestamp: Date.now(),
+      data,
+    });
+    this.currentCheckpointId = id;
+  }
+
+  getCheckpoint(id: string): { position: number; timestamp: number; data: string } | null {
+    return this.checkpoints.get(id) || null;
+  }
+
+  getLatestCheckpoint(): string | null {
+    return this.currentCheckpointId;
+  }
+
+  canRecover(): boolean {
+    return this.recoveryAttempts < this.config.maxRecoveryAttempts;
+  }
+
+  recordRecoveryAttempt(): void {
+    this.recoveryAttempts++;
+  }
+
+  resetRecoveryAttempts(): void {
+    this.recoveryAttempts = 0;
+  }
+
+  getRecoveryAttempts(): number {
+    return this.recoveryAttempts;
+  }
+
+  clearCheckpoints(): void {
+    this.checkpoints.clear();
+    this.currentCheckpointId = null;
+  }
+
+  async recover(
+    checkpointId: string,
+    resumeCallback: (position: number) => Promise<string>
+  ): Promise<{ success: boolean; recoveredData: string }> {
+    const checkpoint = this.getCheckpoint(checkpointId);
+    if (!checkpoint) {
+      return { success: false, recoveredData: '' };
+    }
+
+    if (!this.canRecover()) {
+      return { success: false, recoveredData: '' };
+    }
+
+    this.recordRecoveryAttempt();
+
+    try {
+      const recoveredData = await resumeCallback(checkpoint.position);
+      return { success: true, recoveredData };
+    } catch (error) {
+      return { success: false, recoveredData: '' };
+    }
+  }
+}
+
+export interface StreamingConfig {
+  enableSSE: boolean;
+  enableRecovery: boolean;
+  bufferSize: number;
+  reconnectAttempts: number;
+}
+
+export const DEFAULT_STREAMING_CONFIG: StreamingConfig = {
+  enableSSE: true,
+  enableRecovery: true,
+  bufferSize: 1024,
+  reconnectAttempts: 3,
+};
+
+export class StreamingManager {
+  private sseHandler: SSEStreamHandler;
+  private recoveryManager: StreamRecoveryManager;
+  private config: StreamingConfig;
+  private outputBuffer: string = '';
+
+  constructor(config?: Partial<StreamingConfig>) {
+    this.config = { ...DEFAULT_STREAMING_CONFIG, ...config };
+    this.sseHandler = new SSEStreamHandler();
+    this.recoveryManager = new StreamRecoveryManager();
+  }
+
+  async *stream(
+    input: AsyncIterable<string>,
+    onChunk?: (chunk: string) => void
+  ): AsyncGenerator<string, void, unknown> {
+    this.outputBuffer = '';
+
+    for await (const chunk of input) {
+      this.outputBuffer += chunk;
+
+      if (onChunk) {
+        onChunk(chunk);
+      }
+
+      yield chunk;
+    }
+  }
+
+  connectToSSE(url: string): void {
+    if (this.config.enableSSE) {
+      this.sseHandler.connect(url);
+    }
+  }
+
+  disconnectFromSSE(): void {
+    this.sseHandler.disconnect();
+  }
+
+  async recoverFromInterrupt(
+    checkpointId: string,
+    resumeFn: (position: number) => Promise<string>
+  ): Promise<{ success: boolean; recoveredData: string }> {
+    const result = await this.recoveryManager.recover(checkpointId, resumeFn);
+    if (result.success) {
+      this.outputBuffer = result.recoveredData;
+      this.sseHandler.clearInterrupt();
+    }
+    return result;
+  }
+
+  createCheckpoint(id: string): void {
+    this.recoveryManager.createCheckpoint(id, this.outputBuffer.length, this.outputBuffer);
+  }
+
+  getOutputBuffer(): string {
+    return this.outputBuffer;
+  }
+
+  clearOutputBuffer(): void {
+    this.outputBuffer = '';
+  }
+
+  getState(): StreamState {
+    return this.sseHandler.getState();
+  }
+
+  getRecoveryManager(): StreamRecoveryManager {
+    return this.recoveryManager;
+  }
+
+  getSSEHandler(): SSEStreamHandler {
+    return this.sseHandler;
+  }
+}
