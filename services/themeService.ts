@@ -152,6 +152,68 @@ export const DEFAULT_THEMES: AppTheme[] = [
       '--font-primary': '"Noto Serif SC", "Inter", serif',
       '--font-header': '"Noto Serif SC", "Inter", serif',
     }
+  },
+  // Pixel Retro Theme - Dark
+  {
+    id: 'pixel-dark',
+    name: 'Pixel Dark',
+    type: 'dark',
+    colors: {
+      '--bg-main': '15 15 35',        // #0f0f23 - CRT screen background
+      '--bg-panel': '26 26 46',       // #1a1a2e - Slightly brighter
+      '--bg-element': '22 33 62',     // #16213e - Game UI box
+      '--border-main': '15 52 96',    // #0f3460 - Blue pixel border
+      '--text-primary': '238 242 255', // #eef2ff - Pixel white
+      '--text-secondary': '148 163 184', // #94a3b8 - Blue-grey
+      '--primary-500': '233 69 96',   // #e94560 - Retro red (HP bar)
+      '--primary-600': '233 69 96',   // #e94560
+      '--secondary-500': '0 217 255', // #00d9ff - Electric blue (MP bar)
+
+      '--neutral-50': '238 242 255',
+      '--neutral-100': '238 242 255',
+      '--neutral-200': '203 213 225',
+      '--neutral-300': '148 163 184',
+      '--neutral-400': '100 116 139',
+      '--neutral-500': '71 85 105',
+      '--neutral-600': '51 65 85',
+      '--neutral-700': '30 41 59',
+      '--neutral-800': '22 33 62',
+      '--neutral-900': '15 15 35',
+
+      '--font-primary': '"Press Start 2P", "VT323", "ZCOOL QingKe HuangYou", monospace',
+      '--font-header': '"Press Start 2P", "VT323", "ZCOOL QingKe HuangYou", monospace',
+    }
+  },
+  // Pixel Retro Theme - Light
+  {
+    id: 'pixel-light',
+    name: 'Pixel Light',
+    type: 'light',
+    colors: {
+      '--bg-main': '240 240 232',     // #f0f0e8 - Retro off-white (Game Boy)
+      '--bg-panel': '232 232 216',    // #e8e8d8 - Slightly darker
+      '--bg-element': '216 216 200',  // #d8d8c8 - Pixel box bg
+      '--border-main': '139 139 122', // #8b8b7a - Green-grey border
+      '--text-primary': '45 52 54',   // #2d3436 - Dark grey
+      '--text-secondary': '99 110 114', // #636e72 - Medium grey
+      '--primary-500': '214 48 49',   // #d63031 - Red buttons
+      '--primary-600': '214 48 49',
+      '--secondary-500': '9 132 227', // #0984e3 - Blue highlight
+
+      '--neutral-50': '240 240 232',
+      '--neutral-100': '240 240 232',
+      '--neutral-200': '216 216 200',
+      '--neutral-300': '99 110 114',
+      '--neutral-400': '99 110 114',
+      '--neutral-500': '71 85 105',
+      '--neutral-600': '55 65 81',
+      '--neutral-700': '45 52 54',
+      '--neutral-800': '45 52 54',
+      '--neutral-900': '45 52 54',
+
+      '--font-primary': '"Press Start 2P", "VT323", "ZCOOL QingKe HuangYou", monospace',
+      '--font-header': '"Press Start 2P", "VT323", "ZCOOL QingKe HuangYou", monospace',
+    }
   }
 ];
 

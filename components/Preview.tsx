@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import ReactDOM from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -386,18 +387,18 @@ const WikiLinkPreview: React.FC<WikiLinkPreviewProps> = ({ target, alias, files 
 
       {/* Hover Preview Popup - 向右下方显示 */}
       {showPreview && targetFile && (
-        <div className="absolute top-full left-full ml-2 mt-2 w-72 z-[100] pointer-events-none">
-          <div className="w-3 h-3 bg-white/95 dark:bg-gray-800/95 rotate-45 absolute left-4 -top-1.5 border-l border-t border-gray-200 dark:border-gray-700"></div>
-          <div className="bg-white/95 dark:bg-gray-800/95 backdrop-blur-xl border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl overflow-hidden p-3">
-            <div className="flex items-center gap-2 mb-2 pb-2 border-b border-gray-100 dark:border-gray-700">
+        <span className="absolute top-full left-full ml-2 mt-2 w-72 z-[100] pointer-events-none block">
+          <span className="w-3 h-3 bg-white/95 dark:bg-gray-800/95 rotate-45 absolute left-4 -top-1.5 border-l border-t border-gray-200 dark:border-gray-700 block"></span>
+          <span className="bg-white/95 dark:bg-gray-800/95 backdrop-blur-xl border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl overflow-hidden p-3 block">
+            <span className="flex items-center gap-2 mb-2 pb-2 border-b border-gray-100 dark:border-gray-700 block">
               <FileText size={14} className="text-cyan-500 flex-shrink-0" />
               <span className="text-xs font-bold text-gray-700 dark:text-gray-200 truncate">{targetFile.name}</span>
-            </div>
-            <div className="text-[10px] text-gray-500 dark:text-gray-400 line-clamp-6 leading-relaxed whitespace-pre-wrap">
+            </span>
+            <span className="text-[10px] text-gray-500 dark:text-gray-400 line-clamp-6 leading-relaxed whitespace-pre-wrap block">
               {targetFile.content.slice(0, 300).replace(/[#*`_~]/g, '')}...
-            </div>
-          </div>
-        </div>
+            </span>
+          </span>
+        </span>
       )}
     </span>
   );
@@ -415,7 +416,9 @@ const BlockReferencePreview: React.FC<BlockReferencePreviewProps> = ({ target, s
   const [showPreview, setShowPreview] = useState(false);
   const [blockContent, setBlockContent] = useState('');
   const [fileExists, setFileExists] = useState(false);
+  const [popupPos, setPopupPos] = useState({ top: 0, left: 0 });
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const triggerRef = useRef<HTMLSpanElement>(null);
 
   // 防御性检查：确保 files 是数组
   const safeFiles = files || [];
@@ -479,17 +482,37 @@ const BlockReferencePreview: React.FC<BlockReferencePreviewProps> = ({ target, s
   const handleMouseEnter = () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => {
+      // 计算预览框位置
+      if (triggerRef.current) {
+        const rect = triggerRef.current.getBoundingClientRect();
+        setPopupPos({
+          top: rect.bottom + 8,
+          left: rect.left
+        });
+      }
       setShowPreview(true);
     }, 500);
   };
 
   const handleMouseLeave = () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => {
+      setShowPreview(false);
+    }, 100); // 小延迟让鼠标有时间移到预览框
+  };
+
+  const handlePopupEnter = () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+  };
+
+  const handlePopupLeave = () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
     setShowPreview(false);
   };
 
   return (
     <span
+      ref={triggerRef}
       className="relative inline-flex items-center gap-1 group cursor-pointer"
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
@@ -505,23 +528,61 @@ const BlockReferencePreview: React.FC<BlockReferencePreviewProps> = ({ target, s
         {formatLabel()}
       </code>
 
-      {showPreview && (
-        <div className="absolute top-full left-full ml-2 mt-2 w-80 z-[100] pointer-events-none">
-          <div className="w-3 h-3 bg-white/95 dark:bg-cyber-900/95 rotate-45 absolute left-4 -top-1.5 border-l border-t border-orange-200 dark:border-orange-800"></div>
-          <div className="bg-white/95 dark:bg-cyber-900/95 backdrop-blur-xl border border-orange-200 dark:border-orange-800 rounded-lg shadow-xl overflow-hidden">
-            <div className="p-3 max-h-48 overflow-y-auto">
+      {/* 使用 Portal 渲染到 body，避免父元素拦截滚动事件 */}
+      {showPreview && typeof document !== 'undefined' && ReactDOM.createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            top: popupPos.top,
+            left: popupPos.left,
+            zIndex: 9999
+          }}
+          className="w-80"
+          onMouseEnter={handlePopupEnter}
+          onMouseLeave={handlePopupLeave}
+        >
+          {/* 箭头指示器 */}
+          <div className="w-3 h-3 bg-gradient-to-br from-orange-100 to-amber-50 dark:from-orange-900/80 dark:to-amber-900/60 rotate-45 absolute left-4 -top-1.5 border-l border-t border-orange-300 dark:border-orange-700"></div>
+
+          {/* 主容器 */}
+          <div className="bg-gradient-to-br from-white/98 to-orange-50/90 dark:from-cyber-900/98 dark:to-orange-950/80 backdrop-blur-xl border border-orange-300/60 dark:border-orange-700/60 rounded-xl shadow-2xl shadow-orange-500/10 dark:shadow-orange-500/5 overflow-hidden">
+            {/* 头部标题栏 */}
+            <div className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-orange-100/80 to-amber-50/60 dark:from-orange-900/40 dark:to-amber-900/30 border-b border-orange-200/60 dark:border-orange-800/40">
+              <Link2 size={12} className="text-orange-500 flex-shrink-0" />
+              <span className="text-[11px] font-semibold text-orange-700 dark:text-orange-300 truncate">
+                {target}
+              </span>
+              <span className="text-[10px] font-mono text-orange-500/70 dark:text-orange-400/60 ml-auto flex-shrink-0">
+                {endLine && endLine > startLine ? `L${startLine}-${endLine}` : `L${startLine}`}
+              </span>
+            </div>
+
+            {/* 内容区域 */}
+            <div className="max-h-52 overflow-y-auto custom-scrollbar">
               {blockContent ? (
-                <pre className="text-xs text-slate-700 dark:text-slate-300 font-mono whitespace-pre-wrap break-all">
-                  {blockContent}
-                </pre>
+                <div className="p-3">
+                  <div className="flex text-xs font-mono">
+                    {/* 行号列 */}
+                    <div className="select-none pr-3 text-right border-r border-orange-200/40 dark:border-orange-800/30 mr-3 text-orange-400/60 dark:text-orange-500/40">
+                      {blockContent.split('\n').map((_, i) => (
+                        <div key={i} className="leading-5">{startLine + i}</div>
+                      ))}
+                    </div>
+                    {/* 代码内容 */}
+                    <pre className="flex-1 text-slate-700 dark:text-slate-200 whitespace-pre-wrap break-all m-0 leading-5">
+                      {blockContent}
+                    </pre>
+                  </div>
+                </div>
               ) : (
-                <p className="text-xs text-slate-400 dark:text-slate-500 italic">
+                <p className="text-xs text-slate-400 dark:text-slate-500 italic m-0 p-3">
                   {fileExists ? 'Content not available' : 'File not found'}
                 </p>
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </span>
   );
@@ -658,15 +719,17 @@ const createEnhancedCodeBlock = (renderHtml: boolean) => {
 
     // Detect Language
     const match = /language-(\w+)/.exec(className || '');
-    const language = match ? match[1] : 'text';
+    const language = match ? match[1] : '';
 
     // Detect if Mermaid
     const isMermaid = language === 'mermaid';
     const isDark = document.documentElement.classList.contains('dark');
 
-    // Better inline detection: only consider it inline if ReactMarkdown explicitly says so
-    // ReactMarkdown passes inline={true} for inline code (`code`), and undefined/false for code blocks (```code```)
-    const isInline = inline === true;
+    // Better inline detection for react-markdown v7+
+    // 1. Check if inline prop is explicitly set
+    // 2. Check if there's no language class (inline code usually has no language)
+    // 3. Check if node tagName is not inside a pre element
+    const isInline = inline === true || (!className && !language);
 
     // Handle Inline Code - return <code> element (valid inside <p>)
     if (isInline) {
@@ -727,7 +790,7 @@ const createEnhancedCodeBlock = (renderHtml: boolean) => {
               <div className="w-2.5 h-2.5 rounded-full bg-[#27c93f]"></div>
             </div>
             <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider font-mono ml-2 select-none">
-              {language}
+              {language || 'text'}
             </span>
           </div>
           <div className="flex items-center gap-1">

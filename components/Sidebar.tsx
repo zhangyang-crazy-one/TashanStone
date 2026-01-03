@@ -13,6 +13,7 @@ import { TagsBrowser } from './TagsBrowser';
 
 interface SidebarProps {
   files: MarkdownFile[];
+  setFiles?: React.Dispatch<React.SetStateAction<MarkdownFile[]>>;
   activeFileId: string;
   onSelectFile: (id: string) => void;
   onCreateItem: (type: 'file' | 'folder', name: string, parentPath: string) => void;
@@ -288,6 +289,7 @@ const FileTreeRow = React.memo<{
 
 export const Sidebar: React.FC<SidebarProps> = ({
   files,
+  setFiles,
   activeFileId,
   onSelectFile,
   onCreateItem,
@@ -975,7 +977,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </button>
                 {tagsExpanded && (
                   <div className="mt-2 px-2">
-                    <TagsBrowser files={files} onSelectFile={onSelectFile} />
+                    <TagsBrowser files={files} onSelectFile={onSelectFile} setFiles={setFiles} />
                     {onOpenTagSuggestion && (
                       <button
                         onClick={onOpenTagSuggestion}

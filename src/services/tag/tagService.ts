@@ -45,8 +45,9 @@ export const searchTags = (files: MarkdownFile[], query: string): TagStats[] => 
 };
 
 export const replaceTagInFile = (content: string, oldTag: string, newTag: string): string => {
-  const regex = new RegExp(`#${escapeRegExp(oldTag)}(?=[\\s/.,!?)]|$)`, 'g');
-  return content.replace(regex, `#${newTag}`);
+  // 新格式: #[tag-name]
+  const regex = new RegExp(`#\\[${escapeRegExp(oldTag)}\\]`, 'g');
+  return content.replace(regex, `#[${newTag}]`);
 };
 
 export const renameTag = async (
@@ -70,6 +71,9 @@ export const renameTag = async (
 
         if (file.handle) {
           await saveFileToDisk(updatedFile);
+        } else if (window.electronAPI?.db?.files) {
+          // Electron 内部文件系统
+          await window.electronAPI.db.files.update(file.id, { content: newContent });
         }
 
         onFileUpdate?.(updatedFile);
@@ -89,12 +93,13 @@ export const deleteTagFromFile = async (
   onSave?: (file: MarkdownFile) => void
 ): Promise<MarkdownFile | null> => {
   try {
-    const hasTag = extractTags(file.content).includes(tag);
-    if (!hasTag) {
+    const fileTags = extractTags(file.content);
+    if (!fileTags.includes(tag)) {
       return null;
     }
 
-    const regex = new RegExp(`#${escapeRegExp(tag)}(?=[\\s/.,!?)]|$)`, 'g');
+    // 新格式: #[tag-name]
+    const regex = new RegExp(`#\\[${escapeRegExp(tag)}\\]`, 'g');
     const newContent = file.content.replace(regex, '');
 
     const updatedFile: MarkdownFile = {
@@ -104,15 +109,17 @@ export const deleteTagFromFile = async (
 
     if (file.handle) {
       await saveFileToDisk(updatedFile);
+    } else if (window.electronAPI?.db?.files) {
+      await window.electronAPI.db.files.update(file.id, { content: newContent });
     }
 
     onSave?.(updatedFile);
     return updatedFile;
   } catch (e: any) {
-    console.error(`Failed to delete tag ${tag} from file ${file.name}:`, e);
     return null;
   }
 };
+
 
 export const mergeTags = async (
   files: MarkdownFile[],
@@ -133,8 +140,8 @@ export const deleteTagGlobally = async (
 
   for (const file of files) {
     try {
-      const hasTag = extractTags(file.content).includes(tag);
-      if (hasTag) {
+      const fileTags = extractTags(file.content);
+      if (fileTags.includes(tag)) {
         const result = await deleteTagFromFile(file, tag);
         if (result) {
           onFileUpdate?.(result);
@@ -148,6 +155,7 @@ export const deleteTagGlobally = async (
 
   return { updated, errors };
 };
+
 
 export const batchDeleteTags = async (
   files: MarkdownFile[],
@@ -176,6 +184,9 @@ export const batchDeleteTags = async (
       try {
         if (currentFile.handle) {
           await saveFileToDisk(currentFile);
+        } else if (window.electronAPI?.db?.files) {
+          // Electron 内部文件系统
+          await window.electronAPI.db.files.update(currentFile.id, { content: currentFile.content });
         }
         onFileUpdate?.(currentFile);
         deletedFrom++;

@@ -431,42 +431,6 @@ const App: React.FC = () => {
     return () => window.removeEventListener('editor-action', handleEditorAction as EventListener);
   }, []);
 
-  // Handle link insert result
-  const handleLinkInsert = useCallback((result: LinkInsertResult) => {
-    const { type, fileName, alias, startLine, endLine, selectedText } = result;
-
-    let linkText = '';
-    switch (type) {
-      case 'wikilink':
-        linkText = alias ? `[[${fileName}|${alias}]]` : `[[${fileName}]]`;
-        break;
-      case 'blockref':
-        if (endLine && endLine > startLine) {
-          linkText = `(((${fileName}#${startLine}-${endLine})))`;
-        } else {
-          linkText = `(((${fileName}#${startLine})))`;
-        }
-        break;
-      case 'quick_link':
-        linkText = alias ? `[[${fileName}|${alias}]]` : `[[${fileName}]]`;
-        break;
-    }
-
-    // Insert into active editor
-    if (useCodeMirror && codeMirrorRef.current) {
-      codeMirrorRef.current.insertText(linkText);
-    } else if (editorRef.current) {
-      const textarea = editorRef.current;
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-      const content = textarea.value;
-
-      textarea.value = content.slice(0, start) + linkText + content.slice(end);
-      textarea.focus();
-      textarea.setSelectionRange(start + linkText.length, start + linkText.length);
-    }
-  }, [useCodeMirror]);
-
   // Get selected text from active editor
   const getSelectedText = useCallback(() => {
     if (useCodeMirror && codeMirrorRef.current) {
@@ -869,6 +833,49 @@ const App: React.FC = () => {
 
     setFiles(updated);
   };
+
+  // Handle link insert result
+  const handleLinkInsert = useCallback((result: LinkInsertResult) => {
+    if (!activeFile) return;
+
+    const { type, fileName, alias, startLine, endLine } = result;
+
+    let linkText = '';
+    switch (type) {
+      case 'wikilink':
+        linkText = alias ? `[[${fileName}|${alias}]]` : `[[${fileName}]]`;
+        break;
+      case 'blockref':
+        if (endLine && endLine > startLine) {
+          linkText = `(((${fileName}#${startLine}-${endLine})))`;
+        } else {
+          linkText = `(((${fileName}#${startLine})))`;
+        }
+        break;
+      case 'quick_link':
+        linkText = alias ? `[[${fileName}|${alias}]]` : `[[${fileName}]]`;
+        break;
+    }
+
+    // 获取当前光标位置，默认为文件末尾
+    const cursorPos = activeFile.cursorPosition || {
+      start: activeFile.content.length,
+      end: activeFile.content.length
+    };
+
+    // 在光标位置插入内容
+    const before = activeFile.content.substring(0, cursorPos.start);
+    const after = activeFile.content.substring(cursorPos.end);
+    const newContent = before + linkText + after;
+
+    // 计算新的光标位置（插入内容之后）
+    const newCursorPos = {
+      start: cursorPos.start + linkText.length,
+      end: cursorPos.start + linkText.length
+    };
+
+    updateActiveFile(newContent, newCursorPos);
+  }, [activeFile, updateActiveFile]);
 
   // 保存光标位置
   const handleCursorChange = (fileId: string, position: { start: number; end: number }) => {
@@ -2510,6 +2517,7 @@ IMPORTANT:
 
       <Sidebar
         files={files}
+        setFiles={setFiles}
         activeFileId={activeFileId}
         onSelectFile={openFileInPane}
         onCreateItem={handleCreateItem}

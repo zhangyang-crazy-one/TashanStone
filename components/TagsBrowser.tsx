@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import ReactDOM from 'react-dom';
 import { Tag, Search, Edit2, Trash2, Merge, Check, X, Plus, FolderOpen, MoreVertical, Wand2 } from 'lucide-react';
 import { MarkdownFile } from '../types';
 import { extractTags } from '../src/types/wiki';
@@ -16,11 +17,24 @@ interface TagsBrowserProps {
   files: MarkdownFile[];
   onSelectFile: (fileId: string) => void;
   onFileUpdate?: (file: MarkdownFile) => void;
+  setFiles?: React.Dispatch<React.SetStateAction<MarkdownFile[]>>;  // 添加 setFiles 回调
 }
 
 type EditMode = 'none' | 'rename' | 'delete' | 'merge';
 
-export const TagsBrowser: React.FC<TagsBrowserProps> = ({ files, onSelectFile, onFileUpdate }) => {
+export const TagsBrowser: React.FC<TagsBrowserProps> = ({ files, onSelectFile, onFileUpdate, setFiles }) => {
+  // 当 onFileUpdate 未定义时，本地更新 files 数组
+  const handleFileUpdate = (updatedFile: MarkdownFile) => {
+    if (onFileUpdate) {
+      onFileUpdate(updatedFile);
+    } else if (setFiles) {
+      // 本地更新 files 数组
+      setFiles(prevFiles =>
+        prevFiles.map(f => f.id === updatedFile.id ? updatedFile : f)
+      );
+    }
+  };
+
   const [searchQuery, setSearchQuery] = useState('');
   const [editMode, setEditMode] = useState<EditMode>('none');
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
@@ -51,7 +65,7 @@ export const TagsBrowser: React.FC<TagsBrowserProps> = ({ files, onSelectFile, o
 
     setProcessing(true);
     try {
-      const result = await renameTag(files, oldTag, editInput.trim(), onFileUpdate);
+      const result = await renameTag(files, oldTag, editInput.trim(), handleFileUpdate);
       if (result.errors.length > 0) {
         showMessage('error', `Updated ${result.updated} files, errors: ${result.errors.join(', ')}`);
       } else {
@@ -67,18 +81,37 @@ export const TagsBrowser: React.FC<TagsBrowserProps> = ({ files, onSelectFile, o
     }
   };
 
-  const handleDelete = async (tag: string) => {
+  const handleDelete = (tag: string) => {
     setDeleteConfirm({ isOpen: true, tag, isBatch: false });
   };
 
   const executeDelete = async () => {
     const { tag } = deleteConfirm;
     setDeleteConfirm({ isOpen: false, tag: '', isBatch: false });
-    if (!tag) return;
+    if (!tag) {
+      return;
+    }
 
     setProcessing(true);
     try {
-      const result = await deleteTagGlobally(files, tag, onFileUpdate);
+      // 使用 Map 来追踪更新的文件
+      const updatedFilesMap = new Map<string, MarkdownFile>();
+      files.forEach(f => updatedFilesMap.set(f.id, f));
+
+      // 自定义回调，更新本地 Map
+      const localFileUpdate = (updatedFile: MarkdownFile) => {
+        updatedFilesMap.set(updatedFile.id, updatedFile);
+      };
+
+      const currentFiles = Array.from(updatedFilesMap.values());
+      const result = await deleteTagGlobally(currentFiles, tag, localFileUpdate);
+
+      // 更新 React 状态
+      const finalFiles = Array.from(updatedFilesMap.values());
+      if (setFiles) {
+        setFiles(finalFiles);
+      }
+
       if (result.errors.length > 0) {
         showMessage('error', `Deleted from ${result.updated} files, errors: ${result.errors.join(', ')}`);
       } else {
@@ -92,12 +125,13 @@ export const TagsBrowser: React.FC<TagsBrowserProps> = ({ files, onSelectFile, o
     }
   };
 
+
   const handleMerge = async (sourceTag: string) => {
     if (!editInput.trim() || editInput === sourceTag) return;
 
     setProcessing(true);
     try {
-      const result = await mergeTags(files, sourceTag, editInput.trim(), onFileUpdate);
+      const result = await mergeTags(files, sourceTag, editInput.trim(), handleFileUpdate);
       if (result.errors.length > 0) {
         showMessage('error', `Merged ${result.updated} files, errors: ${result.errors.join(', ')}`);
       } else {
@@ -113,22 +147,43 @@ export const TagsBrowser: React.FC<TagsBrowserProps> = ({ files, onSelectFile, o
     }
   };
 
-  const handleBatchDelete = async () => {
+  const handleBatchDelete = () => {
     if (selectedTags.size === 0) return;
     const tagsArray = Array.from(selectedTags);
     setDeleteConfirm({ isOpen: true, tag: tagsArray[0], isBatch: true, tags: tagsArray });
   };
 
+
   const executeBatchDelete = async () => {
     const { tags } = deleteConfirm;
     setDeleteConfirm({ isOpen: false, tag: '', isBatch: false });
-    if (!tags || tags.length === 0) return;
+    if (!tags || tags.length === 0) {
+      return;
+    }
 
     setProcessing(true);
     try {
+      // 使用 Map 来追踪更新的文件
+      const updatedFilesMap = new Map<string, MarkdownFile>();
+      files.forEach(f => updatedFilesMap.set(f.id, f));
+
+      // 自定义回调，更新本地 Map
+      const localFileUpdate = (updatedFile: MarkdownFile) => {
+        updatedFilesMap.set(updatedFile.id, updatedFile);
+      };
+
       for (const tag of tags) {
-        await deleteTagGlobally(files, tag, onFileUpdate);
+        // 使用当前 Map 中的最新文件状态
+        const currentFiles = Array.from(updatedFilesMap.values());
+        await deleteTagGlobally(currentFiles, tag, localFileUpdate);
       }
+
+      // 最终一次性更新 React 状态
+      const finalFiles = Array.from(updatedFilesMap.values());
+      if (setFiles) {
+        setFiles(finalFiles);
+      }
+
       showMessage('success', `Deleted ${tags.length} tag(s) from all files`);
       setSelectedTags(new Set());
       setEditMode('none');
@@ -138,6 +193,8 @@ export const TagsBrowser: React.FC<TagsBrowserProps> = ({ files, onSelectFile, o
       setProcessing(false);
     }
   };
+
+
 
   const toggleTagSelection = (tag: string) => {
     const newSelected = new Set(selectedTags);
@@ -174,11 +231,10 @@ export const TagsBrowser: React.FC<TagsBrowserProps> = ({ files, onSelectFile, o
   return (
     <div className="space-y-3">
       {message && (
-        <div className={`text-xs px-2 py-1 rounded ${
-          message.type === 'success'
-            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-            : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-        }`}>
+        <div className={`text-xs px-2 py-1 rounded ${message.type === 'success'
+          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+          : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+          }`}>
           {message.text}
         </div>
       )}
@@ -223,35 +279,56 @@ export const TagsBrowser: React.FC<TagsBrowserProps> = ({ files, onSelectFile, o
         </button>
       )}
 
-      <div className="space-y-1 group">
+      <div className="space-y-1 group" onClick={() => console.log('[TagsBrowser] [CLICK] Container clicked')}>
         {tagStats.map(({ tag, count, files: tagFiles }) => (
-          <div key={tag} className="border-b border-paper-100 dark:border-cyber-800 pb-1 last:border-0">
-            <div className="flex items-center gap-1">
+          <div
+            key={tag}
+            className="border-b border-paper-100 dark:border-cyber-800 pb-1 last:border-0"
+            onClick={(e) => {
+              console.log('[TagsBrowser] [CLICK] Row clicked:', tag);
+              e.stopPropagation();
+            }}
+          >
+            <div className="flex items-center gap-1" onClick={(e) => {
+              console.log('[TagsBrowser] [CLICK] Inner container clicked:', tag);
+            }}>
               {editMode !== 'none' && editMode !== 'merge' && (
                 <button
-                  onClick={() => toggleTagSelection(tag)}
-                  className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
-                    selectedTags.has(tag)
-                      ? 'bg-cyan-500 border-cyan-500 text-white'
-                      : 'border-slate-300 dark:border-slate-600 hover:border-cyan-400'
-                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    console.log('[TagsBrowser] [CLICK] Checkbox clicked:', tag);
+                    toggleTagSelection(tag);
+                  }}
+                  className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${selectedTags.has(tag)
+                    ? 'bg-cyan-500 border-cyan-500 text-white'
+                    : 'border-slate-300 dark:border-slate-600 hover:border-cyan-400'
+                    }`}
                 >
                   {selectedTags.has(tag) && <Check size={10} />}
                 </button>
               )}
 
               <button
-                onClick={() => {
+                onClick={(e) => {
+                  console.log('[TagsBrowser] Tag clicked:', tag, 'editMode:', editMode, 'editingTag:', editingTag);
+                  // 防止事件冒泡
+                  e.stopPropagation();
+
                   if (editMode === 'none') {
+                    console.log('[TagsBrowser] Mode is none, navigating to file');
                     if (tagFiles.length > 0) {
                       onSelectFile(tagFiles[0].id);
                     }
                   } else if (editingTag === null) {
                     if (editMode === 'delete') {
+                      console.log('[TagsBrowser] Mode is delete, calling handleDelete');
                       handleDelete(tag);
                     } else {
+                      console.log('[TagsBrowser] Mode is rename/merge, setting editingTag');
                       setEditingTag(tag);
                     }
+                  } else {
+                    console.log('[TagsBrowser] editingTag is not null, ignoring click');
                   }
                 }}
                 onContextMenu={(e) => {
@@ -262,11 +339,10 @@ export const TagsBrowser: React.FC<TagsBrowserProps> = ({ files, onSelectFile, o
                   }
                 }}
                 disabled={processing}
-                className={`flex items-center gap-2 flex-1 py-1 px-1.5 rounded transition-colors ${
-                  editingTag === tag && (editMode === 'rename' || editMode === 'merge')
-                    ? 'bg-cyan-50 dark:bg-cyan-900/20'
-                    : 'hover:bg-paper-200 dark:hover:bg-cyber-800'
-                }`}
+                className={`flex items-center gap-2 flex-1 py-1 px-1.5 rounded transition-colors ${editingTag === tag && (editMode === 'rename' || editMode === 'merge')
+                  ? 'bg-cyan-50 dark:bg-cyan-900/20'
+                  : 'hover:bg-paper-200 dark:hover:bg-cyber-800'
+                  }`}
               >
                 <Tag size={12} className="text-emerald-500 shrink-0" />
                 {editingTag === tag && (editMode === 'rename' || editMode === 'merge') ? (
@@ -389,7 +465,12 @@ export const TagsBrowser: React.FC<TagsBrowserProps> = ({ files, onSelectFile, o
                 <Edit2 size={12} />
               </button>
               <button
-                onClick={() => setEditMode('delete')}
+                onClick={() => {
+                  console.log('[TagsBrowser] === DELETE MODE BUTTON CLICKED ===');
+                  console.log('[TagsBrowser] Before: editMode =', editMode);
+                  setEditMode('delete');
+                  console.log('[TagsBrowser] After: editMode should be delete');
+                }}
                 className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
                 title="Delete Mode"
               >
@@ -407,21 +488,24 @@ export const TagsBrowser: React.FC<TagsBrowserProps> = ({ files, onSelectFile, o
         </div>
       </div>
 
-      {/* Delete Confirmation Modal */}
-      <ConfirmDialog
-        isOpen={deleteConfirm.isOpen}
-        title="确认删除"
-        message={
-          deleteConfirm.isBatch && deleteConfirm.tags && deleteConfirm.tags.length > 1
-            ? `确定要删除 ${deleteConfirm.tags.length} 个标签吗？此操作将从所有文件中移除这些标签。`
-            : `确定要删除标签 "${deleteConfirm.tag}" 吗？此操作将从所有文件中移除该标签。`
-        }
-        confirmText="删除"
-        cancelText="取消"
-        type="danger"
-        onConfirm={deleteConfirm.isBatch ? executeBatchDelete : executeDelete}
-        onCancel={() => setDeleteConfirm({ isOpen: false, tag: '', isBatch: false })}
-      />
+      {/* Delete Confirmation Modal - 使用 Portal 渲染到 body */}
+      {typeof document !== 'undefined' && ReactDOM.createPortal(
+        <ConfirmDialog
+          isOpen={deleteConfirm.isOpen}
+          title="确认删除"
+          message={
+            deleteConfirm.isBatch && deleteConfirm.tags && deleteConfirm.tags.length > 1
+              ? `确定要删除 ${deleteConfirm.tags.length} 个标签吗？此操作将从所有文件中移除这些标签。`
+              : `确定要删除标签 "${deleteConfirm.tag}" 吗？此操作将从所有文件中移除该标签。`
+          }
+          confirmText="删除"
+          cancelText="取消"
+          type="danger"
+          onConfirm={deleteConfirm.isBatch ? executeBatchDelete : executeDelete}
+          onCancel={() => setDeleteConfirm({ isOpen: false, tag: '', isBatch: false })}
+        />,
+        document.body
+      )}
     </div>
   );
 };
