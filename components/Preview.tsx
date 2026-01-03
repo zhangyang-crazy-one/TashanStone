@@ -6,7 +6,7 @@ import rehypeHighlight from 'rehype-highlight';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
 import { visit } from 'unist-util-visit';
-import { Check, Copy, FileCode, Terminal, AlertTriangle, ZoomIn, ZoomOut, Maximize, WrapText, FileJson, ImageOff, ExternalLink, GraduationCap, HelpCircle, Link2, FileText } from 'lucide-react';
+import { Check, Copy, FileCode, Terminal, AlertTriangle, ZoomIn, ZoomOut, Maximize, WrapText, FileJson, ImageOff, ExternalLink, GraduationCap, HelpCircle, Link2, FileText, Tag } from 'lucide-react';
 import mermaid from 'mermaid';
 import { preprocessWikiLinks, extractBlockReferencesWithContent } from '../src/types/wiki';
 import { MarkdownFile } from '../types';
@@ -193,6 +193,73 @@ const rehypeWikiLinks = () => {
     } catch (e) {
       // Silently ignore tree traversal errors
       console.warn('[Preview] WikiLink parsing error:', e);
+    }
+  };
+};
+
+// --- Rehype Plugin to transform Hashtags ---
+// Transforms #[tag-name] into custom clickable/styled elements
+const rehypeTags = () => {
+  return (tree: any) => {
+    if (!tree || typeof tree !== 'object') return;
+
+    try {
+      visit(tree, 'text', (node: any, index, parent: any) => {
+        // Guard: skip if parent or index is undefined
+        if (!parent || index === undefined || !node?.value) return;
+        // Skip if inside code or pre elements
+        if (parent.tagName === 'code' || parent.tagName === 'pre') return;
+
+        // Match #[tag-name] format (supports Chinese, spaces, dash, underscore)
+        const hashtagRegex = /#\[([^\]]+)\]/g;
+        const value = node.value;
+        const matches = [...value.matchAll(hashtagRegex)];
+
+        if (matches.length > 0) {
+          const children: any[] = [];
+          let lastIndex = 0;
+
+          matches.forEach((match) => {
+            const fullMatch = match[0];
+            const tag = match[1]; // The tag content inside brackets
+            const matchStart = match.index!;
+
+            // Add text before the tag
+            if (matchStart > lastIndex) {
+              children.push({
+                type: 'text',
+                value: value.slice(lastIndex, matchStart)
+              });
+            }
+
+            // Create a custom element for the hashtag
+            children.push({
+              type: 'element',
+              tagName: 'hashtag',
+              properties: {
+                'data-tag': tag
+              },
+              children: [{ type: 'text', value: `#[${tag}]` }]
+            });
+
+            lastIndex = matchStart + fullMatch.length;
+          });
+
+          // Add remaining text
+          if (lastIndex < value.length) {
+            children.push({
+              type: 'text',
+              value: value.slice(lastIndex)
+            });
+          }
+
+          // Replace the text node with new nodes
+          parent.children.splice(index, 1, ...children);
+        }
+      });
+    } catch (e) {
+      // Silently ignore tree traversal errors
+      console.warn('[Preview] Hashtag parsing error:', e);
     }
   };
 };
@@ -743,6 +810,40 @@ const EnhancedImage = ({ src, alt, ...props }: any) => {
   );
 };
 
+/**
+ * TagPreview: Renders hashtags with distinctive styling
+ */
+interface TagPreviewProps {
+  tag: string;
+}
+
+const TagPreview: React.FC<TagPreviewProps> = ({ tag }) => {
+  const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Dispatch event to filter by tag in sidebar
+    window.dispatchEvent(new CustomEvent('filter-by-tag', { detail: { tag } }));
+  };
+
+  return (
+    <span
+      onClick={handleClick}
+      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer transition-all
+        bg-gradient-to-r from-violet-100 to-purple-100 dark:from-violet-900/40 dark:to-purple-900/40
+        text-violet-700 dark:text-violet-300
+        border border-violet-200 dark:border-violet-700/50
+        hover:from-violet-200 hover:to-purple-200 dark:hover:from-violet-800/50 dark:hover:to-purple-800/50
+        hover:border-violet-300 dark:hover:border-violet-600
+        hover:shadow-sm hover:scale-105
+        select-none"
+      title={`Click to filter by #${tag}`}
+    >
+      <Tag size={10} className="flex-shrink-0" />
+      <span>{tag}</span>
+    </span>
+  );
+};
+
 
 export const Preview: React.FC<PreviewProps> = ({ content, initialScrollRatio, files = [] }) => {
   const [renderHtml, setRenderHtml] = useState(false);
@@ -803,6 +904,8 @@ export const Preview: React.FC<PreviewProps> = ({ content, initialScrollRatio, f
               rehypeBlockReferences(files),
               // Transform WikiLinks before other processing
               rehypeWikiLinks,
+              // Transform Tags into styled elements
+              rehypeTags,
               // Skip mermaid blocks before highlighting
               rehypeSkipMermaid,
               // Configure rehypeHighlight to ignore mermaid
@@ -871,6 +974,10 @@ export const Preview: React.FC<PreviewProps> = ({ content, initialScrollRatio, f
                     files={files}
                   />
                 );
+              },
+              // Custom Hashtag Handler
+              hashtag: ({ 'data-tag': tag }: any) => {
+                return <TagPreview tag={tag} />;
               },
             } as any}
           >

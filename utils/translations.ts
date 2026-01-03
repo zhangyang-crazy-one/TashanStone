@@ -68,6 +68,9 @@ export const translations = {
     enableStreaming: "Enable Streaming Response",
     streamingHint: "Show AI response as it's being generated in real-time.",
     streamingRecommend: "Recommended: Disable streaming for better tool calling stability and real-time UI feedback.",
+    enableTagSuggestion: "Enable AI Tag Suggestion",
+    autoSuggestTags: "Auto-suggest tags when creating notes",
+    tagSuggestionHint: "Uses AI to analyze content and suggest relevant tags automatically.",
     keyboardShortcuts: "Keyboard Shortcuts",
     pressKeys: "Press keys...",
     resetDefaults: "Reset Defaults",
@@ -182,7 +185,7 @@ export const translations = {
       duration: 'Duration',
       errorMessage: 'Error Message',
     },
-// Voice Transcription translations
+    // Voice Transcription translations
     voiceTranscription: 'Voice Transcription',
     transcription: {
       title: 'Voice Transcription',
@@ -223,7 +226,7 @@ export const translations = {
     analyzingContent: 'Analyzing content and generating tags...',
     noNewTags: 'No new tags could be suggested. Your content may already have all relevant tags.',
     retry: 'Retry',
-    applyTags: 'Apply {count} Tag{count !== 1 ? "s" : ""}',
+    applyTags: 'Apply {count} Tags',
     existingTags: 'Existing tags (not shown in suggestions)',
     // Review/Study Plan translations
     review: 'Review',
@@ -366,6 +369,9 @@ export const translations = {
     enableStreaming: "启用流式响应",
     streamingHint: "实时显示AI生成的响应内容。",
     streamingRecommend: "建议：关闭流式响应以获得更稳定的工具调用和实时UI反馈。",
+    enableTagSuggestion: "启用 AI 标签建议",
+    autoSuggestTags: "创建笔记时自动建议标签",
+    tagSuggestionHint: "使用 AI 分析内容并自动建议相关标签。",
     keyboardShortcuts: "键盘快捷键",
     pressKeys: "按下按键...",
     resetDefaults: "重置默认",
@@ -480,7 +486,7 @@ export const translations = {
       duration: '耗时',
       errorMessage: '错误信息',
     },
-// Voice Transcription translations
+    // Voice Transcription translations
     voiceTranscription: '语音转录',
     transcription: {
       title: '语音转录',

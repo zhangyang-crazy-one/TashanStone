@@ -76,6 +76,8 @@ const DEFAULT_SNIPPETS: Snippet[] = [
   { id: 'wikilink-plain', name: 'File Link', category: 'wikilink', content: '[[{filename}]]\n' },
   { id: 'wikilink-alias', name: 'Link with Alias', category: 'wikilink', content: '[[{filename}|{alias}]]\n' },
   { id: 'wikilink-block', name: 'Block Reference', category: 'wikilink', content: '(((filename#line)))\n' },
+  // Tag Template
+  { id: 'tag', name: 'Tag', category: 'wikilink', content: '#[tag-name]\n' },
   // Content Templates
   { id: 'tbl', name: 'Table', category: 'template', content: '| Header 1 | Header 2 |\n| -------- | -------- |\n| Cell 1   | Cell 2   |\n' },
   { id: 'math', name: 'Math Block', category: 'code', content: '$$\n  \\int_0^\\infty x^2 dx\n$$\n' },

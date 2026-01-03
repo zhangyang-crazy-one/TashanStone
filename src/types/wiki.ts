@@ -147,12 +147,16 @@ export const extractBlockReferencesWithContent = (
 };
 
 export const extractTags = (content: string): string[] => {
-  const regex = /(?:^|\s)(#[a-zA-Z_\u4e00-\u9fa5][\w\-\/\u4e00-\u9fa5]*)/g;
+  // 新格式: #[tag-name] 支持中文、空格、-、_
+  const regex = /#\[([^\]]+)\]/g;
   const tags: string[] = [];
   let match;
 
   while ((match = regex.exec(content)) !== null) {
-    tags.push(match[1].trim());
+    const tag = match[1].trim();
+    if (tag) {
+      tags.push(tag);
+    }
   }
 
   return tags;

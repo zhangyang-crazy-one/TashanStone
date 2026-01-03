@@ -10,6 +10,7 @@ import {
   mergeTags,
   TagStats
 } from '../src/services/tag/tagService';
+import { ConfirmDialog } from './ConfirmDialog';
 
 interface TagsBrowserProps {
   files: MarkdownFile[];
@@ -27,6 +28,12 @@ export const TagsBrowser: React.FC<TagsBrowserProps> = ({ files, onSelectFile, o
   const [editInput, setEditInput] = useState('');
   const [processing, setProcessing] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    isOpen: boolean;
+    tag: string;
+    isBatch: boolean;
+    tags?: string[];
+  }>({ isOpen: false, tag: '', isBatch: false });
 
   const tagStats = useMemo(() => {
     return searchQuery.trim()
@@ -61,7 +68,13 @@ export const TagsBrowser: React.FC<TagsBrowserProps> = ({ files, onSelectFile, o
   };
 
   const handleDelete = async (tag: string) => {
-    if (!confirm(`Delete tag "${tag}" from all files?`)) return;
+    setDeleteConfirm({ isOpen: true, tag, isBatch: false });
+  };
+
+  const executeDelete = async () => {
+    const { tag } = deleteConfirm;
+    setDeleteConfirm({ isOpen: false, tag: '', isBatch: false });
+    if (!tag) return;
 
     setProcessing(true);
     try {
@@ -103,18 +116,20 @@ export const TagsBrowser: React.FC<TagsBrowserProps> = ({ files, onSelectFile, o
   const handleBatchDelete = async () => {
     if (selectedTags.size === 0) return;
     const tagsArray = Array.from(selectedTags);
-    const confirmMsg = tagsArray.length === 1
-      ? `Delete tag "${tagsArray[0]}" from all files?`
-      : `Delete ${tagsArray.length} tags from all files?`;
+    setDeleteConfirm({ isOpen: true, tag: tagsArray[0], isBatch: true, tags: tagsArray });
+  };
 
-    if (!confirm(confirmMsg)) return;
+  const executeBatchDelete = async () => {
+    const { tags } = deleteConfirm;
+    setDeleteConfirm({ isOpen: false, tag: '', isBatch: false });
+    if (!tags || tags.length === 0) return;
 
     setProcessing(true);
     try {
-      for (const tag of tagsArray) {
+      for (const tag of tags) {
         await deleteTagGlobally(files, tag, onFileUpdate);
       }
-      showMessage('success', `Deleted ${tagsArray.length} tag(s) from all files`);
+      showMessage('success', `Deleted ${tags.length} tag(s) from all files`);
       setSelectedTags(new Set());
       setEditMode('none');
     } catch (e: any) {
@@ -391,6 +406,22 @@ export const TagsBrowser: React.FC<TagsBrowserProps> = ({ files, onSelectFile, o
           )}
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmDialog
+        isOpen={deleteConfirm.isOpen}
+        title="确认删除"
+        message={
+          deleteConfirm.isBatch && deleteConfirm.tags && deleteConfirm.tags.length > 1
+            ? `确定要删除 ${deleteConfirm.tags.length} 个标签吗？此操作将从所有文件中移除这些标签。`
+            : `确定要删除标签 "${deleteConfirm.tag}" 吗？此操作将从所有文件中移除该标签。`
+        }
+        confirmText="删除"
+        cancelText="取消"
+        type="danger"
+        onConfirm={deleteConfirm.isBatch ? executeBatchDelete : executeDelete}
+        onCancel={() => setDeleteConfirm({ isOpen: false, tag: '', isBatch: false })}
+      />
     </div>
   );
 };

@@ -35,7 +35,7 @@ interface AISettingsModalProps {
 
 type Tab = 'ai' | 'appearance' | 'prompts' | 'mcp' | 'keyboard' | 'security' | 'context';
 
-const RECOMMENDED_MODELS: Record<string, {id: string, name: string}[]> = {
+const RECOMMENDED_MODELS: Record<string, { id: string, name: string }[]> = {
   gemini: [
     { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (General Purpose)' },
     { id: 'gemini-3-pro-preview', name: 'Gemini 3.0 Pro Preview (Complex Reasoning)' },
@@ -61,7 +61,7 @@ const RECOMMENDED_MODELS: Record<string, {id: string, name: string}[]> = {
   ]
 };
 
-const RECOMMENDED_EMBEDDING_MODELS: Record<string, {id: string, name: string}[]> = {
+const RECOMMENDED_EMBEDDING_MODELS: Record<string, { id: string, name: string }[]> = {
   gemini: [
     { id: 'text-embedding-004', name: 'Text Embedding 004' },
   ],
@@ -120,7 +120,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // State for real MCP tools from Electron
-  const [realMcpTools, setRealMcpTools] = useState<Array<{name: string; description: string}>>([]);
+  const [realMcpTools, setRealMcpTools] = useState<Array<{ name: string; description: string }>>([]);
   const [isLoadingMcpTools, setIsLoadingMcpTools] = useState(false);
 
   React.useEffect(() => {
@@ -185,7 +185,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
       try {
         const content = e.target?.result as string;
         const json = JSON.parse(content);
-        
+
         if (!json.name || !json.type || !json.colors) {
           showToast?.('Invalid Theme: Missing name, type ("light"|"dark"), or colors object.', true);
           return;
@@ -233,7 +233,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
         tempConfig,
         `You are testing a tool named '${testTool}'. Trigger it if the user asks.`,
         false,
-        [], 
+        [],
         mockToolCallback
       );
 
@@ -373,59 +373,59 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
       <div className="w-full max-w-4xl bg-white dark:bg-cyber-900 rounded-xl shadow-2xl border border-paper-200 dark:border-cyber-700 overflow-hidden transform transition-all scale-100 flex flex-col h-[85vh]">
-        
+
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-paper-200 dark:border-cyber-700 bg-paper-50 dark:bg-cyber-800/50 flex-shrink-0">
           <div className="flex gap-4 overflow-x-auto no-scrollbar">
-             <button
+            <button
               onClick={() => setActiveTab('ai')}
               className={`text-sm font-bold flex items-center gap-2 pb-1 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'ai' ? 'text-cyan-600 dark:text-cyan-400 border-cyan-500' : 'text-slate-500 border-transparent hover:text-slate-700 dark:hover:text-slate-300'}`}
-             >
-                <Cpu size={18} />
-                {t.aiConfig}
-             </button>
-             <button
+            >
+              <Cpu size={18} />
+              {t.aiConfig}
+            </button>
+            <button
               onClick={() => setActiveTab('prompts')}
               className={`text-sm font-bold flex items-center gap-2 pb-1 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'prompts' ? 'text-cyan-600 dark:text-cyan-400 border-cyan-500' : 'text-slate-500 border-transparent hover:text-slate-700 dark:hover:text-slate-300'}`}
-             >
-                <MessageSquare size={18} />
-                {t.prompts || "Prompts"}
-             </button>
-             <button
+            >
+              <MessageSquare size={18} />
+              {t.prompts || "Prompts"}
+            </button>
+            <button
               onClick={() => setActiveTab('keyboard')}
               className={`text-sm font-bold flex items-center gap-2 pb-1 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'keyboard' ? 'text-cyan-600 dark:text-cyan-400 border-cyan-500' : 'text-slate-500 border-transparent hover:text-slate-700 dark:hover:text-slate-300'}`}
-             >
-                <Keyboard size={18} />
-                {t.keyboardShortcuts || "Shortcuts"}
-             </button>
-             <button
+            >
+              <Keyboard size={18} />
+              {t.keyboardShortcuts || "Shortcuts"}
+            </button>
+            <button
               onClick={() => setActiveTab('mcp')}
               className={`text-sm font-bold flex items-center gap-2 pb-1 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'mcp' ? 'text-emerald-600 dark:text-emerald-400 border-emerald-500' : 'text-slate-500 border-transparent hover:text-slate-700 dark:hover:text-slate-300'}`}
-             >
-                <Wrench size={18} />
-                MCP / Tools
-             </button>
-              <button
-               onClick={() => setActiveTab('security')}
-               className={`text-sm font-bold flex items-center gap-2 pb-1 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'security' ? 'text-amber-600 dark:text-amber-400 border-amber-500' : 'text-slate-500 border-transparent hover:text-slate-700 dark:hover:text-slate-300'}`}
-              >
-                 <Shield size={18} />
-                 {t.backup.title || "Backup"}
-              </button>
-              <button
-               onClick={() => setActiveTab('context')}
-               className={`text-sm font-bold flex items-center gap-2 pb-1 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'context' ? 'text-blue-600 dark:text-blue-400 border-blue-500' : 'text-slate-500 border-transparent hover:text-slate-700 dark:hover:text-slate-300'}`}
-              >
-                 <Cpu size={18} />
-                 Context
-              </button>
-              <button
-               onClick={() => setActiveTab('appearance')}
+            >
+              <Wrench size={18} />
+              MCP / Tools
+            </button>
+            <button
+              onClick={() => setActiveTab('security')}
+              className={`text-sm font-bold flex items-center gap-2 pb-1 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'security' ? 'text-amber-600 dark:text-amber-400 border-amber-500' : 'text-slate-500 border-transparent hover:text-slate-700 dark:hover:text-slate-300'}`}
+            >
+              <Shield size={18} />
+              {t.backup.title || "Backup"}
+            </button>
+            <button
+              onClick={() => setActiveTab('context')}
+              className={`text-sm font-bold flex items-center gap-2 pb-1 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'context' ? 'text-blue-600 dark:text-blue-400 border-blue-500' : 'text-slate-500 border-transparent hover:text-slate-700 dark:hover:text-slate-300'}`}
+            >
+              <Cpu size={18} />
+              Context
+            </button>
+            <button
+              onClick={() => setActiveTab('appearance')}
               className={`text-sm font-bold flex items-center gap-2 pb-1 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'appearance' ? 'text-violet-600 dark:text-violet-400 border-violet-500' : 'text-slate-500 border-transparent hover:text-slate-700 dark:hover:text-slate-300'}`}
-             >
-                <Palette size={18} />
-                {t.appearance}
-             </button>
+            >
+              <Palette size={18} />
+              {t.appearance}
+            </button>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
             <X size={20} />
@@ -434,38 +434,36 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto custom-scrollbar p-6 bg-paper-50 dark:bg-cyber-900">
-          
+
           {/* AI Settings Tab */}
           {activeTab === 'ai' && (
             <form onSubmit={handleSubmit} className="space-y-5 max-w-2xl mx-auto">
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                   <Languages size={16} />
-                   {t.languageMode}
+                  <Languages size={16} />
+                  {t.languageMode}
                 </label>
                 <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setTempConfig({ ...tempConfig, language: 'en' })}
-                      className={`py-2 px-4 rounded-lg border transition-all text-sm font-medium ${
-                        tempConfig.language === 'en'
-                          ? 'bg-cyan-50 dark:bg-cyan-900/20 border-cyan-500 text-cyan-700 dark:text-cyan-300 ring-1 ring-cyan-500'
-                          : 'bg-white dark:bg-cyber-800 border-paper-200 dark:border-cyber-700 text-slate-600 dark:text-slate-400'
+                  <button
+                    type="button"
+                    onClick={() => setTempConfig({ ...tempConfig, language: 'en' })}
+                    className={`py-2 px-4 rounded-lg border transition-all text-sm font-medium ${tempConfig.language === 'en'
+                        ? 'bg-cyan-50 dark:bg-cyan-900/20 border-cyan-500 text-cyan-700 dark:text-cyan-300 ring-1 ring-cyan-500'
+                        : 'bg-white dark:bg-cyber-800 border-paper-200 dark:border-cyber-700 text-slate-600 dark:text-slate-400'
                       }`}
-                    >
-                      English
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTempConfig({ ...tempConfig, language: 'zh' })}
-                      className={`py-2 px-4 rounded-lg border transition-all text-sm font-medium ${
-                        tempConfig.language === 'zh'
-                          ? 'bg-cyan-50 dark:bg-cyan-900/20 border-cyan-500 text-cyan-700 dark:text-cyan-300 ring-1 ring-cyan-500'
-                          : 'bg-white dark:bg-cyber-800 border-paper-200 dark:border-cyber-700 text-slate-600 dark:text-slate-400'
+                  >
+                    English
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTempConfig({ ...tempConfig, language: 'zh' })}
+                    className={`py-2 px-4 rounded-lg border transition-all text-sm font-medium ${tempConfig.language === 'zh'
+                        ? 'bg-cyan-50 dark:bg-cyan-900/20 border-cyan-500 text-cyan-700 dark:text-cyan-300 ring-1 ring-cyan-500'
+                        : 'bg-white dark:bg-cyber-800 border-paper-200 dark:border-cyber-700 text-slate-600 dark:text-slate-400'
                       }`}
-                    >
-                      中文 (Chinese)
-                    </button>
+                  >
+                    中文 (Chinese)
+                  </button>
                 </div>
               </div>
               <div className="h-px bg-paper-200 dark:bg-cyber-700 my-4" />
@@ -479,37 +477,36 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                       key={p}
                       type="button"
                       onClick={() => setTempConfig({ ...tempConfig, provider: p as any })}
-                      className={`flex flex-col items-center justify-center p-3 rounded-lg border transition-all capitalize ${
-                        tempConfig.provider === p
+                      className={`flex flex-col items-center justify-center p-3 rounded-lg border transition-all capitalize ${tempConfig.provider === p
                           ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-900/20 text-cyan-700 dark:text-cyan-300 ring-1 ring-cyan-500'
                           : 'border-paper-200 dark:border-cyber-700 hover:bg-paper-100 dark:hover:bg-cyber-800 text-slate-600 dark:text-slate-400'
-                      }`}
+                        }`}
                     >
                       <span className="font-semibold text-sm">{p}</span>
                     </button>
                   ))}
                 </div>
               </div>
-              
+
               {tempConfig.provider === 'gemini' && (
                 <div className="space-y-2 animate-fadeIn p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800">
-                    <div className="flex items-center gap-3">
-                        <input 
-                            type="checkbox" 
-                            id="webSearch"
-                            checked={!!tempConfig.enableWebSearch}
-                            onChange={(e) => setTempConfig({...tempConfig, enableWebSearch: e.target.checked})}
-                            className="w-4 h-4 text-cyan-600 rounded border-gray-300 focus:ring-cyan-500 cursor-pointer"
-                        />
-                        <label htmlFor="webSearch" className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2 cursor-pointer">
-                           <Globe size={16} className="text-blue-500" />
-                           {t.enableWebSearch || "Enable Google Search"}
-                        </label>
-                    </div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 ml-7">
-                       Uses Google Search to ground answers. <br/>
-                       <span className="text-amber-500 font-bold">Note:</span> Disables file editing tools when active.
-                    </p>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      id="webSearch"
+                      checked={!!tempConfig.enableWebSearch}
+                      onChange={(e) => setTempConfig({ ...tempConfig, enableWebSearch: e.target.checked })}
+                      className="w-4 h-4 text-cyan-600 rounded border-gray-300 focus:ring-cyan-500 cursor-pointer"
+                    />
+                    <label htmlFor="webSearch" className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2 cursor-pointer">
+                      <Globe size={16} className="text-blue-500" />
+                      {t.enableWebSearch || "Enable Google Search"}
+                    </label>
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 ml-7">
+                    Uses Google Search to ground answers. <br />
+                    <span className="text-amber-500 font-bold">Note:</span> Disables file editing tools when active.
+                  </p>
                 </div>
               )}
 
@@ -520,7 +517,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                     type="checkbox"
                     id="enableStreaming"
                     checked={!!tempConfig.enableStreaming}
-                    onChange={(e) => setTempConfig({...tempConfig, enableStreaming: e.target.checked})}
+                    onChange={(e) => setTempConfig({ ...tempConfig, enableStreaming: e.target.checked })}
                     className="w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-500 cursor-pointer"
                   />
                   <label htmlFor="enableStreaming" className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2 cursor-pointer">
@@ -529,7 +526,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                   </label>
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400 ml-7">
-                  {t.streamingHint || "Show AI response as it's being generated in real-time."} <br/>
+                  {t.streamingHint || "Show AI response as it's being generated in real-time."} <br />
                   <span className="text-amber-500 font-medium">⚠️ {t.streamingRecommend || "Recommended: Disable streaming for better tool calling stability and real-time UI feedback."}</span>
                 </p>
               </div>
@@ -542,9 +539,9 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                     id="tagSuggestionEnabled"
                     checked={!!tempConfig.tagSuggestion?.enabled}
                     onChange={(e) => setTempConfig({
-                      ...tempConfig, 
-                      tagSuggestion: { 
-                        ...tempConfig.tagSuggestion, 
+                      ...tempConfig,
+                      tagSuggestion: {
+                        ...tempConfig.tagSuggestion,
                         enabled: e.target.checked,
                         autoSuggest: tempConfig.tagSuggestion?.autoSuggest ?? false
                       }
@@ -553,7 +550,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                   />
                   <label htmlFor="tagSuggestionEnabled" className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2 cursor-pointer">
                     <Tag size={16} className="text-emerald-500" />
-                    Enable AI Tag Suggestion
+                    {t.enableTagSuggestion || "Enable AI Tag Suggestion"}
                   </label>
                 </div>
                 <div className="flex items-center gap-3 ml-7">
@@ -562,9 +559,9 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                     id="tagSuggestionAuto"
                     checked={!!tempConfig.tagSuggestion?.autoSuggest}
                     onChange={(e) => setTempConfig({
-                      ...tempConfig, 
-                      tagSuggestion: { 
-                        ...tempConfig.tagSuggestion, 
+                      ...tempConfig,
+                      tagSuggestion: {
+                        ...tempConfig.tagSuggestion,
                         enabled: tempConfig.tagSuggestion?.enabled ?? true,
                         autoSuggest: e.target.checked
                       }
@@ -573,11 +570,11 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                     disabled={!tempConfig.tagSuggestion?.enabled}
                   />
                   <label htmlFor="tagSuggestionAuto" className={`text-sm flex items-center gap-2 cursor-pointer ${!tempConfig.tagSuggestion?.enabled ? 'text-slate-400' : 'text-slate-600 dark:text-slate-400'}`}>
-                    Auto-suggest tags when creating notes
+                    {t.autoSuggestTags || "Auto-suggest tags when creating notes"}
                   </label>
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400 ml-7">
-                  Uses AI to analyze content and suggest relevant tags automatically.
+                  {t.tagSuggestionHint || "Uses AI to analyze content and suggest relevant tags automatically."}
                 </p>
               </div>
 
@@ -611,25 +608,25 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                 />
               </div>
 
-               {/* Compaction Model Selection */}
-               <div className="space-y-2 animate-fadeIn">
-                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                    Compaction Model (Optional)
-                 </label>
-                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Used when compressing chat history. Defaults to main model if empty.
-                 </p>
-                 <input
+              {/* Compaction Model Selection */}
+              <div className="space-y-2 animate-fadeIn">
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                  Compaction Model (Optional)
+                </label>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Used when compressing chat history. Defaults to main model if empty.
+                </p>
+                <input
                   type="text"
                   value={tempConfig.compactModel || ''}
                   onChange={(e) => setTempConfig({ ...tempConfig, compactModel: e.target.value })}
                   className="w-full px-3 py-2 rounded-lg bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500"
                   placeholder="e.g. gemini-2.5-flash"
                 />
-               </div>
+              </div>
 
-               {/* Embedding Model Selection - Independent Provider */}
-               <div className="space-y-3 animate-fadeIn p-4 bg-slate-50 dark:bg-cyber-800/50 rounded-xl border border-paper-200 dark:border-cyber-700">
+              {/* Embedding Model Selection - Independent Provider */}
+              <div className="space-y-3 animate-fadeIn p-4 bg-slate-50 dark:bg-cyber-800/50 rounded-xl border border-paper-200 dark:border-cyber-700">
                 <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
                   Embedding Model (RAG)
                 </label>
@@ -642,11 +639,10 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setTempConfig({ ...tempConfig, embeddingProvider: undefined })}
-                    className={`py-1.5 px-2 rounded-lg border text-xs font-medium transition-all ${
-                      !tempConfig.embeddingProvider
+                    className={`py-1.5 px-2 rounded-lg border text-xs font-medium transition-all ${!tempConfig.embeddingProvider
                         ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-900/20 text-cyan-700 dark:text-cyan-300'
                         : 'border-paper-200 dark:border-cyber-700 hover:bg-paper-100 dark:hover:bg-cyber-800 text-slate-500'
-                    }`}
+                      }`}
                   >
                     Same as Chat
                   </button>
@@ -655,11 +651,10 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                       key={p}
                       type="button"
                       onClick={() => setTempConfig({ ...tempConfig, embeddingProvider: p as any })}
-                      className={`py-1.5 px-2 rounded-lg border text-xs font-medium transition-all capitalize ${
-                        tempConfig.embeddingProvider === p
+                      className={`py-1.5 px-2 rounded-lg border text-xs font-medium transition-all capitalize ${tempConfig.embeddingProvider === p
                           ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300'
                           : 'border-paper-200 dark:border-cyber-700 hover:bg-paper-100 dark:hover:bg-cyber-800 text-slate-500'
-                      }`}
+                        }`}
                     >
                       {p}
                     </button>
@@ -796,252 +791,252 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
 
           {/* Prompts Tab */}
           {activeTab === 'prompts' && (
-             <div className="space-y-6 max-w-3xl mx-auto">
-                <div className="bg-white dark:bg-cyber-800 p-4 rounded-xl border border-paper-200 dark:border-cyber-700 shadow-sm">
-                   <p className="text-sm text-slate-500 dark:text-slate-400">
-                      Customize the system instructions sent to the AI for specific actions.
-                   </p>
-                </div>
-                <div className="space-y-3">
-                   <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
-                      {t.polishPrompt || "Polish Prompt"}
-                   </label>
-                   <textarea
-                      value={tempConfig.customPrompts?.polish || ''}
-                      onChange={(e) => setTempConfig({ 
-                         ...tempConfig, 
-                         customPrompts: { ...tempConfig.customPrompts, polish: e.target.value } 
-                      })}
-                      className="w-full h-32 px-3 py-2 rounded-lg bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-sm"
-                      placeholder="Enter system prompt for 'Polish' action..."
-                   />
-                </div>
-                <div className="space-y-3">
-                   <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
-                      {t.expandPrompt || "Expand Prompt"}
-                   </label>
-                   <textarea
-                      value={tempConfig.customPrompts?.expand || ''}
-                      onChange={(e) => setTempConfig({ 
-                         ...tempConfig, 
-                         customPrompts: { ...tempConfig.customPrompts, expand: e.target.value } 
-                      })}
-                      className="w-full h-32 px-3 py-2 rounded-lg bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-sm"
-                      placeholder="Enter system prompt for 'Expand' action..."
-                   />
-                </div>
-             </div>
+            <div className="space-y-6 max-w-3xl mx-auto">
+              <div className="bg-white dark:bg-cyber-800 p-4 rounded-xl border border-paper-200 dark:border-cyber-700 shadow-sm">
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  Customize the system instructions sent to the AI for specific actions.
+                </p>
+              </div>
+              <div className="space-y-3">
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
+                  {t.polishPrompt || "Polish Prompt"}
+                </label>
+                <textarea
+                  value={tempConfig.customPrompts?.polish || ''}
+                  onChange={(e) => setTempConfig({
+                    ...tempConfig,
+                    customPrompts: { ...tempConfig.customPrompts, polish: e.target.value }
+                  })}
+                  className="w-full h-32 px-3 py-2 rounded-lg bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-sm"
+                  placeholder="Enter system prompt for 'Polish' action..."
+                />
+              </div>
+              <div className="space-y-3">
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
+                  {t.expandPrompt || "Expand Prompt"}
+                </label>
+                <textarea
+                  value={tempConfig.customPrompts?.expand || ''}
+                  onChange={(e) => setTempConfig({
+                    ...tempConfig,
+                    customPrompts: { ...tempConfig.customPrompts, expand: e.target.value }
+                  })}
+                  className="w-full h-32 px-3 py-2 rounded-lg bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-sm"
+                  placeholder="Enter system prompt for 'Expand' action..."
+                />
+              </div>
+            </div>
           )}
-          
+
           {/* Keyboard Shortcuts Tab */}
           {activeTab === 'keyboard' && (
-             <div className="space-y-6 max-w-2xl mx-auto">
-                 <div className="bg-white dark:bg-cyber-800 p-4 rounded-xl border border-paper-200 dark:border-cyber-700 shadow-sm flex justify-between items-center">
-                   <div>
-                       <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">{t.keyboardShortcuts}</h3>
-                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                          Click a key combination to record a new one.
-                       </p>
-                   </div>
-                   <button 
-                      onClick={onResetShortcuts}
-                      className="text-xs px-3 py-1.5 rounded-lg border border-paper-300 dark:border-cyber-600 hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-600 dark:text-slate-300 transition-colors"
-                   >
-                       {t.resetDefaults || "Reset Defaults"}
-                   </button>
-                 </div>
+            <div className="space-y-6 max-w-2xl mx-auto">
+              <div className="bg-white dark:bg-cyber-800 p-4 rounded-xl border border-paper-200 dark:border-cyber-700 shadow-sm flex justify-between items-center">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">{t.keyboardShortcuts}</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    Click a key combination to record a new one.
+                  </p>
+                </div>
+                <button
+                  onClick={onResetShortcuts}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-paper-300 dark:border-cyber-600 hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-600 dark:text-slate-300 transition-colors"
+                >
+                  {t.resetDefaults || "Reset Defaults"}
+                </button>
+              </div>
 
-                 <div className="space-y-2">
-                     {shortcuts.map((shortcut) => (
-                         <div 
-                             key={shortcut.id} 
-                             className="flex items-center justify-between p-3 bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-700 rounded-lg group hover:border-cyan-500/50 transition-colors"
-                         >
-                             <div className="flex items-center gap-3">
-                                 <Command size={16} className="text-slate-400" />
-                                 <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                                     {shortcut.label}
-                                 </span>
-                             </div>
-                             
-                             <button
-                                 onClick={() => setRecordingId(shortcut.id)}
-                                 onKeyDown={(e) => handleKeyDownRecord(e, shortcut.id)}
-                                 className={`
+              <div className="space-y-2">
+                {shortcuts.map((shortcut) => (
+                  <div
+                    key={shortcut.id}
+                    className="flex items-center justify-between p-3 bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-700 rounded-lg group hover:border-cyan-500/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Command size={16} className="text-slate-400" />
+                      <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                        {shortcut.label}
+                      </span>
+                    </div>
+
+                    <button
+                      onClick={() => setRecordingId(shortcut.id)}
+                      onKeyDown={(e) => handleKeyDownRecord(e, shortcut.id)}
+                      className={`
                                     min-w-[100px] px-3 py-1.5 rounded-md text-xs font-mono font-bold text-center transition-all
-                                    ${recordingId === shortcut.id 
-                                        ? 'bg-red-500 text-white animate-pulse ring-2 ring-red-300' 
-                                        : 'bg-paper-100 dark:bg-cyber-900 text-slate-600 dark:text-slate-400 group-hover:bg-paper-200 dark:group-hover:bg-cyber-700'}
+                                    ${recordingId === shortcut.id
+                          ? 'bg-red-500 text-white animate-pulse ring-2 ring-red-300'
+                          : 'bg-paper-100 dark:bg-cyber-900 text-slate-600 dark:text-slate-400 group-hover:bg-paper-200 dark:group-hover:bg-cyber-700'}
                                  `}
-                             >
-                                 {recordingId === shortcut.id ? (t.pressKeys || "Press keys...") : shortcut.keys}
-                             </button>
-                         </div>
-                     ))}
-                 </div>
-             </div>
+                    >
+                      {recordingId === shortcut.id ? (t.pressKeys || "Press keys...") : shortcut.keys}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
 
-           {/* MCP / Tools Tab */}
-           {activeTab === 'mcp' && (
-             <div className="h-full flex flex-col lg:flex-row gap-6">
-                {/* Left: Editor */}
-                <div className="flex-1 flex flex-col min-h-[400px]">
-                   <div className="bg-white dark:bg-cyber-800 p-4 rounded-xl border border-paper-200 dark:border-cyber-700 shadow-sm mb-4 shrink-0 flex justify-between items-center">
-                      <p className="text-sm text-slate-500 dark:text-slate-400">
-                         Configure MCP Servers to inject tools dynamically.
-                      </p>
+          {/* MCP / Tools Tab */}
+          {activeTab === 'mcp' && (
+            <div className="h-full flex flex-col lg:flex-row gap-6">
+              {/* Left: Editor */}
+              <div className="flex-1 flex flex-col min-h-[400px]">
+                <div className="bg-white dark:bg-cyber-800 p-4 rounded-xl border border-paper-200 dark:border-cyber-700 shadow-sm mb-4 shrink-0 flex justify-between items-center">
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    Configure MCP Servers to inject tools dynamically.
+                  </p>
+                  <button
+                    onClick={handleInsertTemplate}
+                    className="text-xs flex items-center gap-1.5 px-3 py-1.5 bg-paper-100 dark:bg-cyber-700 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 rounded-lg transition-colors border border-paper-200 dark:border-cyber-600"
+                  >
+                    <Code2 size={14} /> Insert Template
+                  </button>
+                </div>
+
+                <div className="flex-1 relative">
+                  <label className="absolute top-0 right-0 p-2 text-[10px] font-mono text-slate-400 bg-paper-100 dark:bg-cyber-900/50 rounded-bl-lg border-l border-b border-paper-200 dark:border-cyber-700">JSON</label>
+                  <textarea
+                    value={tempConfig.mcpTools || '[]'}
+                    onChange={(e) => setTempConfig({
+                      ...tempConfig,
+                      mcpTools: e.target.value
+                    })}
+                    className={`w-full h-full min-h-[300px] px-4 py-3 rounded-lg bg-white dark:bg-cyber-800 border text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-xs font-mono resize-none leading-relaxed custom-scrollbar ${parseError ? 'border-red-400 dark:border-red-600' : 'border-paper-200 dark:border-cyber-600'}`}
+                    placeholder={`{\n  "mcpServers": {\n    "chrome-devtools": {\n      "command": "npx",\n      "args": ["-y", "chrome-devtools-mcp@latest"]\n    }\n  }\n}`}
+                    spellCheck={false}
+                  />
+                </div>
+                {parseError && (
+                  <div className="mt-2 text-red-500 text-xs flex items-center gap-1">
+                    <AlertTriangle size={12} /> {parseError}
+                  </div>
+                )}
+              </div>
+
+              {/* Right: Visualization & Test */}
+              <div className="w-full lg:w-96 flex flex-col gap-4 overflow-y-auto pr-1">
+                {activeServers.length > 0 && (
+                  <div className="mb-2 p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg">
+                    <h4 className="text-xs font-bold text-emerald-700 dark:text-emerald-300 mb-1 flex items-center gap-1.5">
+                      <Server size={12} /> Active Virtual Servers
+                    </h4>
+                    <div className="flex flex-wrap gap-1.5">
+                      {activeServers.map(s => (
+                        <span key={s} className="px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-200 text-[10px] font-mono border border-emerald-200 dark:border-emerald-700/50">
+                          {s}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                  <Box size={16} /> Discovered Tools ({isLoadingMcpTools ? '...' : parsedTools.length})
+                </h3>
+
+                {isLoadingMcpTools ? (
+                  <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-paper-200 dark:border-cyber-700 rounded-xl p-8 text-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500 mb-2"></div>
+                    <p className="text-xs text-slate-400">Loading MCP tools...</p>
+                  </div>
+                ) : parsedTools.length === 0 ? (
+                  <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-paper-200 dark:border-cyber-700 rounded-xl p-8 text-center">
+                    <Code2 className="text-slate-300 dark:text-slate-600 mb-2" size={32} />
+                    <p className="text-xs text-slate-400">No tools found.<br />Configure servers on the left.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {parsedTools.map((tool: any, idx: number) => (
+                      <div key={idx} className="bg-white dark:bg-cyber-800 rounded-lg border border-paper-200 dark:border-cyber-700 p-3 shadow-sm hover:border-emerald-500/50 transition-colors">
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 text-xs font-mono font-bold">
+                              {tool.name}
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => { setTestTool(tool.name); setTestPrompt(`Use ${tool.name} to...`); setTestLog([]); }}
+                            className="p-1.5 rounded-md bg-paper-100 dark:bg-cyber-700 hover:bg-emerald-500 hover:text-white text-slate-500 transition-all"
+                            title="Test this tool"
+                          >
+                            <Play size={12} fill="currentColor" />
+                          </button>
+                        </div>
+                        {/* Full description - no line clamp */}
+                        <p className="text-xs text-slate-500 dark:text-slate-400 whitespace-pre-wrap">
+                          {tool.description || "No description provided."}
+                        </p>
+                        {/* Parameters with descriptions */}
+                        {(() => {
+                          const schema = tool.parameters?.properties || tool.inputSchema?.properties || {};
+                          const required = tool.parameters?.required || tool.inputSchema?.required || [];
+                          const props = Object.entries(schema);
+                          if (props.length === 0) return null;
+                          return (
+                            <div className="mt-2 pt-2 border-t border-paper-100 dark:border-cyber-700/50 space-y-1">
+                              <span className="text-[10px] font-bold text-slate-500 uppercase">Parameters:</span>
+                              {props.map(([prop, schema]: [string, any]) => (
+                                <div key={prop} className="flex items-start gap-2 text-[10px]">
+                                  <span className={`font-mono px-1 py-0.5 rounded border ${required.includes(prop) ? 'text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20' : 'text-slate-500 border-paper-200 dark:border-cyber-600'}`}>
+                                    {prop}{required.includes(prop) && '*'}
+                                  </span>
+                                  <span className="text-slate-400">
+                                    ({schema.type || 'any'})
+                                    {schema.description && <span className="ml-1 text-slate-500">- {schema.description}</span>}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Test Playground Area */}
+                {testTool && (
+                  <div className="mt-auto border-t-2 border-paper-200 dark:border-cyber-700 pt-4 animate-slideUp">
+                    <div className="flex justify-between items-center mb-2">
+                      <h4 className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                        <Terminal size={14} /> Test: {testTool}
+                      </h4>
+                      <button onClick={() => setTestTool(null)} className="text-slate-400 hover:text-slate-600"><X size={14} /></button>
+                    </div>
+
+                    <div className="flex gap-2 mb-2">
+                      <input
+                        type="text"
+                        value={testPrompt}
+                        onChange={(e) => setTestPrompt(e.target.value)}
+                        className="flex-1 px-2 py-1.5 rounded bg-white dark:bg-cyber-900 border border-paper-300 dark:border-cyber-600 text-xs text-slate-800 dark:text-slate-200"
+                        placeholder="Enter prompt to trigger tool..."
+                      />
                       <button
-                        onClick={handleInsertTemplate}
-                        className="text-xs flex items-center gap-1.5 px-3 py-1.5 bg-paper-100 dark:bg-cyber-700 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 rounded-lg transition-colors border border-paper-200 dark:border-cyber-600"
+                        onClick={runToolTest}
+                        disabled={isTesting}
+                        className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded text-xs font-bold disabled:opacity-50"
                       >
-                        <Code2 size={14} /> Insert Template
+                        {isTesting ? '...' : 'Run'}
                       </button>
-                   </div>
+                    </div>
 
-                   <div className="flex-1 relative">
-                       <label className="absolute top-0 right-0 p-2 text-[10px] font-mono text-slate-400 bg-paper-100 dark:bg-cyber-900/50 rounded-bl-lg border-l border-b border-paper-200 dark:border-cyber-700">JSON</label>
-                       <textarea
-                          value={tempConfig.mcpTools || '[]'}
-                          onChange={(e) => setTempConfig({
-                             ...tempConfig,
-                             mcpTools: e.target.value
-                          })}
-                          className={`w-full h-full min-h-[300px] px-4 py-3 rounded-lg bg-white dark:bg-cyber-800 border text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-xs font-mono resize-none leading-relaxed custom-scrollbar ${parseError ? 'border-red-400 dark:border-red-600' : 'border-paper-200 dark:border-cyber-600'}`}
-                          placeholder={`{\n  "mcpServers": {\n    "chrome-devtools": {\n      "command": "npx",\n      "args": ["-y", "chrome-devtools-mcp@latest"]\n    }\n  }\n}`}
-                          spellCheck={false}
-                       />
-                   </div>
-                   {parseError && (
-                      <div className="mt-2 text-red-500 text-xs flex items-center gap-1">
-                          <AlertTriangle size={12} /> {parseError}
-                      </div>
-                   )}
-                </div>
-
-                {/* Right: Visualization & Test */}
-                <div className="w-full lg:w-96 flex flex-col gap-4 overflow-y-auto pr-1">
-                   {activeServers.length > 0 && (
-                      <div className="mb-2 p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg">
-                         <h4 className="text-xs font-bold text-emerald-700 dark:text-emerald-300 mb-1 flex items-center gap-1.5">
-                            <Server size={12} /> Active Virtual Servers
-                         </h4>
-                         <div className="flex flex-wrap gap-1.5">
-                            {activeServers.map(s => (
-                               <span key={s} className="px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-200 text-[10px] font-mono border border-emerald-200 dark:border-emerald-700/50">
-                                  {s}
-                               </span>
-                            ))}
-                         </div>
-                      </div>
-                   )}
-
-                   <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                       <Box size={16} /> Discovered Tools ({isLoadingMcpTools ? '...' : parsedTools.length})
-                   </h3>
-
-                   {isLoadingMcpTools ? (
-                       <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-paper-200 dark:border-cyber-700 rounded-xl p-8 text-center">
-                           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500 mb-2"></div>
-                           <p className="text-xs text-slate-400">Loading MCP tools...</p>
-                       </div>
-                   ) : parsedTools.length === 0 ? (
-                       <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-paper-200 dark:border-cyber-700 rounded-xl p-8 text-center">
-                           <Code2 className="text-slate-300 dark:text-slate-600 mb-2" size={32} />
-                           <p className="text-xs text-slate-400">No tools found.<br/>Configure servers on the left.</p>
-                       </div>
-                   ) : (
-                       <div className="space-y-3">
-                           {parsedTools.map((tool: any, idx: number) => (
-                               <div key={idx} className="bg-white dark:bg-cyber-800 rounded-lg border border-paper-200 dark:border-cyber-700 p-3 shadow-sm hover:border-emerald-500/50 transition-colors">
-                                   <div className="flex justify-between items-start mb-2">
-                                       <div className="flex items-center gap-2">
-                                            <span className="px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 text-xs font-mono font-bold">
-                                                {tool.name}
-                                            </span>
-                                       </div>
-                                       <button
-                                           onClick={() => { setTestTool(tool.name); setTestPrompt(`Use ${tool.name} to...`); setTestLog([]); }}
-                                           className="p-1.5 rounded-md bg-paper-100 dark:bg-cyber-700 hover:bg-emerald-500 hover:text-white text-slate-500 transition-all"
-                                           title="Test this tool"
-                                       >
-                                           <Play size={12} fill="currentColor" />
-                                       </button>
-                                   </div>
-                                   {/* Full description - no line clamp */}
-                                   <p className="text-xs text-slate-500 dark:text-slate-400 whitespace-pre-wrap">
-                                       {tool.description || "No description provided."}
-                                   </p>
-                                   {/* Parameters with descriptions */}
-                                   {(() => {
-                                       const schema = tool.parameters?.properties || tool.inputSchema?.properties || {};
-                                       const required = tool.parameters?.required || tool.inputSchema?.required || [];
-                                       const props = Object.entries(schema);
-                                       if (props.length === 0) return null;
-                                       return (
-                                         <div className="mt-2 pt-2 border-t border-paper-100 dark:border-cyber-700/50 space-y-1">
-                                           <span className="text-[10px] font-bold text-slate-500 uppercase">Parameters:</span>
-                                           {props.map(([prop, schema]: [string, any]) => (
-                                             <div key={prop} className="flex items-start gap-2 text-[10px]">
-                                               <span className={`font-mono px-1 py-0.5 rounded border ${required.includes(prop) ? 'text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20' : 'text-slate-500 border-paper-200 dark:border-cyber-600'}`}>
-                                                 {prop}{required.includes(prop) && '*'}
-                                               </span>
-                                               <span className="text-slate-400">
-                                                 ({schema.type || 'any'})
-                                                 {schema.description && <span className="ml-1 text-slate-500">- {schema.description}</span>}
-                                               </span>
-                                             </div>
-                                           ))}
-                                         </div>
-                                       );
-                                   })()}
-                               </div>
-                           ))}
-                       </div>
-                   )}
-
-                   {/* Test Playground Area */}
-                   {testTool && (
-                       <div className="mt-auto border-t-2 border-paper-200 dark:border-cyber-700 pt-4 animate-slideUp">
-                           <div className="flex justify-between items-center mb-2">
-                               <h4 className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                                   <Terminal size={14} /> Test: {testTool}
-                               </h4>
-                               <button onClick={() => setTestTool(null)} className="text-slate-400 hover:text-slate-600"><X size={14} /></button>
-                           </div>
-
-                           <div className="flex gap-2 mb-2">
-                               <input
-                                  type="text"
-                                  value={testPrompt}
-                                  onChange={(e) => setTestPrompt(e.target.value)}
-                                  className="flex-1 px-2 py-1.5 rounded bg-white dark:bg-cyber-900 border border-paper-300 dark:border-cyber-600 text-xs text-slate-800 dark:text-slate-200"
-                                  placeholder="Enter prompt to trigger tool..."
-                               />
-                               <button
-                                  onClick={runToolTest}
-                                  disabled={isTesting}
-                                  className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded text-xs font-bold disabled:opacity-50"
-                               >
-                                  {isTesting ? '...' : 'Run'}
-                               </button>
-                           </div>
-
-                           <div className="bg-slate-900 rounded-lg p-3 h-32 overflow-y-auto custom-scrollbar font-mono text-[10px] leading-relaxed">
-                               {testLog.length === 0 ? (
-                                   <span className="text-slate-500 italic">Output log...</span>
-                               ) : (
-                                   testLog.map((line, i) => (
-                                       <div key={i} className={line.startsWith('❌') ? 'text-red-400' : line.includes('✅') ? 'text-emerald-400' : 'text-slate-300'}>
-                                           {line}
-                                       </div>
-                                   ))
-                               )}
-                           </div>
-                       </div>
-                   )}
-                </div>
-             </div>
+                    <div className="bg-slate-900 rounded-lg p-3 h-32 overflow-y-auto custom-scrollbar font-mono text-[10px] leading-relaxed">
+                      {testLog.length === 0 ? (
+                        <span className="text-slate-500 italic">Output log...</span>
+                      ) : (
+                        testLog.map((line, i) => (
+                          <div key={i} className={line.startsWith('❌') ? 'text-red-400' : line.includes('✅') ? 'text-emerald-400' : 'text-slate-300'}>
+                            {line}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
           )}
 
           {/* Security / Backup Tab */}
@@ -1124,11 +1119,10 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                             lastBackup: tempConfig.backup?.lastBackup || 0
                           }
                         })}
-                        className={`py-2.5 px-3 rounded-lg border transition-all text-sm font-medium font-[var(--font-primary)] ${
-                          (tempConfig.backup?.frequency || 'never') === freq
+                        className={`py-2.5 px-3 rounded-lg border transition-all text-sm font-medium font-[var(--font-primary)] ${(tempConfig.backup?.frequency || 'never') === freq
                             ? 'bg-[rgba(var(--primary-500)/0.1)] border-[rgb(var(--primary-500))] text-[rgb(var(--primary-500))] ring-1 ring-[rgb(var(--primary-500))]'
                             : 'bg-[rgb(var(--bg-element))] border-[rgb(var(--border-main))] text-[rgb(var(--text-primary))] hover:border-[rgb(var(--primary-500))]'
-                        }`}
+                          }`}
                       >
                         {t.backup[freq]}
                       </button>
@@ -1432,19 +1426,19 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                       Import themes in JSON format.
                     </p>
                   </div>
-                  <button 
+                  <button
                     onClick={() => fileInputRef.current?.click()}
                     className="flex items-center gap-2 px-4 py-2 bg-violet-500 hover:bg-violet-600 text-white rounded-lg shadow-md transition-all hover:shadow-violet-500/25"
                   >
-                     <Upload size={16} />
-                     <span>{t.importTheme}</span>
+                    <Upload size={16} />
+                    <span>{t.importTheme}</span>
                   </button>
-                  <input 
-                     type="file" 
-                     accept=".json" 
-                     ref={fileInputRef} 
-                     className="hidden" 
-                     onChange={handleFileUpload}
+                  <input
+                    type="file"
+                    accept=".json"
+                    ref={fileInputRef}
+                    className="hidden"
+                    onChange={handleFileUpload}
                   />
                 </div>
               </div>
@@ -1453,25 +1447,25 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                 <h3 className="text-sm font-semibold text-slate-500 dark:text-slate-400 mb-3 uppercase tracking-wider">{t.availableThemes}</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {themes.map(theme => (
-                    <div 
+                    <div
                       key={theme.id}
                       onClick={() => onSelectTheme(theme.id)}
                       className={`
                         relative group cursor-pointer rounded-xl border-2 p-4 transition-all duration-200 flex items-center gap-4
-                        ${activeThemeId === theme.id 
-                          ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-900/10 shadow-lg shadow-cyan-500/10' 
+                        ${activeThemeId === theme.id
+                          ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-900/10 shadow-lg shadow-cyan-500/10'
                           : 'border-paper-200 dark:border-cyber-700 hover:border-cyan-300 dark:hover:border-cyber-500 bg-white dark:bg-cyber-800'}
                       `}
                     >
                       <div className="w-12 h-12 rounded-full shadow-inner flex overflow-hidden border border-black/10 shrink-0 transform transition-transform group-hover:scale-105">
-                         <div className="w-1/2 h-full" style={{ background: `rgb(${theme.colors['--bg-main']})` }}></div>
-                         <div className="w-1/2 h-full" style={{ background: `rgb(${theme.colors['--primary-500']})` }}></div>
+                        <div className="w-1/2 h-full" style={{ background: `rgb(${theme.colors['--bg-main']})` }}></div>
+                        <div className="w-1/2 h-full" style={{ background: `rgb(${theme.colors['--primary-500']})` }}></div>
                       </div>
 
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                           <span className="font-bold text-slate-800 dark:text-slate-200 truncate">{theme.name}</span>
-                           {activeThemeId === theme.id && <Check size={16} className="text-cyan-500 shrink-0" />}
+                          <span className="font-bold text-slate-800 dark:text-slate-200 truncate">{theme.name}</span>
+                          {activeThemeId === theme.id && <Check size={16} className="text-cyan-500 shrink-0" />}
                         </div>
                         <span className="text-xs text-slate-500 capitalize">{theme.type === 'dark' ? t.darkMode : t.lightMode}</span>
                       </div>
@@ -1497,7 +1491,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                           className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
                           title={t.deleteTheme}
                         >
-                           <Trash2 size={16} />
+                          <Trash2 size={16} />
                         </button>
                       )}
                     </div>
@@ -1511,14 +1505,14 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
         {/* Footer */}
         {activeTab === 'ai' || activeTab === 'prompts' || activeTab === 'mcp' || activeTab === 'keyboard' || activeTab === 'security' ? (
           <div className="p-4 border-t border-paper-200 dark:border-cyber-700 flex justify-end gap-3 bg-paper-50 dark:bg-cyber-800/50 flex-shrink-0">
-             <button onClick={onClose} className="px-4 py-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-paper-200 dark:hover:bg-cyber-700">{t.cancel}</button>
-             <button onClick={handleSubmit} className="flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-cyan-500 to-violet-500 text-white rounded-lg shadow-lg hover:shadow-cyan-500/25">
-               <Save size={18} /> {t.save}
-             </button>
+            <button onClick={onClose} className="px-4 py-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-paper-200 dark:hover:bg-cyber-700">{t.cancel}</button>
+            <button onClick={handleSubmit} className="flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-cyan-500 to-violet-500 text-white rounded-lg shadow-lg hover:shadow-cyan-500/25">
+              <Save size={18} /> {t.save}
+            </button>
           </div>
         ) : (
           <div className="p-4 border-t border-paper-200 dark:border-cyber-700 flex justify-end bg-paper-50 dark:bg-cyber-800/50">
-             <button onClick={onClose} className="px-4 py-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-paper-200 dark:hover:bg-cyber-700">{t.close}</button>
+            <button onClick={onClose} className="px-4 py-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-paper-200 dark:hover:bg-cyber-700">{t.close}</button>
           </div>
         )}
       </div>
