@@ -38,9 +38,9 @@ export const BlockReferenceComponent: React.FC<BlockReferenceProps> = ({
 
   const formatLabel = () => {
     if (reference.endLine && reference.endLine > reference.startLine) {
-      return `<<${reference.target}:${reference.startLine}-${reference.endLine}>>`;
+      return `(((${reference.target}#${reference.startLine}-${reference.endLine})))`;
     }
-    return `<<${reference.target}:${reference.startLine}>>`;
+    return `(((${reference.target}#${reference.startLine})))`;
   };
 
   return (

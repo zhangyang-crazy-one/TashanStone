@@ -24,7 +24,8 @@ import { TagSuggestionModal } from './components/TagSuggestionModal';
 import { SmartOrganizeModal } from './components/SmartOrganizeModal';
 import { SearchModal } from './components/SearchModal';
 import { StudyPlanPanel } from './components/StudyPlanPanel';
-import { ViewMode, AIState, MarkdownFile, AIConfig, ChatMessage, GraphData, AppTheme, Quiz, RAGStats, OCRStats, AppShortcut, RAGResultData, EditorPane, Snippet, StudyPlan, ExamResult, KnowledgePointStat, QuestionBank, QuizQuestion } from './types';
+import { LinkInsertModal } from './components/LinkInsertModal';
+import { ViewMode, AIState, MarkdownFile, AIConfig, ChatMessage, GraphData, AppTheme, Quiz, RAGStats, OCRStats, AppShortcut, RAGResultData, EditorPane, Snippet, StudyPlan, ExamResult, KnowledgePointStat, QuestionBank, QuizQuestion, LinkInsertResult, CodeMirrorEditorRef } from './types';
 import { polishContent, expandContent, generateAIResponse, generateAIResponseStream, generateKnowledgeGraph, synthesizeKnowledgeBase, generateQuiz, generateMindMap, extractQuizFromRawContent, compactConversation, searchPermanentMemories, autoCreateMemoryFromSession, initPersistentMemory, getEmbedding } from './services/aiService';
 import { applyTheme, getAllThemes, getSavedThemeId, saveCustomTheme, deleteCustomTheme, DEFAULT_THEMES, getLastUsedThemeIdForMode } from './services/themeService';
 import { readDirectory, readDirectoryEnhanced, saveFileToDisk, processPdfFile, extractTextFromFile, parseCsvToQuiz, isExtensionSupported } from './services/fileService';
@@ -50,7 +51,7 @@ const DEFAULT_FILE: MarkdownFile = {
 };
 
 const DEFAULT_AI_CONFIG: AIConfig = {
-  provider: 'gemini', 
+  provider: 'gemini',
   model: 'gemini-2.5-flash',
   embeddingModel: 'text-embedding-004',
   baseUrl: 'http://localhost:11434',
@@ -73,7 +74,11 @@ const DEFAULT_SHORTCUTS: AppShortcut[] = [
   { id: 'polish', label: 'AI Polish', keys: 'Alt+P', actionId: 'ai_polish' },
   { id: 'graph', label: 'Build Graph', keys: 'Alt+G', actionId: 'build_graph' },
   { id: 'smart_organize', label: 'Smart Organize', keys: 'Alt+O', actionId: 'smart_organize' },
-  { id: 'search', label: 'Search Files', keys: 'Ctrl+F', actionId: 'search' }
+  { id: 'search', label: 'Search Files', keys: 'Ctrl+F', actionId: 'search' },
+  // Link Insert shortcuts
+  { id: 'insert_wikilink', label: 'Insert WikiLink', keys: 'Ctrl+Alt+K', actionId: 'insert_wikilink' },
+  { id: 'insert_blockref', label: 'Insert Block Reference', keys: 'Ctrl+Alt+Shift+K', actionId: 'insert_blockref' },
+  { id: 'quick_link', label: 'Quick Link', keys: 'Ctrl+Alt+L', actionId: 'quick_link' }
 ];
 
 interface FileHistory {
@@ -123,19 +128,19 @@ const App: React.FC = () => {
   const toggleTheme = () => {
     const currentTheme = themes.find(t => t.id === activeThemeId);
     if (!currentTheme) return;
-    
+
     const targetType = currentTheme.type === 'dark' ? 'light' : 'dark';
-    
+
     // Smart Toggle: Try to restore the user's last preferred theme for this mode
     const lastUsedId = getLastUsedThemeIdForMode(targetType);
     const lastUsedTheme = lastUsedId ? themes.find(t => t.id === lastUsedId) : undefined;
-    
+
     if (lastUsedTheme) {
-        handleThemeChange(lastUsedTheme.id);
+      handleThemeChange(lastUsedTheme.id);
     } else {
-        // Fallback: Find first available theme of target type
-        const targetTheme = themes.find(t => t.type === targetType);
-        if (targetTheme) handleThemeChange(targetTheme.id);
+      // Fallback: Find first available theme of target type
+      const targetTheme = themes.find(t => t.type === targetType);
+      if (targetTheme) handleThemeChange(targetTheme.id);
     }
   };
 
@@ -172,7 +177,7 @@ const App: React.FC = () => {
     }
     return [DEFAULT_FILE];
   });
-  
+
   const [activeFileId, setActiveFileId] = useState<string>(() => {
     const saved = localStorage.getItem('neon-active-id');
     return saved || 'default-1';
@@ -239,8 +244,8 @@ const App: React.FC = () => {
 
   const [shortcuts, setShortcuts] = useState<AppShortcut[]>(() => {
     try {
-       const saved = localStorage.getItem('neon-shortcuts');
-       return saved ? JSON.parse(saved) : DEFAULT_SHORTCUTS;
+      const saved = localStorage.getItem('neon-shortcuts');
+      return saved ? JSON.parse(saved) : DEFAULT_SHORTCUTS;
     } catch { return DEFAULT_SHORTCUTS; }
   });
 
@@ -372,17 +377,22 @@ const App: React.FC = () => {
     isOpen: false,
     title: '',
     message: '',
-    onConfirm: () => {}
+    onConfirm: () => { }
   });
 
   // Refs
   const filesRef = useRef(files);
   const activeFileIdRef = useRef(activeFileId);
   const editorRef = useRef<HTMLTextAreaElement>(null);
+  const codeMirrorRef = useRef<CodeMirrorEditorRef>(null);
+
+  // Link Insert Modal State
+  const [isLinkInsertOpen, setIsLinkInsertOpen] = useState(false);
+  const [linkInsertMode, setLinkInsertMode] = useState<'wikilink' | 'blockref' | 'quick_link'>('wikilink');
 
   // 同步存储光标位置的 ref（解决 React 18 异步状态批处理导致的竞态条件）
   const cursorPositionsRef = useRef<Map<string, { start: number; end: number }>>(new Map());
-  
+
   // RAG Service
   const [vectorStore] = useState(() => new VectorStore());
 
@@ -394,56 +404,129 @@ const App: React.FC = () => {
     filesRef.current = files;
     activeFileIdRef.current = activeFileId;
   }, [files, activeFileId]);
-  
+
+  // Event listener for editor action events (from CodeMirror shortcuts)
+  useEffect(() => {
+    const handleEditorAction = (e: Event) => {
+      const event = e as CustomEvent;
+      const action = event.detail;
+
+      switch (action) {
+        case 'insert_wikilink':
+          setLinkInsertMode('wikilink');
+          setIsLinkInsertOpen(true);
+          break;
+        case 'insert_blockref':
+          setLinkInsertMode('blockref');
+          setIsLinkInsertOpen(true);
+          break;
+        case 'quick_link':
+          setLinkInsertMode('quick_link');
+          setIsLinkInsertOpen(true);
+          break;
+      }
+    };
+
+    window.addEventListener('editor-action', handleEditorAction as EventListener);
+    return () => window.removeEventListener('editor-action', handleEditorAction as EventListener);
+  }, []);
+
+  // Handle link insert result
+  const handleLinkInsert = useCallback((result: LinkInsertResult) => {
+    const { type, fileName, alias, startLine, endLine, selectedText } = result;
+
+    let linkText = '';
+    switch (type) {
+      case 'wikilink':
+        linkText = alias ? `[[${fileName}|${alias}]]` : `[[${fileName}]]`;
+        break;
+      case 'blockref':
+        if (endLine && endLine > startLine) {
+          linkText = `(((${fileName}#${startLine}-${endLine})))`;
+        } else {
+          linkText = `(((${fileName}#${startLine})))`;
+        }
+        break;
+      case 'quick_link':
+        linkText = alias ? `[[${fileName}|${alias}]]` : `[[${fileName}]]`;
+        break;
+    }
+
+    // Insert into active editor
+    if (useCodeMirror && codeMirrorRef.current) {
+      codeMirrorRef.current.insertText(linkText);
+    } else if (editorRef.current) {
+      const textarea = editorRef.current;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const content = textarea.value;
+
+      textarea.value = content.slice(0, start) + linkText + content.slice(end);
+      textarea.focus();
+      textarea.setSelectionRange(start + linkText.length, start + linkText.length);
+    }
+  }, [useCodeMirror]);
+
+  // Get selected text from active editor
+  const getSelectedText = useCallback(() => {
+    if (useCodeMirror && codeMirrorRef.current) {
+      return codeMirrorRef.current.getSelection() || '';
+    } else if (editorRef.current) {
+      const textarea = editorRef.current;
+      return textarea.value.slice(textarea.selectionStart, textarea.selectionEnd);
+    }
+    return '';
+  }, [useCodeMirror]);
+
   // Update RAG stats whenever files change (only total count)
   useEffect(() => {
-     // Filter out .keep files and empty files from stats
-     const validFiles = files.filter(f => !f.name.endsWith('.keep') && f.content.trim().length > 0);
-     const indexedCount = vectorStore.getStats().indexedFiles;
-     const totalChunks = vectorStore.getStats().totalChunks;
-     
-      setRagStats(prev => ({
-          ...prev,
-          totalFiles: validFiles.length,
-          indexedFiles: indexedCount,
-          totalChunks: totalChunks
-      }));
-   }, [files, vectorStore]);
+    // Filter out .keep files and empty files from stats
+    const validFiles = files.filter(f => !f.name.endsWith('.keep') && f.content.trim().length > 0);
+    const indexedCount = vectorStore.getStats().indexedFiles;
+    const totalChunks = vectorStore.getStats().totalChunks;
 
-   // Update backlinks when active file changes
-   useEffect(() => {
-     if (!activeFile) {
-       setBacklinks([]);
-       return;
-     }
+    setRagStats(prev => ({
+      ...prev,
+      totalFiles: validFiles.length,
+      indexedFiles: indexedCount,
+      totalChunks: totalChunks
+    }));
+  }, [files, vectorStore]);
 
-     const currentFileName = activeFile.name.toLowerCase();
-     const currentFilePath = activeFile.path?.toLowerCase() || '';
+  // Update backlinks when active file changes
+  useEffect(() => {
+    if (!activeFile) {
+      setBacklinks([]);
+      return;
+    }
 
-     const newBacklinks: Backlink[] = [];
+    const currentFileName = activeFile.name.toLowerCase();
+    const currentFilePath = activeFile.path?.toLowerCase() || '';
 
-     files.forEach(file => {
-       if (file.id === activeFileId) return;
+    const newBacklinks: Backlink[] = [];
 
-       const links = extractWikiLinks(file.content);
-       links.forEach(link => {
-         const linkTarget = link.target.toLowerCase();
-         if (linkTarget === currentFileName ||
-             linkTarget === currentFilePath ||
-             linkTarget.endsWith(`/${currentFileName}`) ||
-             linkTarget === `${currentFileName}.md`) {
-           newBacklinks.push({
-             sourceFileId: file.id,
-             sourceFileName: file.name,
-             linkType: 'wikilink',
-             context: link.alias || link.target
-           });
-         }
-       });
-     });
+    files.forEach(file => {
+      if (file.id === activeFileId) return;
 
-     setBacklinks(newBacklinks);
-   }, [activeFileId, files]);
+      const links = extractWikiLinks(file.content);
+      links.forEach(link => {
+        const linkTarget = link.target.toLowerCase();
+        if (linkTarget === currentFileName ||
+          linkTarget === currentFilePath ||
+          linkTarget.endsWith(`/${currentFileName}`) ||
+          linkTarget === `${currentFileName}.md`) {
+          newBacklinks.push({
+            sourceFileId: file.id,
+            sourceFileName: file.name,
+            linkType: 'wikilink',
+            context: link.alias || link.target
+          });
+        }
+      });
+    });
+
+    setBacklinks(newBacklinks);
+  }, [activeFileId, files]);
 
   // Persist Data
   useEffect(() => {
@@ -537,10 +620,10 @@ const App: React.FC = () => {
       try {
         const { initializeContextMemory } = await import('./services/aiService');
         const { LanceDBMemoryStorage } = await import('./src/services/context/long-term-memory');
-        
+
         const longTermStorage = new LanceDBMemoryStorage();
         const initialized = await longTermStorage.initialize();
-        
+
         if (initialized) {
           initializeContextMemory({ longTermStorage });
           console.log('[ContextMemory] Initialized with LanceDB long-term storage');
@@ -590,12 +673,12 @@ const App: React.FC = () => {
       const currentActive = filesRef.current.find(f => f.id === activeId);
 
       if (currentActive && currentActive.isLocal && currentActive.handle) {
-         try {
-           await saveFileToDisk(currentActive);
-           console.log(`[AutoSave] Saved ${currentActive.name} to disk.`);
-         } catch (err) {
-           console.warn(`[AutoSave] Failed to save ${currentActive.name} to disk`, err);
-         }
+        try {
+          await saveFileToDisk(currentActive);
+          console.log(`[AutoSave] Saved ${currentActive.name} to disk.`);
+        } catch (err) {
+          console.warn(`[AutoSave] Failed to save ${currentActive.name} to disk`, err);
+        }
       }
     };
 
@@ -638,46 +721,46 @@ const App: React.FC = () => {
 
   // Memoized Node Click Handler to prevent Graph re-renders
   const handleNodeClick = useCallback((id: string) => {
-      showToast(`Selected: ${id}`);
+    showToast(`Selected: ${id}`);
   }, [showToast]);
 
   const handleCreateItem = (type: 'file' | 'folder', name: string, parentPath: string = '') => {
     const sanitizedName = name.replace(/[\\/:*?"<>|]/g, '-');
     let finalPath = parentPath ? `${parentPath}/${sanitizedName}` : sanitizedName;
-    
+
     // Check for duplicates
     if (files.some(f => (f.path || f.name) === finalPath || (f.path || f.name) === `${finalPath}.md`)) {
-        showToast("An item with this name already exists", true);
-        return;
+      showToast("An item with this name already exists", true);
+      return;
     }
 
     const newFileId = generateId();
 
     if (type === 'folder') {
-        const folderKeeper: MarkdownFile = {
-            id: newFileId,
-            name: '.keep',
-            content: '',
-            lastModified: Date.now(),
-            path: `${finalPath}/.keep`
-        };
-        setFiles(prev => [...prev, folderKeeper]);
-        showToast(`Folder '${sanitizedName}' created`);
+      const folderKeeper: MarkdownFile = {
+        id: newFileId,
+        name: '.keep',
+        content: '',
+        lastModified: Date.now(),
+        path: `${finalPath}/.keep`
+      };
+      setFiles(prev => [...prev, folderKeeper]);
+      showToast(`Folder '${sanitizedName}' created`);
     } else {
-        if (!finalPath.toLowerCase().endsWith('.md')) {
-            finalPath += '.md';
-        }
-        
-        const newFile: MarkdownFile = {
-            id: newFileId,
-            name: sanitizedName,
-            content: '',
-            lastModified: Date.now(),
-            path: finalPath
-        };
-        setFiles(prev => [...prev, newFile]);
-        setActiveFileId(newFile.id);
-        showToast(`File '${sanitizedName}' created`);
+      if (!finalPath.toLowerCase().endsWith('.md')) {
+        finalPath += '.md';
+      }
+
+      const newFile: MarkdownFile = {
+        id: newFileId,
+        name: sanitizedName,
+        content: '',
+        lastModified: Date.now(),
+        path: finalPath
+      };
+      setFiles(prev => [...prev, newFile]);
+      setActiveFileId(newFile.id);
+      showToast(`File '${sanitizedName}' created`);
     }
   };
 
@@ -687,46 +770,46 @@ const App: React.FC = () => {
     if (!sourceFile) return;
 
     const sourcePath = sourceFile.path || sourceFile.name;
-    const isFolder = sourceFile.name === '.keep'; 
-    
+    const isFolder = sourceFile.name === '.keep';
+
     // If it's a folder, the actual "path" of the folder is the parent directory of the .keep file
     const actualSourcePath = isFolder ? sourcePath.substring(0, sourcePath.lastIndexOf('/')) : sourcePath;
     const sourceName = isFolder ? actualSourcePath.split('/').pop() : sourceFile.name;
-    
+
     // 2. Validate Target
     if (isFolder && targetFolderPath) {
-        if (targetFolderPath === actualSourcePath || targetFolderPath.startsWith(actualSourcePath + '/')) {
-            showToast("Cannot move folder into itself", true);
-            return;
-        }
+      if (targetFolderPath === actualSourcePath || targetFolderPath.startsWith(actualSourcePath + '/')) {
+        showToast("Cannot move folder into itself", true);
+        return;
+      }
     }
-    
+
     // 3. Calculate New Paths
     const newFiles = files.map(f => {
-        const currentPath = f.path || f.name;
+      const currentPath = f.path || f.name;
 
-        // Logic for moving a specific File
-        if (!isFolder && f.id === sourceId) {
-             const fileName = currentPath.split('/').pop();
-             const newPath = targetFolderPath ? `${targetFolderPath}/${fileName}` : fileName;
-             // Check if file already exists at dest
-             if (files.some(ex => (ex.path || ex.name) === newPath && ex.id !== sourceId)) {
-                 showToast("File with same name exists in destination", true);
-                 return f; // Cancel for this file
-             }
-             return { ...f, path: newPath! };
+      // Logic for moving a specific File
+      if (!isFolder && f.id === sourceId) {
+        const fileName = currentPath.split('/').pop();
+        const newPath = targetFolderPath ? `${targetFolderPath}/${fileName}` : fileName;
+        // Check if file already exists at dest
+        if (files.some(ex => (ex.path || ex.name) === newPath && ex.id !== sourceId)) {
+          showToast("File with same name exists in destination", true);
+          return f; // Cancel for this file
         }
+        return { ...f, path: newPath! };
+      }
 
-        // Logic for moving a Folder (Recursive rename of all children)
-        if (isFolder && currentPath.startsWith(actualSourcePath!)) {
-            const relativePath = currentPath.substring(actualSourcePath!.length);
-            const newRootPath = targetFolderPath ? `${targetFolderPath}/${sourceName}` : sourceName;
-            return { ...f, path: newRootPath + relativePath };
-        }
+      // Logic for moving a Folder (Recursive rename of all children)
+      if (isFolder && currentPath.startsWith(actualSourcePath!)) {
+        const relativePath = currentPath.substring(actualSourcePath!.length);
+        const newRootPath = targetFolderPath ? `${targetFolderPath}/${sourceName}` : sourceName;
+        return { ...f, path: newRootPath + relativePath };
+      }
 
-        return f;
+      return f;
     });
-    
+
     setFiles(newFiles);
   };
 
@@ -756,38 +839,38 @@ const App: React.FC = () => {
     if (!skipHistory) {
       const now = Date.now();
       if (now - lastEditTimeRef.current > HISTORY_DEBOUNCE) {
-         setHistory(prev => {
-           const fileHist = prev[activeFileId] || { past: [], future: [] };
-           const newPast = [...fileHist.past, activeFile.content];
-           if (newPast.length > MAX_HISTORY) newPast.shift();
+        setHistory(prev => {
+          const fileHist = prev[activeFileId] || { past: [], future: [] };
+          const newPast = [...fileHist.past, activeFile.content];
+          if (newPast.length > MAX_HISTORY) newPast.shift();
 
-           return {
-             ...prev,
-             [activeFileId]: {
-               past: newPast,
-               future: []
-             }
-           };
-         });
+          return {
+            ...prev,
+            [activeFileId]: {
+              past: newPast,
+              future: []
+            }
+          };
+        });
       }
       lastEditTimeRef.current = now;
     }
 
     const updated = files.map(f =>
-      f.id === activeFileId 
-        ? { ...f, content, lastModified: Date.now(), cursorPosition: cursorPosition || f.cursorPosition } 
+      f.id === activeFileId
+        ? { ...f, content, lastModified: Date.now(), cursorPosition: cursorPosition || f.cursorPosition }
         : f
     );
-    
+
     // 同步更新 ref
     if (cursorPosition && activeFileId) {
       cursorPositionsRef.current.set(activeFileId, cursorPosition);
     }
-    
+
     setFiles(updated);
   };
 
-// 保存光标位置
+  // 保存光标位置
   const handleCursorChange = (fileId: string, position: { start: number; end: number }) => {
     // 1. 同步更新 ref（立即生效，不受 React 批处理影响）
     cursorPositionsRef.current.set(fileId, position);
@@ -803,12 +886,12 @@ const App: React.FC = () => {
     if (editorRef.current) {
       editorRef.current.blur();
     }
-    
+
     // 等待一小段时间让 blur 事件完成
     setTimeout(() => {
       // 尝试从多个来源获取光标位置
       let position: { start: number; end: number } | undefined;
-      
+
       // 1. 优先从 editorRef.current 获取（如果是 Plain 编辑器）
       if (!position && activeFileId && editorRef.current) {
         const textarea = editorRef.current;
@@ -820,20 +903,20 @@ const App: React.FC = () => {
           console.log('[Toggle] 从 textarea 获取位置:', position);
         }
       }
-      
+
       // 2. 如果 editorRef 没有，尝试从 cursorPositionsRef 获取
       if (!position && activeFileId) {
         position = cursorPositionsRef.current.get(activeFileId);
         console.log('[Toggle] 从 ref 获取位置:', position);
       }
-      
+
       // 3. 如果都没有，尝试从 files state 获取
       if (!position && activeFileId) {
         const file = files.find(f => f.id === activeFileId);
         position = file?.cursorPosition;
         console.log('[Toggle] 从 files state 获取位置:', position);
       }
-      
+
       // 4. 如果有有效位置，保存它
       if (activeFileId && position) {
         cursorPositionsRef.current.set(activeFileId, position);
@@ -841,7 +924,7 @@ const App: React.FC = () => {
           f.id === activeFileId ? { ...f, cursorPosition: position! } : f
         ));
       }
-      
+
       // 然后切换模式
       setUseCodeMirror(enabled);
     }, 50);
@@ -912,26 +995,26 @@ const App: React.FC = () => {
   const renameActiveFile = (newName: string) => {
     setFiles(prevFiles => prevFiles.map(f => {
       if (f.id === activeFileId) {
-         const oldPath = f.path || f.name;
-         const pathParts = oldPath.replace(/\\/g, '/').split('/');
-         const oldNameWithExt = pathParts[pathParts.length - 1];
+        const oldPath = f.path || f.name;
+        const pathParts = oldPath.replace(/\\/g, '/').split('/');
+        const oldNameWithExt = pathParts[pathParts.length - 1];
 
-         const lastDotIndex = oldNameWithExt.lastIndexOf('.');
-         const ext = lastDotIndex !== -1 ? oldNameWithExt.substring(lastDotIndex) : '';
+        const lastDotIndex = oldNameWithExt.lastIndexOf('.');
+        const ext = lastDotIndex !== -1 ? oldNameWithExt.substring(lastDotIndex) : '';
 
-         let finalName = newName;
-         if (ext && !finalName.toLowerCase().endsWith(ext.toLowerCase())) {
-             if (finalName.indexOf('.') === -1) {
-                 finalName += ext;
-             }
-         }
+        let finalName = newName;
+        if (ext && !finalName.toLowerCase().endsWith(ext.toLowerCase())) {
+          if (finalName.indexOf('.') === -1) {
+            finalName += ext;
+          }
+        }
 
-         pathParts[pathParts.length - 1] = finalName;
-         const newPath = pathParts.join('/');
+        pathParts[pathParts.length - 1] = finalName;
+        const newPath = pathParts.join('/');
 
-         const nameForDisplay = finalName.includes('.') ? finalName.substring(0, finalName.lastIndexOf('.')) : finalName;
+        const nameForDisplay = finalName.includes('.') ? finalName.substring(0, finalName.lastIndexOf('.')) : finalName;
 
-         return { ...f, name: nameForDisplay, path: newPath };
+        return { ...f, name: nameForDisplay, path: newPath };
       }
       return f;
     }));
@@ -1059,23 +1142,23 @@ const App: React.FC = () => {
     const filesToIndex = validFiles; // Index all valid files
 
     try {
-        for (const file of filesToIndex) {
-            if (file.content && file.content.length > 0) {
-                await vectorStore.indexFile(file, aiConfig);
-                // 使用 LanceDB 实时统计
-                const dbStats = await vectorStore.getStatsFromDB();
-                setRagStats(prev => ({
-                    ...prev,
-                    totalFiles: dbStats.totalFiles,
-                    indexedFiles: dbStats.indexedFiles,
-                    totalChunks: dbStats.totalChunks
-                }));
-            }
+      for (const file of filesToIndex) {
+        if (file.content && file.content.length > 0) {
+          await vectorStore.indexFile(file, aiConfig);
+          // 使用 LanceDB 实时统计
+          const dbStats = await vectorStore.getStatsFromDB();
+          setRagStats(prev => ({
+            ...prev,
+            totalFiles: dbStats.totalFiles,
+            indexedFiles: dbStats.indexedFiles,
+            totalChunks: dbStats.totalChunks
+          }));
         }
+      }
     } catch (e) {
-        console.error("Indexing error", e);
+      console.error("Indexing error", e);
     } finally {
-        setRagStats(prev => ({ ...prev, isIndexing: false }));
+      setRagStats(prev => ({ ...prev, isIndexing: false }));
     }
   };
 
@@ -1162,7 +1245,7 @@ const App: React.FC = () => {
 
         let path = file.webkitRelativePath || file.name;
         if (path.match(/\.(pdf|docx|doc)$/i)) {
-            path = path.replace(/\.(pdf|docx|doc)$/i, '.md');
+          path = path.replace(/\.(pdf|docx|doc)$/i, '.md');
         }
 
         newFiles.push({
@@ -1186,10 +1269,10 @@ const App: React.FC = () => {
         let combinedFiles: MarkdownFile[] = [];
 
         setFiles(prev => {
-           const existingPaths = new Set(prev.map(f => f.path || f.name));
-           const uniqueNew = newFiles.filter(f => !existingPaths.has(f.path || f.name));
-           combinedFiles = [...prev, ...uniqueNew];
-           return combinedFiles;
+          const existingPaths = new Set(prev.map(f => f.path || f.name));
+          const uniqueNew = newFiles.filter(f => !existingPaths.has(f.path || f.name));
+          combinedFiles = [...prev, ...uniqueNew];
+          return combinedFiles;
         });
 
         setActiveFileId(newFiles[0].id);
@@ -1197,7 +1280,7 @@ const App: React.FC = () => {
         // Trigger indexing outside the state setter to avoid side-effects and double counting
         // We pass the new files specifically to be indexed
         if (combinedFiles.length > 0) {
-           handleIndexKnowledgeBase(combinedFiles);
+          handleIndexKnowledgeBase(combinedFiles);
         }
 
         showToast(`${t.filesLoaded}: ${newFiles.length}`);
@@ -1205,10 +1288,10 @@ const App: React.FC = () => {
         showToast(t.noFilesFound);
       }
     } catch (e: any) {
-       showToast(e.message, true);
+      showToast(e.message, true);
     } finally {
-       setAiState(prev => ({ ...prev, isThinking: false, message: null }));
-       setOcrStats({ isProcessing: false, totalPages: 0, processedPages: 0 });
+      setAiState(prev => ({ ...prev, isThinking: false, message: null }));
+      setOcrStats({ isProcessing: false, totalPages: 0, processedPages: 0 });
     }
   };
 
@@ -1238,8 +1321,8 @@ const App: React.FC = () => {
       let updatedList: MarkdownFile[] = [];
       setFiles(prev => {
         if (prev.some(f => (f.path || f.name) === newFile.path)) {
-            updatedList = prev;
-            return prev;
+          updatedList = prev;
+          return prev;
         }
         updatedList = [...prev, newFile];
         return updatedList;
@@ -1247,7 +1330,7 @@ const App: React.FC = () => {
 
       // Index outside state setter
       if (updatedList.length > 0) {
-         handleIndexKnowledgeBase(updatedList);
+        handleIndexKnowledgeBase(updatedList);
       }
 
       setActiveFileId(newFile.id);
@@ -1264,24 +1347,24 @@ const App: React.FC = () => {
     setAiState({ isThinking: true, message: t.processingFile, error: null });
     try {
       if (file.name.toLowerCase().endsWith('.csv')) {
-         const csvQuiz = await parseCsvToQuiz(file);
-         if (csvQuiz) {
-             const textContent = await extractTextFromFile(file, aiConfig.apiKey);
-             setQuizContext(textContent); 
-             setCurrentQuiz(csvQuiz);
-             setViewMode(ViewMode.Quiz);
-             showToast(t.importSuccess);
-             setAiState(prev => ({ ...prev, isThinking: false, message: null }));
-             return;
-         }
+        const csvQuiz = await parseCsvToQuiz(file);
+        if (csvQuiz) {
+          const textContent = await extractTextFromFile(file, aiConfig.apiKey);
+          setQuizContext(textContent);
+          setCurrentQuiz(csvQuiz);
+          setViewMode(ViewMode.Quiz);
+          showToast(t.importSuccess);
+          setAiState(prev => ({ ...prev, isThinking: false, message: null }));
+          return;
+        }
       }
 
       const textContent = await extractTextFromFile(file, aiConfig.apiKey);
       setQuizContext(textContent);
-      
+
       setAiState({ isThinking: true, message: t.analyzingQuiz, error: null });
       const quiz = await extractQuizFromRawContent(textContent, aiConfig);
-      
+
       setCurrentQuiz(quiz);
       setViewMode(ViewMode.Quiz);
       showToast(t.importSuccess);
@@ -1380,7 +1463,7 @@ const App: React.FC = () => {
     const currentContent = getActivePaneContent();
     const existingTags = extractTags(currentContent);
     const newTags = tags.filter(tag => !existingTags.includes(tag));
-    
+
     if (newTags.length === 0) {
       showToast('No new tags to add', false);
       return;
@@ -1393,26 +1476,26 @@ const App: React.FC = () => {
   };
 
   const handleTextFormat = (startTag: string, endTag: string) => {
-      const textarea = editorRef.current;
-      if (!textarea) return;
+    const textarea = editorRef.current;
+    if (!textarea) return;
 
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-      const content = activeFile.content;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const content = activeFile.content;
 
-      const selectedText = content.substring(start, end);
-      const newText = `${startTag}${selectedText}${endTag}`;
+    const selectedText = content.substring(start, end);
+    const newText = `${startTag}${selectedText}${endTag}`;
 
-      const newContent = content.substring(0, start) + newText + content.substring(end);
+    const newContent = content.substring(0, start) + newText + content.substring(end);
 
-      updateActiveFile(newContent);
+    updateActiveFile(newContent);
 
-      setTimeout(() => {
-          if (editorRef.current) {
-              editorRef.current.focus();
-              editorRef.current.setSelectionRange(start + startTag.length, end + startTag.length);
-          }
-      }, 0);
+    setTimeout(() => {
+      if (editorRef.current) {
+        editorRef.current.focus();
+        editorRef.current.setSelectionRange(start + startTag.length, end + startTag.length);
+      }
+    }, 0);
   };
 
   // --- Phase 8 Handler Functions ---
@@ -1495,25 +1578,25 @@ const App: React.FC = () => {
 
   const handleInsertSnippet = (content: string) => {
     if (!activeFile) return;
-    
+
     // 获取当前光标位置，默认为文件末尾
     const cursorPos = activeFile.cursorPosition || {
       start: activeFile.content.length,
       end: activeFile.content.length
     };
-    
+
     // 在光标位置插入内容
     const before = activeFile.content.substring(0, cursorPos.start);
     const after = activeFile.content.substring(cursorPos.end);
-    
+
     const newContent = before + content + after;
-    
+
     // 计算新的光标位置（插入内容之后）
     const newCursorPos = {
       start: cursorPos.start + content.length,
       end: cursorPos.start + content.length
     };
-    
+
     updateActiveFile(newContent, newCursorPos);
     showToast('Snippet inserted');
   };
@@ -1601,89 +1684,89 @@ const App: React.FC = () => {
 
   // -- AI Actions Wrappers for Shortcuts --
   const performPolish = async () => {
-     // 使用活动面板的文件内容
-     const currentContent = getActivePaneContent();
+    // 使用活动面板的文件内容
+    const currentContent = getActivePaneContent();
 
-     // 验证内容非空
-     if (!currentContent.trim()) {
-        showToast(t.polishEmptyError || "Please add content before polishing", true);
-        return;
-     }
+    // 验证内容非空
+    if (!currentContent.trim()) {
+      showToast(t.polishEmptyError || "Please add content before polishing", true);
+      return;
+    }
 
-     try {
-        saveSnapshot();
-        setAiState({ isThinking: true, message: "Polishing...", error: null });
-        const res = await polishContent(currentContent, aiConfig);
-        // Show DiffView instead of directly applying changes
-        setDiffOriginal(currentContent);
-        setDiffModified(res);
-        setViewMode(ViewMode.Diff);
-        showToast("Polish complete - review changes");
-     } catch(e:any) { showToast(e.message, true); }
-     finally { setAiState(p => ({...p, isThinking: false, message: null})); }
+    try {
+      saveSnapshot();
+      setAiState({ isThinking: true, message: "Polishing...", error: null });
+      const res = await polishContent(currentContent, aiConfig);
+      // Show DiffView instead of directly applying changes
+      setDiffOriginal(currentContent);
+      setDiffModified(res);
+      setViewMode(ViewMode.Diff);
+      showToast("Polish complete - review changes");
+    } catch (e: any) { showToast(e.message, true); }
+    finally { setAiState(p => ({ ...p, isThinking: false, message: null })); }
   };
 
   const performGraph = async (useActiveFileOnly: boolean = false, graphTypeOverride?: 'concept' | 'filelink') => {
-      const selectedGraphType = graphTypeOverride || graphType;
-      
-      try {
-        setAiState({ isThinking: true, message: selectedGraphType === 'filelink' ? "Building File Links..." : "Analyzing Graph...", error: null });
+    const selectedGraphType = graphTypeOverride || graphType;
 
-        // 使用活动面板的文件内容
-        const currentContent = getActivePaneContent();
+    try {
+      setAiState({ isThinking: true, message: selectedGraphType === 'filelink' ? "Building File Links..." : "Analyzing Graph...", error: null });
 
-        let filesToAnalyze: MarkdownFile[];
-        if (useActiveFileOnly && activeFile) {
-          filesToAnalyze = [{ ...activeFile, content: currentContent }];
-        } else {
-          // 对于多文件分析，更新当前活动文件的内容
-          if (currentContent && activeFile) {
-            filesToAnalyze = files.map(f =>
-              f.id === activeFile.id ? { ...f, content: currentContent } : f
-            );
-          } else {
-            filesToAnalyze = files;
-          }
-        }
+      // 使用活动面板的文件内容
+      const currentContent = getActivePaneContent();
 
-        let data: GraphData;
-        
-        if (selectedGraphType === 'filelink') {
-          // 基于 WikiLink 生成文件级链接图谱
-          const index = buildKnowledgeIndexFromFiles(filesToAnalyze);
-          data = generateFileLinkGraph(filesToAnalyze, index);
-        } else {
-          // AI 生成概念级知识图谱
-          data = await generateKnowledgeGraph(filesToAnalyze, aiConfig);
-        }
-        
-        setGraphData(data);
-        setGraphType(selectedGraphType);
-        setViewMode(ViewMode.Graph);
-      } catch(e:any) { showToast(e.message, true); }
-      finally { setAiState(p => ({...p, isThinking: false, message: null})); }
-   };
-
-  const performSynthesize = async () => {
-     try {
-        setAiState({ isThinking: true, message: "Synthesizing Knowledge Base...", error: null });
-
-        // 使用活动面板的文件内容更新当前活动文件
-        const currentContent = getActivePaneContent();
-        let filesToSynthesize = files;
+      let filesToAnalyze: MarkdownFile[];
+      if (useActiveFileOnly && activeFile) {
+        filesToAnalyze = [{ ...activeFile, content: currentContent }];
+      } else {
+        // 对于多文件分析，更新当前活动文件的内容
         if (currentContent && activeFile) {
-          filesToSynthesize = files.map(f =>
+          filesToAnalyze = files.map(f =>
             f.id === activeFile.id ? { ...f, content: currentContent } : f
           );
+        } else {
+          filesToAnalyze = files;
         }
+      }
 
-        const summary = await synthesizeKnowledgeBase(filesToSynthesize, aiConfig);
-        const newFile: MarkdownFile = { id: generateId(), name: 'Master-Summary', content: summary, lastModified: Date.now(), path: 'Master-Summary.md' };
-        setFiles([...files, newFile]);
-        setActiveFileId(newFile.id);
-        setViewMode(ViewMode.Preview);
-     } catch(e:any) { showToast(e.message, true); }
-     finally { setAiState(p => ({...p, isThinking: false, message: null})); }
+      let data: GraphData;
+
+      if (selectedGraphType === 'filelink') {
+        // 基于 WikiLink 生成文件级链接图谱
+        const index = buildKnowledgeIndexFromFiles(filesToAnalyze);
+        data = generateFileLinkGraph(filesToAnalyze, index);
+      } else {
+        // AI 生成概念级知识图谱
+        data = await generateKnowledgeGraph(filesToAnalyze, aiConfig);
+      }
+
+      setGraphData(data);
+      setGraphType(selectedGraphType);
+      setViewMode(ViewMode.Graph);
+    } catch (e: any) { showToast(e.message, true); }
+    finally { setAiState(p => ({ ...p, isThinking: false, message: null })); }
+  };
+
+  const performSynthesize = async () => {
+    try {
+      setAiState({ isThinking: true, message: "Synthesizing Knowledge Base...", error: null });
+
+      // 使用活动面板的文件内容更新当前活动文件
+      const currentContent = getActivePaneContent();
+      let filesToSynthesize = files;
+      if (currentContent && activeFile) {
+        filesToSynthesize = files.map(f =>
+          f.id === activeFile.id ? { ...f, content: currentContent } : f
+        );
+      }
+
+      const summary = await synthesizeKnowledgeBase(filesToSynthesize, aiConfig);
+      const newFile: MarkdownFile = { id: generateId(), name: 'Master-Summary', content: summary, lastModified: Date.now(), path: 'Master-Summary.md' };
+      setFiles([...files, newFile]);
+      setActiveFileId(newFile.id);
+      setViewMode(ViewMode.Preview);
+    } catch (e: any) { showToast(e.message, true); }
+    finally { setAiState(p => ({ ...p, isThinking: false, message: null })); }
   };
 
   const handleChatMessage = async (text: string) => {
@@ -2187,59 +2270,59 @@ IMPORTANT:
   };
 
   const handleCompactChat = async () => {
-     if (chatMessages.length <= 3) {
-         showToast("Not enough history to compact.", true);
-         return;
-     }
+    if (chatMessages.length <= 3) {
+      showToast("Not enough history to compact.", true);
+      return;
+    }
 
-     setAiState({ isThinking: true, message: "Analyzing conversation for permanent memory...", error: null });
+    setAiState({ isThinking: true, message: "Analyzing conversation for permanent memory...", error: null });
 
-     try {
-         // Step 1: Try to auto-create permanent memory before compacting
-         // This preserves important insights from the session
-         if (chatMessages.length >= 5) {
-           const sessionId = `session_${Date.now()}`;
+    try {
+      // Step 1: Try to auto-create permanent memory before compacting
+      // This preserves important insights from the session
+      if (chatMessages.length >= 5) {
+        const sessionId = `session_${Date.now()}`;
 
-           // Create embedding service using getEmbedding from aiService
-           const embeddingService = async (text: string): Promise<number[]> => {
-             try {
-               return await getEmbedding(text, aiConfig);
-             } catch (error) {
-               console.warn('[AutoMemory] Embedding failed:', error);
-               return [];
-             }
-           };
+        // Create embedding service using getEmbedding from aiService
+        const embeddingService = async (text: string): Promise<number[]> => {
+          try {
+            return await getEmbedding(text, aiConfig);
+          } catch (error) {
+            console.warn('[AutoMemory] Embedding failed:', error);
+            return [];
+          }
+        };
 
-           // Initialize persistent memory service
-           await initPersistentMemory();
+        // Initialize persistent memory service
+        await initPersistentMemory();
 
-           const memory = await autoCreateMemoryFromSession(
-             sessionId,
-             chatMessages.map(m => ({
-               role: m.role as 'user' | 'assistant' | 'system',
-               content: m.content,
-               timestamp: m.timestamp
-             })),
-             embeddingService
-           );
+        const memory = await autoCreateMemoryFromSession(
+          sessionId,
+          chatMessages.map(m => ({
+            role: m.role as 'user' | 'assistant' | 'system',
+            content: m.content,
+            timestamp: m.timestamp
+          })),
+          embeddingService
+        );
 
-           if (memory) {
-             showToast(lang === 'zh'
-               ? `已创建永久记忆: ${memory.topics.slice(0, 2).join(', ')}`
-               : `Created permanent memory: ${memory.topics.slice(0, 2).join(', ')}`);
-           }
-         }
+        if (memory) {
+          showToast(lang === 'zh'
+            ? `已创建永久记忆: ${memory.topics.slice(0, 2).join(', ')}`
+            : `Created permanent memory: ${memory.topics.slice(0, 2).join(', ')}`);
+        }
+      }
 
-         // Step 2: Compact the conversation
-         setAiState({ isThinking: true, message: "Summarizing conversation...", error: null });
-         const compacted = await compactConversation(chatMessages, aiConfig);
-         setChatMessages(compacted);
-         showToast("Context compacted.");
-     } catch(e: any) {
-         showToast(e.message, true);
-     } finally {
-         setAiState(prev => ({ ...prev, isThinking: false, message: null }));
-     }
+      // Step 2: Compact the conversation
+      setAiState({ isThinking: true, message: "Summarizing conversation...", error: null });
+      const compacted = await compactConversation(chatMessages, aiConfig);
+      setChatMessages(compacted);
+      showToast("Context compacted.");
+    } catch (e: any) {
+      showToast(e.message, true);
+    } finally {
+      setAiState(prev => ({ ...prev, isThinking: false, message: null }));
+    }
   };
 
   // --- Keyboard Shortcuts Logic ---
@@ -2287,6 +2370,19 @@ IMPORTANT:
       case 'search':
         setIsSearchOpen(true);
         break;
+      // Link Insert shortcuts
+      case 'insert_wikilink':
+        setLinkInsertMode('wikilink');
+        setIsLinkInsertOpen(true);
+        break;
+      case 'insert_blockref':
+        setLinkInsertMode('blockref');
+        setIsLinkInsertOpen(true);
+        break;
+      case 'quick_link':
+        setLinkInsertMode('quick_link');
+        setIsLinkInsertOpen(true);
+        break;
       default:
         console.warn(`Unknown action ID: ${actionId}`);
     }
@@ -2294,29 +2390,29 @@ IMPORTANT:
 
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
-       // Construct key string from event
-       const parts = [];
-       if (e.ctrlKey) parts.push('Ctrl');
-       if (e.metaKey) parts.push('Cmd');
-       if (e.altKey) parts.push('Alt');
-       if (e.shiftKey) parts.push('Shift');
-       
-       let key = e.key;
-       if (key === ' ') key = 'Space';
-       if (key.length === 1) key = key.toUpperCase();
-       
-       // Don't add key if it is a modifier
-       if (!['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) {
-         parts.push(key);
-       }
-       
-       const combo = parts.join('+');
-       
-       const match = shortcuts.find(s => s.keys === combo);
-       if (match) {
-         e.preventDefault();
-         handleShortcutCommand(match.actionId);
-       }
+      // Construct key string from event
+      const parts = [];
+      if (e.ctrlKey) parts.push('Ctrl');
+      if (e.metaKey) parts.push('Cmd');
+      if (e.altKey) parts.push('Alt');
+      if (e.shiftKey) parts.push('Shift');
+
+      let key = e.key;
+      if (key === ' ') key = 'Space';
+      if (key.length === 1) key = key.toUpperCase();
+
+      // Don't add key if it is a modifier
+      if (!['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) {
+        parts.push(key);
+      }
+
+      const combo = parts.join('+');
+
+      const match = shortcuts.find(s => s.keys === combo);
+      if (match) {
+        e.preventDefault();
+        handleShortcutCommand(match.actionId);
+      }
     };
 
     window.addEventListener('keydown', handleGlobalKeyDown);
@@ -2324,9 +2420,9 @@ IMPORTANT:
   }, [shortcuts, activeFile, aiState.isThinking]); // Dependencies crucial for actions to access latest state
 
   const handleUpdateShortcut = (id: string, keys: string) => {
-     setShortcuts(prev => prev.map(s => s.id === id ? { ...s, keys } : s));
+    setShortcuts(prev => prev.map(s => s.id === id ? { ...s, keys } : s));
   };
-  
+
   const handleResetShortcuts = () => {
     setShortcuts(DEFAULT_SHORTCUTS);
   };
@@ -2343,7 +2439,7 @@ IMPORTANT:
       if (normalizedTarget.startsWith('exam:')) {
         const examName = target.substring(5).trim();
         // Find exam file or create navigation
-        const examFile = files.find(f => 
+        const examFile = files.find(f =>
           f.name.toLowerCase() === examName.toLowerCase() ||
           f.name.toLowerCase().includes(examName.toLowerCase())
         );
@@ -2366,11 +2462,11 @@ IMPORTANT:
       const targetFile = files.find(f => {
         const name = f.name.toLowerCase();
         const path = f.path?.toLowerCase() || '';
-        return name === normalizedTarget || 
-               path.endsWith(`/${normalizedTarget}`) ||
-               name.includes(`/${normalizedTarget}`) ||
-               name === `${normalizedTarget}.md` ||
-               path === `${normalizedTarget}.md`;
+        return name === normalizedTarget ||
+          path.endsWith(`/${normalizedTarget}`) ||
+          name.includes(`/${normalizedTarget}`) ||
+          name === `${normalizedTarget}.md` ||
+          path === `${normalizedTarget}.md`;
       });
 
       if (targetFile) {
@@ -2442,30 +2538,30 @@ IMPORTANT:
       />
 
       <div className="flex-1 flex flex-col h-full overflow-hidden relative">
-        <Toolbar 
-          viewMode={viewMode} 
-          setViewMode={setViewMode} 
+        <Toolbar
+          viewMode={viewMode}
+          setViewMode={setViewMode}
           onClear={() => updateActiveFile('')}
           onExport={handleExport}
           onAIPolish={performPolish}
           onAIExpand={async () => {
-              // 使用活动面板的文件内容
-              const currentContent = getActivePaneContent();
+            // 使用活动面板的文件内容
+            const currentContent = getActivePaneContent();
 
-              // 验证内容非空
-              if (!currentContent.trim()) {
-                 showToast(t.polishEmptyError || "Please add content before expanding", true);
-                 return;
-              }
+            // 验证内容非空
+            if (!currentContent.trim()) {
+              showToast(t.polishEmptyError || "Please add content before expanding", true);
+              return;
+            }
 
-              try {
-                saveSnapshot();
-                setAiState({ isThinking: true, message: "Expanding...", error: null });
-                const res = await expandContent(currentContent, aiConfig);
-                updateActiveFile(res);
-                showToast("Expanded!");
-             } catch(e:any) { showToast(e.message, true); }
-             finally { setAiState(p => ({...p, isThinking: false, message: null})); }
+            try {
+              saveSnapshot();
+              setAiState({ isThinking: true, message: "Expanding...", error: null });
+              const res = await expandContent(currentContent, aiConfig);
+              updateActiveFile(res);
+              showToast("Expanded!");
+            } catch (e: any) { showToast(e.message, true); }
+            finally { setAiState(p => ({ ...p, isThinking: false, message: null })); }
           }}
           onBuildGraph={performGraph}
           onSynthesize={performSynthesize}
@@ -2489,7 +2585,7 @@ IMPORTANT:
           onSplitModeChange={setSplitMode}
           onVoiceTranscription={() => setIsVoiceTranscriptionOpen(true)}
           onOpenQuestionBank={() => setIsQuestionBankOpen(true)}
-useCodeMirror={useCodeMirror}
+          useCodeMirror={useCodeMirror}
           onToggleCodeMirror={handleToggleCodeMirror}
         />
 
@@ -2505,21 +2601,21 @@ useCodeMirror={useCodeMirror}
         />
 
         <div className="flex-1 flex flex-col overflow-hidden relative">
-          
+
           {viewMode === ViewMode.Graph && (
-            <KnowledgeGraph 
+            <KnowledgeGraph
               key={activeThemeId}
-              data={graphData} 
-              theme={currentThemeObj?.type || 'dark'} 
-              onNodeClick={handleNodeClick} 
+              data={graphData}
+              theme={currentThemeObj?.type || 'dark'}
+              onNodeClick={handleNodeClick}
             />
           )}
 
           {viewMode === ViewMode.Quiz && currentQuiz && (
-            <QuizPanel 
-              quiz={currentQuiz} 
-              aiConfig={aiConfig} 
-              theme={currentThemeObj?.type || 'dark'} 
+            <QuizPanel
+              quiz={currentQuiz}
+              aiConfig={aiConfig}
+              theme={currentThemeObj?.type || 'dark'}
               onClose={() => setViewMode(ViewMode.Editor)}
               contextContent={quizContext || activeFile.content}
               language={lang}
@@ -2578,9 +2674,21 @@ useCodeMirror={useCodeMirror}
               splitMode={splitMode}
               language={lang}
               editorRef={editorRef}
+              codeMirrorRef={codeMirrorRef}
               useCodeMirror={useCodeMirror}
             />
           )}
+
+          {/* Link Insert Modal */}
+          <LinkInsertModal
+            isOpen={isLinkInsertOpen}
+            mode={linkInsertMode}
+            files={files}
+            currentFileId={activeFileId}
+            onInsert={handleLinkInsert}
+            onClose={() => setIsLinkInsertOpen(false)}
+            selectedText={getSelectedText()}
+          />
 
           {/* Backlinks Panel */}
           {backlinks.length > 0 && (viewMode === ViewMode.Editor || viewMode === ViewMode.Split || viewMode === ViewMode.Preview) && (
@@ -2617,7 +2725,7 @@ useCodeMirror={useCodeMirror}
           )}
         </div>
       </div>
-      
+
       <AISettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
@@ -2642,7 +2750,7 @@ useCodeMirror={useCodeMirror}
         activeThemeId={activeThemeId}
         onSelectTheme={handleThemeChange}
         onImportTheme={(t) => { saveCustomTheme(t); setThemes(getAllThemes()); handleThemeChange(t.id); }}
-        onDeleteTheme={(id) => { deleteCustomTheme(id); setThemes(getAllThemes()); if(activeThemeId === id) handleThemeChange(getAllThemes()[0].id); }}
+        onDeleteTheme={(id) => { deleteCustomTheme(id); setThemes(getAllThemes()); if (activeThemeId === id) handleThemeChange(getAllThemes()[0].id); }}
         language={lang}
         shortcuts={shortcuts}
         onUpdateShortcut={handleUpdateShortcut}
@@ -2715,7 +2823,7 @@ useCodeMirror={useCodeMirror}
         onCreateBank={handleCreateQuestionBank}
         onDeleteBank={handleDeleteQuestionBank}
         onUpdateBank={handleUpdateQuestionBank}
-        onAddQuestionsToBank={async () => {}}
+        onAddQuestionsToBank={async () => { }}
         onGenerateQuestions={handleGenerateQuestions}
         onRemoveQuestion={handleRemoveQuestion}
         files={files}
@@ -2741,7 +2849,7 @@ useCodeMirror={useCodeMirror}
         file={smartOrganizeFile || DEFAULT_FILE}
         aiConfig={aiConfig}
         onUpdateFile={handleSmartOrganizeUpdate}
-        onApplySuggestions={() => {}}
+        onApplySuggestions={() => { }}
         allFiles={files}
         language={lang}
       />
@@ -2761,6 +2869,16 @@ useCodeMirror={useCodeMirror}
         onCreatePlan={handleCreatePlan}
         onDeletePlan={handleDeletePlan}
         language={lang}
+      />
+
+      <LinkInsertModal
+        isOpen={isLinkInsertOpen}
+        mode={linkInsertMode}
+        files={files}
+        currentFileId={activeFileId}
+        onInsert={handleLinkInsert}
+        onClose={() => setIsLinkInsertOpen(false)}
+        selectedText={getSelectedText()}
       />
     </div>
   );

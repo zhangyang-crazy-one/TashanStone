@@ -420,6 +420,46 @@ export interface SearchResult {
 }
 
 // ========================
+// ========================
+// Editor Types
+// ========================
+
+// CodeMirror Editor Ref Interface (view is typed as any to avoid CodeMirror dependency)
+export interface CodeMirrorEditorRef {
+  view: any;
+  insertText: (text: string) => void;
+  getSelection: () => string;
+}
+
+// Action ID for editor actions
+export type ActionId =
+  | 'insert_wikilink'
+  | 'insert_blockref'
+  | 'quick_link'
+  | 'toggleBold'
+  | 'toggleItalic'
+  | 'toggleCode'
+  | 'toggleHeading'
+  | 'toggleList'
+  | 'toggleLink'
+  | 'splitView'
+  | 'aiChat'
+  | 'settings'
+  | 'undo'
+  | 'redo';
+
+// Link Insert Result
+export interface LinkInsertResult {
+  type: 'wikilink' | 'blockref' | 'quick_link';
+  fileName: string;
+  fileId?: string;
+  alias?: string;
+  startLine?: number;
+  endLine?: number;
+  selectedText?: string;
+}
+
+// ========================
 // Utilities & System
 // ========================
 

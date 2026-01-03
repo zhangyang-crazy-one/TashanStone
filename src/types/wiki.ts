@@ -45,9 +45,14 @@ export const extractWikiLinks = (content: string): WikiLink[] => {
   let match;
 
   while ((match = regex.exec(content)) !== null) {
+    // Remove leading/trailing curly braces from target and alias
+    // This handles formats like [[{target}|{alias}]]
+    let target = match[1].trim().replace(/^\{/, '').replace(/\}$/, '');
+    let alias = match[2]?.trim().replace(/^\{/, '').replace(/\}$/, '');
+
     links.push({
-      target: match[1].trim(),
-      alias: match[2]?.trim(),
+      target,
+      alias,
       position: {
         start: match.index,
         end: match.index + match[0].length
@@ -59,25 +64,29 @@ export const extractWikiLinks = (content: string): WikiLink[] => {
 };
 
 export const extractBlockReferences = (content: string): BlockReference[] => {
-  // 支持两种格式: <<filename:line>> 和 <<{filename}:{line}>>
-  const regex = /<<\{?([^:}]+)\}?:\{?(\d+)\}?(?:-\{?(\d+)\}?)?>>(?=(?:[^`]*`[^`]*`)*[^`]*$)/g;
+  // 支持三种格式: <<filename:line>>, <<{filename}:{line}>>, (((filename#line)))
+  const regex = /(?:<<\{?([^:}]+)\}?:\{?(\d+)\}?(?:-\{?(\d+)\}?)?>>|\(\(\(([^#)]+)#(\d+)(?:-(\d+))?\)\)\))(?=(?:[^`]*`[^`]*`)*[^`]*$)/g;
   const refs: BlockReference[] = [];
   let match;
 
   while ((match = regex.exec(content)) !== null) {
-    const startLine = parseInt(match[2], 10);
-    const endLine = match[3] ? parseInt(match[3], 10) : undefined;
+    // Handle both formats: match[1-3] for <<>> format, match[4-6] for ((())) format
+    const target = (match[1] || match[4])?.trim();
+    const startLine = parseInt(match[2] || match[5], 10);
+    const endLine = match[3] ? parseInt(match[3], 10) : (match[6] ? parseInt(match[6], 10) : undefined);
 
-    refs.push({
-      target: match[1].trim(),
-      startLine,
-      endLine,
-      blockContent: '',
-      position: {
-        start: match.index,
-        end: match.index + match[0].length
-      }
-    });
+    if (target && !isNaN(startLine)) {
+      refs.push({
+        target,
+        startLine,
+        endLine,
+        blockContent: '',
+        position: {
+          start: match.index,
+          end: match.index + match[0].length
+        }
+      });
+    }
   }
 
   return refs;
@@ -87,15 +96,18 @@ export const extractBlockReferencesWithContent = (
   content: string,
   files: Array<{ name: string; path?: string; content: string }>
 ): BlockReference[] => {
-  // 支持两种格式: <<filename:line>> 和 <<{filename}:{line}>>
-  const regex = /<<\{?([^:}]+)\}?:\{?(\d+)\}?(?:-\{?(\d+)\}?)?>>(?=(?:[^`]*`[^`]*`)*[^`]*$)/g;
+  // 支持三种格式: <<filename:line>>, <<{filename}:{line}>>, (((filename#line)))
+  const regex = /(?:<<\{?([^:}]+)\}?:\{?(\d+)\}?(?:-\{?(\d+)\}?)?>>|\(\(\(([^#)]+)#(\d+)(?:-(\d+))?\)\)\))(?=(?:[^`]*`[^`]*`)*[^`]*$)/g;
   const refs: BlockReference[] = [];
   let match;
 
   while ((match = regex.exec(content)) !== null) {
-    const targetName = match[1].trim();
-    const startLine = parseInt(match[2], 10);
-    const endLine = match[3] ? parseInt(match[3], 10) : startLine;
+    // Handle both formats: match[1-3] for <<>> format, match[4-6] for ((())) format
+    const targetName = (match[1] || match[4])?.trim();
+    const startLine = parseInt(match[2] || match[5], 10);
+    const endLine = match[3] ? parseInt(match[3], 10) : (match[6] ? parseInt(match[6], 10) : startLine);
+
+    if (!targetName || isNaN(startLine)) continue;
 
     const targetFile = files.find(f => {
       const name = f.name.toLowerCase();
@@ -156,7 +168,7 @@ export const preprocessWikiLinks = (content: string): string => {
 
 export const formatBlockReference = (target: string, startLine: number, endLine?: number): string => {
   if (endLine && endLine > startLine) {
-    return `<<${target}:${startLine}-${endLine}>>`;
+    return `(((${target}#${startLine}-${endLine})))`;
   }
-  return `<<${target}:${startLine}>>`;
+  return `(((${target}#${startLine})))`;
 };

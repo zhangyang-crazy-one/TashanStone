@@ -194,7 +194,10 @@
       "Bash(npx vite:*)",
       "Bash(cmd /c \"if exist node_modules\\\\.vite rmdir /s /q node_modules\\\\.vite && echo Cache cleared\")",
       "Bash(npm run electron:dev)",
-      "Bash(npm run)"
+      "Bash(npm run)",
+      "Skill(platform-build)",
+      "Bash(cmd:*)",
+      "Bash(C:/Users/74088/scoop/apps/gh/current/bin/gh.exe release view v1.7.0 --repo zhangyang-crazy-one/TashanStone)"
     ],
     "deny": [],
     "ask": []
@@ -203,5 +206,8 @@
     "type": "command",
     "command": "C:\\Users\\Mr.zhang\\.claude\\ccline\\ccline.exe",
     "padding": 0
+  },
+  "enabledPlugins": {
+    "context7@claude-plugins-official": true
   }
 }

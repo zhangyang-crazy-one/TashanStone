@@ -46,22 +46,22 @@ interface OutlineItem {
 
 // Tree Node Interface
 interface FileTreeNode {
-    id: string; // unique ID
-    name: string;
-    path: string;
-    type: 'file' | 'folder';
-    fileId?: string;
-    children?: FileTreeNode[];
-    level?: number;
-    isMemory?: boolean;  // Mark as memory file
-    memoryImportance?: 'low' | 'medium' | 'high';  // Memory importance level
+  id: string; // unique ID
+  name: string;
+  path: string;
+  type: 'file' | 'folder';
+  fileId?: string;
+  children?: FileTreeNode[];
+  level?: number;
+  isMemory?: boolean;  // Mark as memory file
+  memoryImportance?: 'low' | 'medium' | 'high';  // Memory importance level
 }
 
 // Flat Node Interface for Virtual-ish Rendering
 interface FlatNode extends FileTreeNode {
-    level: number;
-    isExpanded?: boolean;
-    hasChildren?: boolean;
+  level: number;
+  isExpanded?: boolean;
+  hasChildren?: boolean;
 }
 
 // Config: Extensions to Display in Sidebar
@@ -75,7 +75,7 @@ const DEFAULT_SNIPPETS: Snippet[] = [
   // WikiLink Templates
   { id: 'wikilink-plain', name: 'File Link', category: 'wikilink', content: '[[{filename}]]\n' },
   { id: 'wikilink-alias', name: 'Link with Alias', category: 'wikilink', content: '[[{filename}|{alias}]]\n' },
-  { id: 'wikilink-block', name: 'Block Reference', category: 'wikilink', content: '<<{filename}:{line}>>\n' },
+  { id: 'wikilink-block', name: 'Block Reference', category: 'wikilink', content: '(((filename#line)))\n' },
   // Content Templates
   { id: 'tbl', name: 'Table', category: 'template', content: '| Header 1 | Header 2 |\n| -------- | -------- |\n| Cell 1   | Cell 2   |\n' },
   { id: 'math', name: 'Math Block', category: 'code', content: '$$\n  \\int_0^\\infty x^2 dx\n$$\n' },
@@ -101,187 +101,187 @@ const generateSlug = (text: string): string => {
 };
 
 const isExtensionInList = (filename: string, list: string[]) => {
-    if (!filename) return false;
-    const lower = filename.toLowerCase();
-    // Allow any file ending in .keep to be processed as a node, but filtered out of operability usually
-    if (lower.endsWith('.keep')) return true;
-    return list.some(ext => lower.endsWith(ext));
+  if (!filename) return false;
+  const lower = filename.toLowerCase();
+  // Allow any file ending in .keep to be processed as a node, but filtered out of operability usually
+  if (lower.endsWith('.keep')) return true;
+  return list.some(ext => lower.endsWith(ext));
 };
 
 const getIconForFile = (name: string) => {
-    const lower = name?.toLowerCase() || '';
-    
-    // Markdown
-    if (lower.endsWith('.md')) return <FileText size={14} className="text-cyan-500" />;
-    if (lower.endsWith('.txt')) return <FileText size={14} className="text-slate-500" />;
-    
-    // Code
-    if (lower.endsWith('.js') || lower.endsWith('.jsx')) return <FileCode size={14} className="text-yellow-500" />;
-    if (lower.endsWith('.ts') || lower.endsWith('.tsx')) return <FileCode size={14} className="text-blue-500" />;
-    if (lower.endsWith('.css') || lower.endsWith('.scss')) return <FileCode size={14} className="text-pink-500" />;
-    if (lower.endsWith('.html')) return <FileCode size={14} className="text-orange-500" />;
-    if (lower.endsWith('.json')) return <FileJson size={14} className="text-green-500" />;
-    
-    // Data & Docs
-    if (lower.endsWith('.csv')) return <FileSpreadsheet size={14} className="text-emerald-500" />;
-    if (lower.endsWith('.pdf')) return <FileType size={14} className="text-red-500" />;
-    if (lower.endsWith('.docx') || lower.endsWith('.doc')) return <FileType size={14} className="text-blue-600" />;
-    
-    // Images
-    if (['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp'].some(ext => lower.endsWith(ext))) {
-        return <FileImage size={14} className="text-purple-500" />;
-    }
+  const lower = name?.toLowerCase() || '';
 
-    // Default
-    return <FileIcon size={14} className="text-slate-400" />;
+  // Markdown
+  if (lower.endsWith('.md')) return <FileText size={14} className="text-cyan-500" />;
+  if (lower.endsWith('.txt')) return <FileText size={14} className="text-slate-500" />;
+
+  // Code
+  if (lower.endsWith('.js') || lower.endsWith('.jsx')) return <FileCode size={14} className="text-yellow-500" />;
+  if (lower.endsWith('.ts') || lower.endsWith('.tsx')) return <FileCode size={14} className="text-blue-500" />;
+  if (lower.endsWith('.css') || lower.endsWith('.scss')) return <FileCode size={14} className="text-pink-500" />;
+  if (lower.endsWith('.html')) return <FileCode size={14} className="text-orange-500" />;
+  if (lower.endsWith('.json')) return <FileJson size={14} className="text-green-500" />;
+
+  // Data & Docs
+  if (lower.endsWith('.csv')) return <FileSpreadsheet size={14} className="text-emerald-500" />;
+  if (lower.endsWith('.pdf')) return <FileType size={14} className="text-red-500" />;
+  if (lower.endsWith('.docx') || lower.endsWith('.doc')) return <FileType size={14} className="text-blue-600" />;
+
+  // Images
+  if (['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp'].some(ext => lower.endsWith(ext))) {
+    return <FileImage size={14} className="text-purple-500" />;
+  }
+
+  // Default
+  return <FileIcon size={14} className="text-slate-400" />;
 };
 
 // Memoized Row Component
 const FileTreeRow = React.memo<{
-    node: FlatNode;
-    activeFileId: string;
-    onSelect: (id: string) => void;
-    onToggle: (path: string) => void;
-    onDelete: (id: string, fileName: string) => void;
-    onRequestCreate: (type: 'file' | 'folder', parentPath: string) => void;
-    onDragStart: (e: React.DragEvent, nodeId: string) => void;
-    onDragOver: (e: React.DragEvent, nodeId: string) => void;
-    onDrop: (e: React.DragEvent, targetPath: string) => void;
-    isDropTarget: boolean;
-    onShowContextMenu?: (fileId: string, fileName: string, x: number, y: number) => void;
+  node: FlatNode;
+  activeFileId: string;
+  onSelect: (id: string) => void;
+  onToggle: (path: string) => void;
+  onDelete: (id: string, fileName: string) => void;
+  onRequestCreate: (type: 'file' | 'folder', parentPath: string) => void;
+  onDragStart: (e: React.DragEvent, nodeId: string) => void;
+  onDragOver: (e: React.DragEvent, nodeId: string) => void;
+  onDrop: (e: React.DragEvent, targetPath: string) => void;
+  isDropTarget: boolean;
+  onShowContextMenu?: (fileId: string, fileName: string, x: number, y: number) => void;
 }>(({ node, activeFileId, onSelect, onToggle, onDelete, onRequestCreate, onDragStart, onDragOver, onDrop, isDropTarget, onShowContextMenu }) => {
-    const indentStyle = { paddingLeft: `${node.level * 12 + 12}px` };
-    
-    if (node.type === 'folder') {
-        const isMemoryFolder = node.name === '.memories';
-        return (
-            <div
-                className={`
+  const indentStyle = { paddingLeft: `${node.level * 12 + 12}px` };
+
+  if (node.type === 'folder') {
+    const isMemoryFolder = node.name === '.memories';
+    return (
+      <div
+        className={`
                     flex items-center gap-2 py-1.5 pr-2 cursor-pointer transition-colors group select-none relative
                     ${isDropTarget ? 'bg-cyan-100 dark:bg-cyan-900/40 ring-1 ring-cyan-400 inset-0' : isMemoryFolder
-                        ? 'bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/30 text-violet-700 dark:text-violet-300'
-                        : 'hover:bg-paper-200 dark:hover:bg-cyber-800 text-slate-600 dark:text-slate-300'}
+            ? 'bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/30 text-violet-700 dark:text-violet-300'
+            : 'hover:bg-paper-200 dark:hover:bg-cyber-800 text-slate-600 dark:text-slate-300'}
                 `}
-                style={indentStyle}
-                onClick={() => onToggle(node.path)}
-                draggable
-                onDragStart={(e) => onDragStart(e, node.fileId || node.id)}
-                onDragOver={(e) => onDragOver(e, node.id)}
-                onDrop={(e) => onDrop(e, node.path)}
+        style={indentStyle}
+        onClick={() => onToggle(node.path)}
+        draggable
+        onDragStart={(e) => onDragStart(e, node.fileId || node.id)}
+        onDragOver={(e) => onDragOver(e, node.id)}
+        onDrop={(e) => onDrop(e, node.path)}
+      >
+        {/* Indent Guide */}
+        {node.level > 0 && <div className="absolute left-0 top-0 bottom-0 border-l border-paper-200 dark:border-cyber-800" style={{ left: `${node.level * 12 + 4}px` }} />}
+
+        <span className="opacity-60 transition-transform duration-200 shrink-0" style={{ transform: node.isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>
+          <ChevronRight size={12} />
+        </span>
+        <span className={`shrink-0 ${isMemoryFolder ? 'text-violet-500' : 'text-amber-400'}`}>
+          {node.isExpanded ? <FolderOpen size={16} /> : <Folder size={16} />}
+        </span>
+        <span className={`text-sm font-semibold truncate flex-1 ${isMemoryFolder ? 'text-violet-700 dark:text-violet-300' : ''}`}>
+          {isMemoryFolder ? '🧠 AI 记忆库' : node.name}
+        </span>
+
+        {/* Quick Add Buttons (Visible on Hover) - Hide for memory folder */}
+        {!isMemoryFolder && (
+          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              onClick={(e) => { e.stopPropagation(); onRequestCreate('file', node.path); }}
+              className="p-1 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 rounded text-slate-500 hover:text-cyan-600"
+              title="New File inside"
             >
-                {/* Indent Guide */}
-                {node.level > 0 && <div className="absolute left-0 top-0 bottom-0 border-l border-paper-200 dark:border-cyber-800" style={{ left: `${node.level * 12 + 4}px` }} />}
+              <Plus size={12} />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onRequestCreate('folder', node.path); }}
+              className="p-1 hover:bg-amber-100 dark:hover:bg-amber-900/50 rounded text-slate-500 hover:text-amber-600"
+              title="New Folder inside"
+            >
+              <FolderInput size={12} />
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
 
-                <span className="opacity-60 transition-transform duration-200 shrink-0" style={{ transform: node.isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>
-                    <ChevronRight size={12} />
-                </span>
-                <span className={`shrink-0 ${isMemoryFolder ? 'text-violet-500' : 'text-amber-400'}`}>
-                     {node.isExpanded ? <FolderOpen size={16} /> : <Folder size={16} />}
-                </span>
-                <span className={`text-sm font-semibold truncate flex-1 ${isMemoryFolder ? 'text-violet-700 dark:text-violet-300' : ''}`}>
-                    {isMemoryFolder ? '🧠 AI 记忆库' : node.name}
-                </span>
+  const isActive = activeFileId === node.fileId;
+  const isOperable = isExtensionInList(node.name, OPERABLE_EXTENSIONS);
 
-                {/* Quick Add Buttons (Visible on Hover) - Hide for memory folder */}
-                {!isMemoryFolder && (
-                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                     <button
-                         onClick={(e) => { e.stopPropagation(); onRequestCreate('file', node.path); }}
-                         className="p-1 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 rounded text-slate-500 hover:text-cyan-600"
-                         title="New File inside"
-                     >
-                         <Plus size={12} />
-                     </button>
-                     <button
-                         onClick={(e) => { e.stopPropagation(); onRequestCreate('folder', node.path); }}
-                         className="p-1 hover:bg-amber-100 dark:hover:bg-amber-900/50 rounded text-slate-500 hover:text-amber-600"
-                         title="New Folder inside"
-                     >
-                         <FolderInput size={12} />
-                     </button>
-                </div>
-                )}
-            </div>
-        );
+  // Hide .keep files from the list view
+  if (node.name === '.keep') return null;
+
+  // Check if this is a memory file
+  const isMemoryFile = (node as FileTreeNode).isMemory;
+  const memoryImportance = (node as FileTreeNode).memoryImportance;
+
+  const getMemoryImportanceColor = (imp: string) => {
+    switch (imp) {
+      case 'high': return 'text-red-500 bg-red-100 dark:bg-red-900/30';
+      case 'medium': return 'text-amber-500 bg-amber-100 dark:bg-amber-900/30';
+      default: return 'text-slate-400 bg-slate-100 dark:bg-slate-800';
     }
+  };
 
-    const isActive = activeFileId === node.fileId;
-    const isOperable = isExtensionInList(node.name, OPERABLE_EXTENSIONS);
-
-    // Hide .keep files from the list view
-    if (node.name === '.keep') return null;
-
-    // Check if this is a memory file
-    const isMemoryFile = (node as FileTreeNode).isMemory;
-    const memoryImportance = (node as FileTreeNode).memoryImportance;
-
-    const getMemoryImportanceColor = (imp: string) => {
-        switch (imp) {
-            case 'high': return 'text-red-500 bg-red-100 dark:bg-red-900/30';
-            case 'medium': return 'text-amber-500 bg-amber-100 dark:bg-amber-900/30';
-            default: return 'text-slate-400 bg-slate-100 dark:bg-slate-800';
-        }
-    };
-
-    return (
-            <div
-                className={`
+  return (
+    <div
+      className={`
                     flex items-center gap-2 py-1.5 pr-2 cursor-pointer transition-colors group select-none relative
                     ${isDropTarget ? 'bg-cyan-100 dark:bg-cyan-900/40 ring-1 ring-cyan-400 inset-0' :
-                        'hover:bg-paper-200 dark:hover:bg-cyber-800 text-slate-600 dark:text-slate-300'}
+          'hover:bg-paper-200 dark:hover:bg-cyber-800 text-slate-600 dark:text-slate-300'}
                 `}
-                style={indentStyle}
-                onClick={() => isOperable && onSelect(node.fileId!)}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  if (isOperable && node.fileId && onShowContextMenu) {
-                    onShowContextMenu(node.fileId, node.name, e.clientX, e.clientY);
-                  }
-                }}
-                title={!isOperable ? "Read Only / Extraction Source" : node.name}
-                draggable={isOperable}
-                onDragStart={(e) => isOperable && onDragStart(e, node.fileId!)}
-             >
-            {/* Indent Guide */}
-            {node.level > 0 && <div className="absolute left-0 top-0 bottom-0 border-l border-paper-200 dark:border-cyber-800" style={{ left: `${node.level * 12 + 4}px` }} />}
+      style={indentStyle}
+      onClick={() => isOperable && onSelect(node.fileId!)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        if (isOperable && node.fileId && onShowContextMenu) {
+          onShowContextMenu(node.fileId, node.name, e.clientX, e.clientY);
+        }
+      }}
+      title={!isOperable ? "Read Only / Extraction Source" : node.name}
+      draggable={isOperable}
+      onDragStart={(e) => isOperable && onDragStart(e, node.fileId!)}
+    >
+      {/* Indent Guide */}
+      {node.level > 0 && <div className="absolute left-0 top-0 bottom-0 border-l border-paper-200 dark:border-cyber-800" style={{ left: `${node.level * 12 + 4}px` }} />}
 
-            {/* Active Indicator */}
-            {isActive && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-cyan-500" />}
+      {/* Active Indicator */}
+      {isActive && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-cyan-500" />}
 
-            {/* File Icon - Use special icon for memory files */}
-            <span className="opacity-80 shrink-0">
-                {isMemoryFile ? (
-                    <Sparkles size={14} className="text-violet-500" />
-                ) : (
-                    getIconForFile(node.name)
-                )}
-            </span>
-            <span className={`text-sm truncate flex-1 leading-none pt-0.5 ${isMemoryFile ? 'text-violet-700 dark:text-violet-300' : ''}`}>
-                {node.name}
-            </span>
+      {/* File Icon - Use special icon for memory files */}
+      <span className="opacity-80 shrink-0">
+        {isMemoryFile ? (
+          <Sparkles size={14} className="text-violet-500" />
+        ) : (
+          getIconForFile(node.name)
+        )}
+      </span>
+      <span className={`text-sm truncate flex-1 leading-none pt-0.5 ${isMemoryFile ? 'text-violet-700 dark:text-violet-300' : ''}`}>
+        {node.name}
+      </span>
 
-            {/* Memory importance badge */}
-            {isMemoryFile && memoryImportance && (
-                <span className={`text-[9px] px-1 py-0.5 rounded ${getMemoryImportanceColor(memoryImportance)}`}>
-                    {memoryImportance}
-                </span>
-            )}
+      {/* Memory importance badge */}
+      {isMemoryFile && memoryImportance && (
+        <span className={`text-[9px] px-1 py-0.5 rounded ${getMemoryImportanceColor(memoryImportance)}`}>
+          {memoryImportance}
+        </span>
+      )}
 
-            {/* Lock icon for non-operable files */}
-            {!isOperable && <Lock size={10} className="text-slate-400" />}
+      {/* Lock icon for non-operable files */}
+      {!isOperable && <Lock size={10} className="text-slate-400" />}
 
-            {/* Delete button - only for operable files */}
-            {isOperable && (
-                <button
-                 onClick={(e) => { e.stopPropagation(); onDelete(node.fileId!, node.name); }}
-                 className="p-1 opacity-0 group-hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-500 rounded transition-all shrink-0"
-                 title="Delete File"
-                >
-                  <Trash2 size={12} />
-                </button>
-            )}
-         </div>
-    );
+      {/* Delete button - only for operable files */}
+      {isOperable && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete(node.fileId!, node.name); }}
+          className="p-1 opacity-0 group-hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-500 rounded transition-all shrink-0"
+          title="Delete File"
+        >
+          <Trash2 size={12} />
+        </button>
+      )}
+    </div>
+  );
 });
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -376,9 +376,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   }, [expandedFolders]);
 
   useEffect(() => {
-      if (creationModal.isOpen && creationInputRef.current) {
-          setTimeout(() => creationInputRef.current?.focus(), 50);
-      }
+    if (creationModal.isOpen && creationInputRef.current) {
+      setTimeout(() => creationInputRef.current?.focus(), 50);
+    }
   }, [creationModal.isOpen]);
 
   // Close context menu when clicking outside
@@ -402,13 +402,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   // 1. Structure Hash: Create a stable dependency key for tree building
   const filesStructureHash = useMemo(() => {
-     if (!files || !Array.isArray(files)) return "";
-     return files
-        .filter(f => isExtensionInList(f.path || f.name, DISPLAY_EXTENSIONS))
-        .map(f => `${f.id}|${f.path || f.name}`)
-        .join(';');
+    if (!files || !Array.isArray(files)) return "";
+    return files
+      .filter(f => isExtensionInList(f.path || f.name, DISPLAY_EXTENSIONS))
+      .map(f => `${f.id}|${f.path || f.name}`)
+      .join(';');
   }, [files]);
-  
+
   // 2. Build Tree Structure (Hierarchical)
   const fileTree = useMemo(() => {
     const currentFiles = filesRef.current || [];
@@ -417,49 +417,49 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
     // 1. Filter Files
     const visibleFiles = currentFiles.filter(f =>
-        f && (f.path || f.name) && isExtensionInList(f.path || f.name, DISPLAY_EXTENSIONS)
+      f && (f.path || f.name) && isExtensionInList(f.path || f.name, DISPLAY_EXTENSIONS)
     );
 
     // 2. Build Nodes
     visibleFiles.forEach(file => {
-        const rawPath = file.path || file.name;
-        const normalizedPath = rawPath.replace(/\\/g, '/');
-        const parts = normalizedPath.split('/').filter(p => p);
+      const rawPath = file.path || file.name;
+      const normalizedPath = rawPath.replace(/\\/g, '/');
+      const parts = normalizedPath.split('/').filter(p => p);
 
-        let currentPath = '';
+      let currentPath = '';
 
-        parts.forEach((part, index) => {
-            const isFile = index === parts.length - 1;
-            const parentPath = currentPath;
-            currentPath = currentPath ? `${currentPath}/${part}` : part;
+      parts.forEach((part, index) => {
+        const isFile = index === parts.length - 1;
+        const parentPath = currentPath;
+        currentPath = currentPath ? `${currentPath}/${part}` : part;
 
-            // Find or Create Node
-            let node = pathMap.get(currentPath);
+        // Find or Create Node
+        let node = pathMap.get(currentPath);
 
-            if (!node) {
-                node = {
-                    id: isFile ? file.id : `folder-${currentPath}`,
-                    name: part,
-                    path: currentPath,
-                    type: isFile ? 'file' : 'folder',
-                    fileId: isFile ? file.id : undefined,
-                    children: isFile ? undefined : []
-                };
-                pathMap.set(currentPath, node);
+        if (!node) {
+          node = {
+            id: isFile ? file.id : `folder-${currentPath}`,
+            name: part,
+            path: currentPath,
+            type: isFile ? 'file' : 'folder',
+            fileId: isFile ? file.id : undefined,
+            children: isFile ? undefined : []
+          };
+          pathMap.set(currentPath, node);
 
-                // Attach to Parent or Root
-                if (parentPath) {
-                    const parent = pathMap.get(parentPath);
-                    if (parent && parent.children) {
-                        parent.children.push(node);
-                    } else {
-                        rootNodes.push(node);
-                    }
-                } else {
-                    rootNodes.push(node);
-                }
+          // Attach to Parent or Root
+          if (parentPath) {
+            const parent = pathMap.get(parentPath);
+            if (parent && parent.children) {
+              parent.children.push(node);
+            } else {
+              rootNodes.push(node);
             }
-        });
+          } else {
+            rootNodes.push(node);
+          }
+        }
+      });
     });
 
     // 3. Add Memory Files from state (loaded asynchronously via useEffect)
@@ -486,18 +486,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
     // 4. Sort Nodes Recursively
     const sortNodes = (nodes: FileTreeNode[]): FileTreeNode[] => {
-        return nodes.sort((a, b) => {
-            // Memory folder always first
-            if (a.name === '.memories' && b.name !== '.memories') return -1;
-            if (b.name === '.memories' && a.name !== '.memories') return 1;
-            if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
-            return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
-        }).map(node => {
-            if (node.children) {
-                node.children = sortNodes(node.children);
-            }
-            return node;
-        });
+      return nodes.sort((a, b) => {
+        // Memory folder always first
+        if (a.name === '.memories' && b.name !== '.memories') return -1;
+        if (b.name === '.memories' && a.name !== '.memories') return 1;
+        if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
+        return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+      }).map(node => {
+        if (node.children) {
+          node.children = sortNodes(node.children);
+        }
+        return node;
+      });
     };
 
     return sortNodes(rootNodes);
@@ -567,26 +567,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
   useEffect(() => {
     const activeFile = files.find(f => f.id === activeFileId);
     if (activeFile && (activeFile.path || activeFile.name)) {
-         const rawPath = activeFile.path || activeFile.name;
-         const parts = rawPath.replace(/\\/g, '/').split('/');
-         if (parts.length > 1) {
-             setExpandedFolders(prev => {
-                 const next = { ...prev };
-                 let currentPath = '';
-                 let changed = false;
-                 // Expand all parents
-                 for (let i = 0; i < parts.length - 1; i++) {
-                     currentPath = currentPath ? `${currentPath}/${parts[i]}` : parts[i];
-                     if (!next[currentPath]) {
-                         next[currentPath] = true;
-                         changed = true;
-                     }
-                 }
-                 return changed ? next : prev;
-             });
-         }
+      const rawPath = activeFile.path || activeFile.name;
+      const parts = rawPath.replace(/\\/g, '/').split('/');
+      if (parts.length > 1) {
+        setExpandedFolders(prev => {
+          const next = { ...prev };
+          let currentPath = '';
+          let changed = false;
+          // Expand all parents
+          for (let i = 0; i < parts.length - 1; i++) {
+            currentPath = currentPath ? `${currentPath}/${parts[i]}` : parts[i];
+            if (!next[currentPath]) {
+              next[currentPath] = true;
+              changed = true;
+            }
+          }
+          return changed ? next : prev;
+        });
+      }
     }
-    
+
     // Also update outline
     if (activeFile) {
       const lines = (activeFile.content || '').split('\n');
@@ -605,65 +605,65 @@ export const Sidebar: React.FC<SidebarProps> = ({
       });
       setOutline(headers);
     } else {
-        setOutline([]);
+      setOutline([]);
     }
   }, [activeFileId, files]);
 
   const toggleFolder = useCallback((path: string) => {
-      setExpandedFolders(prev => ({ ...prev, [path]: !prev[path] }));
+    setExpandedFolders(prev => ({ ...prev, [path]: !prev[path] }));
   }, []);
 
   // 3. Flatten Tree for Rendering
   const visibleFlatNodes = useMemo(() => {
-      if (!fileTree) return [];
-      const flatList: FlatNode[] = [];
-      
-      const traverse = (nodes: FileTreeNode[], level: number) => {
-          for (const node of nodes) {
-              const isFolder = node.type === 'folder';
-              const isExpanded = expandedFolders[node.path];
-              
-              const flatNode: FlatNode = {
-                  ...node,
-                  level,
-                  isExpanded,
-                  hasChildren: node.children && node.children.length > 0
-              };
+    if (!fileTree) return [];
+    const flatList: FlatNode[] = [];
 
-              flatList.push(flatNode);
+    const traverse = (nodes: FileTreeNode[], level: number) => {
+      for (const node of nodes) {
+        const isFolder = node.type === 'folder';
+        const isExpanded = expandedFolders[node.path];
 
-              if (isFolder && (isExpanded || searchQuery)) { // Auto-expand on search
-                  if (node.children) {
-                      traverse(node.children, level + 1);
-                  }
-              }
+        const flatNode: FlatNode = {
+          ...node,
+          level,
+          isExpanded,
+          hasChildren: node.children && node.children.length > 0
+        };
+
+        flatList.push(flatNode);
+
+        if (isFolder && (isExpanded || searchQuery)) { // Auto-expand on search
+          if (node.children) {
+            traverse(node.children, level + 1);
           }
-      };
-      
-      // Filter Logic for Search
-      const getFilteredNodes = (nodes: FileTreeNode[]): FileTreeNode[] => {
-          if (!searchQuery) return nodes;
-          const result: FileTreeNode[] = [];
-          for (const node of nodes) {
-              if (node.type === 'file') {
-                  if (node.name.toLowerCase().includes(searchQuery.toLowerCase())) result.push(node);
-              } else if (node.children) {
-                  const filteredChildren = getFilteredNodes(node.children);
-                  if (filteredChildren.length > 0) {
-                      result.push({ ...node, children: filteredChildren });
-                  } else if (node.name.toLowerCase().includes(searchQuery.toLowerCase())) {
-                       result.push(node);
-                  }
-              }
-          }
-          return result;
-      };
-
-      const nodesToRender = searchQuery ? getFilteredNodes(fileTree) : fileTree;
-      if (nodesToRender) {
-          traverse(nodesToRender, 0);
+        }
       }
-      return flatList;
+    };
+
+    // Filter Logic for Search
+    const getFilteredNodes = (nodes: FileTreeNode[]): FileTreeNode[] => {
+      if (!searchQuery) return nodes;
+      const result: FileTreeNode[] = [];
+      for (const node of nodes) {
+        if (node.type === 'file') {
+          if (node.name.toLowerCase().includes(searchQuery.toLowerCase())) result.push(node);
+        } else if (node.children) {
+          const filteredChildren = getFilteredNodes(node.children);
+          if (filteredChildren.length > 0) {
+            result.push({ ...node, children: filteredChildren });
+          } else if (node.name.toLowerCase().includes(searchQuery.toLowerCase())) {
+            result.push(node);
+          }
+        }
+      }
+      return result;
+    };
+
+    const nodesToRender = searchQuery ? getFilteredNodes(fileTree) : fileTree;
+    if (nodesToRender) {
+      traverse(nodesToRender, 0);
+    }
+    return flatList;
   }, [fileTree, expandedFolders, searchQuery]);
 
 
@@ -684,7 +684,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const handleFilesUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0 && onImportFolderFiles) {
-        onImportFolderFiles(e.target.files);
+      onImportFolderFiles(e.target.files);
     }
     if (filesInputRef.current) filesInputRef.current.value = '';
   };
@@ -700,35 +700,35 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   // Creation Modal Handlers
   const handleOpenCreation = (type: 'file' | 'folder', parentPath: string = '') => {
-      setCreationModal({ isOpen: true, type, parentPath, value: '' });
+    setCreationModal({ isOpen: true, type, parentPath, value: '' });
   };
 
   const handleCreateSubmit = (e: React.FormEvent) => {
-      e.preventDefault();
-      if (creationModal.value.trim()) {
-          onCreateItem(creationModal.type, creationModal.value.trim(), creationModal.parentPath);
-          setCreationModal({ isOpen: false, type: 'file', parentPath: '', value: '' });
-          // If created in a folder, ensure it's expanded
-          if (creationModal.parentPath) {
-              setExpandedFolders(prev => ({ ...prev, [creationModal.parentPath]: true }));
-          }
+    e.preventDefault();
+    if (creationModal.value.trim()) {
+      onCreateItem(creationModal.type, creationModal.value.trim(), creationModal.parentPath);
+      setCreationModal({ isOpen: false, type: 'file', parentPath: '', value: '' });
+      // If created in a folder, ensure it's expanded
+      if (creationModal.parentPath) {
+        setExpandedFolders(prev => ({ ...prev, [creationModal.parentPath]: true }));
       }
+    }
   };
 
   // Delete confirmation handlers
   const handleDeleteRequest = (fileId: string, fileName: string) => {
-      setDeleteConfirm({ isOpen: true, fileId, fileName });
+    setDeleteConfirm({ isOpen: true, fileId, fileName });
   };
 
   const handleDeleteConfirm = () => {
-      if (deleteConfirm.fileId) {
-          onDeleteFile(deleteConfirm.fileId);
-          setDeleteConfirm({ isOpen: false, fileId: null, fileName: '' });
-      }
+    if (deleteConfirm.fileId) {
+      onDeleteFile(deleteConfirm.fileId);
+      setDeleteConfirm({ isOpen: false, fileId: null, fileName: '' });
+    }
   };
 
   const handleDeleteCancel = () => {
-      setDeleteConfirm({ isOpen: false, fileId: null, fileName: '' });
+    setDeleteConfirm({ isOpen: false, fileId: null, fileName: '' });
   };
 
   // Drag and Drop Logic
@@ -741,19 +741,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
     e.preventDefault(); // Necessary to allow dropping
     e.dataTransfer.dropEffect = 'move';
     if (dragOverNodeId !== nodeId) {
-        setDragOverNodeId(nodeId);
-        setIsRootDropTarget(nodeId === null);
+      setDragOverNodeId(nodeId);
+      setIsRootDropTarget(nodeId === null);
     }
   };
 
   const handleDrop = (e: React.DragEvent, targetPath: string | null) => {
-      e.preventDefault();
-      const sourceId = e.dataTransfer.getData('text/plain');
-      setDragOverNodeId(null);
-      setIsRootDropTarget(false);
-      if (sourceId) {
-          onMoveItem(sourceId, targetPath);
-      }
+    e.preventDefault();
+    const sourceId = e.dataTransfer.getData('text/plain');
+    setDragOverNodeId(null);
+    setIsRootDropTarget(false);
+    if (sourceId) {
+      onMoveItem(sourceId, targetPath);
+    }
   };
 
 
@@ -767,225 +767,225 @@ export const Sidebar: React.FC<SidebarProps> = ({
         flex flex-col relative
         ${isOpen ? 'translate-x-0' : '-translate-x-full lg:hidden'}
       `}>
-        
+
         {/* Creation Modal Overlay */}
         {creationModal.isOpen && (
-            <div className="absolute inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-start justify-center pt-20">
-                <form onSubmit={handleCreateSubmit} className="w-64 bg-white dark:bg-cyber-800 rounded-lg shadow-xl border border-paper-200 dark:border-cyber-600 p-3 animate-slideDown">
-                    <h3 className="text-xs font-bold text-slate-500 mb-2 uppercase tracking-wide">
-                        New {creationModal.type} {creationModal.parentPath ? `in /${creationModal.parentPath.split('/').pop()}` : '(Root)'}
-                    </h3>
-                    <input 
-                        ref={creationInputRef}
-                        type="text" 
-                        value={creationModal.value}
-                        onChange={e => setCreationModal(p => ({ ...p, value: e.target.value }))}
-                        className="w-full px-2 py-1.5 mb-2 bg-paper-100 dark:bg-cyber-900/50 border border-paper-300 dark:border-cyber-600 rounded text-sm focus:ring-1 focus:ring-cyan-500 focus:outline-none"
-                        placeholder="Enter name..."
-                    />
-                    <div className="flex gap-2 justify-end">
-                        <button 
-                            type="button" 
-                            onClick={() => setCreationModal(p => ({ ...p, isOpen: false }))}
-                            className="px-2 py-1 text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-                        >
-                            Cancel
-                        </button>
-                        <button 
-                            type="submit"
-                            className="px-2 py-1 bg-cyan-500 hover:bg-cyan-600 text-white rounded text-xs font-bold"
-                        >
-                            Create
-                        </button>
-                    </div>
-                </form>
-            </div>
+          <div className="absolute inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-start justify-center pt-20">
+            <form onSubmit={handleCreateSubmit} className="w-64 bg-white dark:bg-cyber-800 rounded-lg shadow-xl border border-paper-200 dark:border-cyber-600 p-3 animate-slideDown">
+              <h3 className="text-xs font-bold text-slate-500 mb-2 uppercase tracking-wide">
+                New {creationModal.type} {creationModal.parentPath ? `in /${creationModal.parentPath.split('/').pop()}` : '(Root)'}
+              </h3>
+              <input
+                ref={creationInputRef}
+                type="text"
+                value={creationModal.value}
+                onChange={e => setCreationModal(p => ({ ...p, value: e.target.value }))}
+                className="w-full px-2 py-1.5 mb-2 bg-paper-100 dark:bg-cyber-900/50 border border-paper-300 dark:border-cyber-600 rounded text-sm focus:ring-1 focus:ring-cyan-500 focus:outline-none"
+                placeholder="Enter name..."
+              />
+              <div className="flex gap-2 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setCreationModal(p => ({ ...p, isOpen: false }))}
+                  className="px-2 py-1 text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-2 py-1 bg-cyan-500 hover:bg-cyan-600 text-white rounded text-xs font-bold"
+                >
+                  Create
+                </button>
+              </div>
+            </form>
+          </div>
         )}
 
         {/* Delete Confirmation Modal */}
         {deleteConfirm.isOpen && (
-            <div className="absolute inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center">
-                <div className="w-72 bg-white dark:bg-cyber-800 rounded-lg shadow-xl border border-red-200 dark:border-red-900/50 p-4 animate-slideDown">
-                    <div className="flex items-center gap-2 mb-3">
-                        <Trash2 size={18} className="text-red-500" />
-                        <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                            确认删除
-                        </h3>
-                    </div>
-                    <p className="text-xs text-slate-600 dark:text-slate-400 mb-4">
-                        确定要删除文件 <span className="font-semibold text-red-600 dark:text-red-400">"{deleteConfirm.fileName}"</span> 吗？此操作无法撤销。
-                    </p>
-                    <div className="flex gap-2 justify-end">
-                        <button
-                            onClick={handleDeleteCancel}
-                            className="px-3 py-1.5 text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-cyber-700 rounded transition-colors"
-                        >
-                            取消
-                        </button>
-                        <button
-                            onClick={handleDeleteConfirm}
-                            className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded text-xs font-medium transition-colors"
-                        >
-                            删除
-                        </button>
-                    </div>
-                </div>
+          <div className="absolute inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center">
+            <div className="w-72 bg-white dark:bg-cyber-800 rounded-lg shadow-xl border border-red-200 dark:border-red-900/50 p-4 animate-slideDown">
+              <div className="flex items-center gap-2 mb-3">
+                <Trash2 size={18} className="text-red-500" />
+                <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                  确认删除
+                </h3>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-400 mb-4">
+                确定要删除文件 <span className="font-semibold text-red-600 dark:text-red-400">"{deleteConfirm.fileName}"</span> 吗？此操作无法撤销。
+              </p>
+              <div className="flex gap-2 justify-end">
+                <button
+                  onClick={handleDeleteCancel}
+                  className="px-3 py-1.5 text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-cyber-700 rounded transition-colors"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleDeleteConfirm}
+                  className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded text-xs font-medium transition-colors"
+                >
+                  删除
+                </button>
+              </div>
             </div>
+          </div>
         )}
 
         {/* Header Tabs */}
         <div className="h-14 flex items-center px-2 border-b border-paper-200 dark:border-cyber-700 shrink-0 gap-1 pt-2">
-            <button
-              onClick={() => setActiveTab('files')}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-t-lg text-xs font-medium transition-colors border-b-2 ${activeTab === 'files' ? 'border-cyan-500 text-cyan-700 dark:text-cyan-400 bg-white/50 dark:bg-cyber-900/50' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
-            >
-              <FolderOpen size={14} /> {t.explorer}
-            </button>
-            <button
-              onClick={() => setActiveTab('snippets')}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-t-lg text-xs font-medium transition-colors border-b-2 ${activeTab === 'snippets' ? 'border-amber-500 text-amber-700 dark:text-amber-400 bg-white/50 dark:bg-cyber-900/50' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
-            >
-              <Code2 size={14} /> {t.snippets}
-            </button>
-            <button
-              onClick={() => setActiveTab('outline')}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-t-lg text-xs font-medium transition-colors border-b-2 ${activeTab === 'outline' ? 'border-violet-500 text-violet-700 dark:text-violet-400 bg-white/50 dark:bg-cyber-900/50' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
-            >
-              <List size={14} /> Outline
-            </button>
+          <button
+            onClick={() => setActiveTab('files')}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-t-lg text-xs font-medium transition-colors border-b-2 ${activeTab === 'files' ? 'border-cyan-500 text-cyan-700 dark:text-cyan-400 bg-white/50 dark:bg-cyber-900/50' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+          >
+            <FolderOpen size={14} /> {t.explorer}
+          </button>
+          <button
+            onClick={() => setActiveTab('snippets')}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-t-lg text-xs font-medium transition-colors border-b-2 ${activeTab === 'snippets' ? 'border-amber-500 text-amber-700 dark:text-amber-400 bg-white/50 dark:bg-cyber-900/50' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+          >
+            <Code2 size={14} /> {t.snippets}
+          </button>
+          <button
+            onClick={() => setActiveTab('outline')}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-t-lg text-xs font-medium transition-colors border-b-2 ${activeTab === 'outline' ? 'border-violet-500 text-violet-700 dark:text-violet-400 bg-white/50 dark:bg-cyber-900/50' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+          >
+            <List size={14} /> Outline
+          </button>
         </div>
 
         {/* Search Bar Fixed Position - Only show when Files tab is active */}
         {activeTab === 'files' && (
-            <div className="p-3 border-b border-paper-200 dark:border-cyber-700 bg-white dark:bg-cyber-900 shrink-0">
-               <div className="relative">
-                   <input 
-                     type="text" 
-                     placeholder="Search files..." 
-                     value={searchQuery}
-                     onChange={(e) => setSearchQuery(e.target.value)}
-                     className="w-full pl-8 pr-8 py-1.5 bg-paper-100 dark:bg-cyber-800 border border-paper-200 dark:border-cyber-700 rounded text-xs focus:outline-none focus:border-cyan-500 transition-colors"
-                   />
-                   <Search size={12} className="absolute left-2.5 top-2.5 text-slate-400" />
-                   {searchQuery && (
-                       <button onClick={() => setSearchQuery('')} className="absolute right-2 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
-                           <X size={12} />
-                       </button>
-                   )}
-               </div>
+          <div className="p-3 border-b border-paper-200 dark:border-cyber-700 bg-white dark:bg-cyber-900 shrink-0">
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search files..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-8 pr-8 py-1.5 bg-paper-100 dark:bg-cyber-800 border border-paper-200 dark:border-cyber-700 rounded text-xs focus:outline-none focus:border-cyan-500 transition-colors"
+              />
+              <Search size={12} className="absolute left-2.5 top-2.5 text-slate-400" />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery('')} className="absolute right-2 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                  <X size={12} />
+                </button>
+              )}
             </div>
+          </div>
         )}
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2">
-          
+
           {/* FILES TAB */}
           {activeTab === 'files' && (
             <>
-               <div className="grid grid-cols-2 gap-2 mb-3">
-                 <button onClick={() => handleOpenCreation('file')} className="flex items-center justify-center gap-1.5 px-3 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg transition-colors shadow-lg shadow-cyan-500/20 text-xs font-medium" title="New File">
-                   <Plus size={14} /> {t.newFile}
-                 </button>
-                 
-                 <button onClick={() => handleOpenCreation('folder')} className="flex items-center justify-center gap-1.5 px-3 py-2 bg-white dark:bg-cyber-900 border border-paper-200 dark:border-cyber-700 rounded-lg text-slate-600 dark:text-slate-300 hover:border-amber-400 transition-colors text-xs font-medium" title="New Folder">
-                   <FolderInput size={14} className="text-amber-500" /> Folder
-                 </button>
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                <button onClick={() => handleOpenCreation('file')} className="flex items-center justify-center gap-1.5 px-3 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg transition-colors shadow-lg shadow-cyan-500/20 text-xs font-medium" title="New File">
+                  <Plus size={14} /> {t.newFile}
+                </button>
 
-                 <button onClick={() => filesInputRef.current?.click()} className="flex items-center justify-center gap-1.5 px-3 py-2 bg-white dark:bg-cyber-900 border border-paper-200 dark:border-cyber-700 rounded-lg text-slate-600 dark:text-slate-300 hover:border-cyan-400 transition-colors text-xs font-medium">
-                   <Upload size={14} /> {t.importFiles}
-                 </button>
+                <button onClick={() => handleOpenCreation('folder')} className="flex items-center justify-center gap-1.5 px-3 py-2 bg-white dark:bg-cyber-900 border border-paper-200 dark:border-cyber-700 rounded-lg text-slate-600 dark:text-slate-300 hover:border-amber-400 transition-colors text-xs font-medium" title="New Folder">
+                  <FolderInput size={14} className="text-amber-500" /> Folder
+                </button>
 
-                 <button onClick={handleOpenFolderClick} className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-200 dark:bg-cyber-900 hover:bg-slate-300 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-300 rounded-lg transition-colors text-xs font-medium">
-                   <FolderInput size={14} /> {t.openDir}
-                 </button>
-                 
-                 <button onClick={() => quizInputRef.current?.click()} className="col-span-2 flex items-center justify-center gap-1.5 px-3 py-2 bg-white dark:bg-cyber-900 border border-paper-200 dark:border-cyber-700 rounded-lg text-slate-600 dark:text-slate-300 hover:border-violet-400 transition-colors text-xs font-medium">
-                       <GraduationCap size={14} className="text-violet-400" /> {t.quiz}
-                   </button>
+                <button onClick={() => filesInputRef.current?.click()} className="flex items-center justify-center gap-1.5 px-3 py-2 bg-white dark:bg-cyber-900 border border-paper-200 dark:border-cyber-700 rounded-lg text-slate-600 dark:text-slate-300 hover:border-cyan-400 transition-colors text-xs font-medium">
+                  <Upload size={14} /> {t.importFiles}
+                </button>
 
-{onOpenReview && (
+                <button onClick={handleOpenFolderClick} className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-200 dark:bg-cyber-900 hover:bg-slate-300 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-300 rounded-lg transition-colors text-xs font-medium">
+                  <FolderInput size={14} /> {t.openDir}
+                </button>
+
+                <button onClick={() => quizInputRef.current?.click()} className="col-span-2 flex items-center justify-center gap-1.5 px-3 py-2 bg-white dark:bg-cyber-900 border border-paper-200 dark:border-cyber-700 rounded-lg text-slate-600 dark:text-slate-300 hover:border-violet-400 transition-colors text-xs font-medium">
+                  <GraduationCap size={14} className="text-violet-400" /> {t.quiz}
+                </button>
+
+                {onOpenReview && (
+                  <button
+                    onClick={onOpenReview}
+                    className="col-span-2 flex items-center justify-center gap-1.5 px-3 py-2 bg-white dark:bg-cyber-900 border border-paper-200 dark:border-cyber-700 rounded-lg text-slate-600 dark:text-slate-300 hover:border-emerald-400 transition-colors text-xs font-medium"
+                  >
+                    <BookOpen size={14} className="text-emerald-400" /> {t.review}
+                  </button>
+                )}
+              </div>
+
+              {/* Hidden Inputs */}
+              <input type="file" accept=".pdf" ref={pdfInputRef} className="hidden" onChange={handlePdfUpload} />
+              <input type="file" accept=".csv,.pdf,.md,.txt,.docx,.doc" ref={quizInputRef} className="hidden" onChange={handleQuizUpload} />
+              <input type="file" accept=".md,.markdown,.txt,.csv,.pdf,.docx,.doc" multiple ref={filesInputRef} className="hidden" onChange={handleFilesUpload} />
+              <input type="file" ref={dirInputRef} className="hidden" onChange={handleDirUpload} multiple {...({ webkitdirectory: "", directory: "" } as any)} />
+
+              {/* Tree */}
+              <div className="pb-10 min-h-[100px] flex flex-col">
+                {visibleFlatNodes.length === 0 ? (
+                  <div className="text-center py-8 text-slate-400 text-xs italic">
+                    {searchQuery ? 'No matching files' : 'No files open'}
+                  </div>
+                ) : (
+                  visibleFlatNodes.map((node) => (
+                    <FileTreeRow
+                      key={node.id}
+                      node={node}
+                      activeFileId={activeFileId}
+                      onSelect={onSelectFile}
+                      onDelete={handleDeleteRequest}
+                      onToggle={toggleFolder}
+                      onRequestCreate={handleOpenCreation}
+                      onDragStart={handleDragStart}
+                      onDragOver={handleDragOver}
+                      onDrop={handleDrop}
+                      isDropTarget={dragOverNodeId === node.id}
+                      onShowContextMenu={(fileId, fileName, x, y) => {
+                        setContextMenu({ x, y, fileId, fileName });
+                      }}
+                    />
+                  ))
+                )}
+
+                {/* Root Drop Zone - Only visible when dragging */}
+                <div
+                  className={`flex-1 border-2 border-dashed rounded-lg flex items-center justify-center text-xs text-slate-400 transition-all min-h-[60px] mt-4 ${isRootDropTarget ? 'border-cyan-400 bg-cyan-50 dark:bg-cyan-900/20' : 'border-transparent'}`}
+                  onDragOver={(e) => handleDragOver(e, null)}
+                  onDrop={(e) => handleDrop(e, null)}
+                >
+                  {isRootDropTarget ? "Drop to Root Directory" : ""}
+                </div>
+              </div>
+
+              {/* Tags Section */}
+              <div className="mt-2 border-t border-paper-200 dark:border-cyber-700 pt-2">
+                <button
+                  onClick={() => setTagsExpanded(!tagsExpanded)}
+                  className="w-full flex items-center justify-between px-2 py-1.5 hover:bg-paper-200 dark:hover:bg-cyber-800 rounded transition-colors"
+                >
+                  <span className="text-xs font-medium text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
+                    <Tag size={12} className="text-emerald-500" />
+                    {t.tags || 'Tags'}
+                  </span>
+                  <ChevronDown
+                    size={12}
+                    className={`text-slate-400 transition-transform ${tagsExpanded ? 'rotate-180' : ''}`}
+                  />
+                </button>
+                {tagsExpanded && (
+                  <div className="mt-2 px-2">
+                    <TagsBrowser files={files} onSelectFile={onSelectFile} />
+                    {onOpenTagSuggestion && (
                       <button
-                        onClick={onOpenReview}
-                        className="col-span-2 flex items-center justify-center gap-1.5 px-3 py-2 bg-white dark:bg-cyber-900 border border-paper-200 dark:border-cyber-700 rounded-lg text-slate-600 dark:text-slate-300 hover:border-emerald-400 transition-colors text-xs font-medium"
+                        onClick={onOpenTagSuggestion}
+                        className="mt-2 w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs bg-gradient-to-r from-cyan-500 to-violet-500 text-white rounded-lg hover:from-cyan-600 hover:to-violet-600 transition-all"
                       >
-                        <BookOpen size={14} className="text-emerald-400" /> {t.review}
+                        <Sparkles size={12} />
+                        {t.aiTagSuggestions || 'AI Suggest Tags'}
                       </button>
                     )}
-               </div>
-               
-               {/* Hidden Inputs */}
-               <input type="file" accept=".pdf" ref={pdfInputRef} className="hidden" onChange={handlePdfUpload} />
-               <input type="file" accept=".csv,.pdf,.md,.txt,.docx,.doc" ref={quizInputRef} className="hidden" onChange={handleQuizUpload} />
-               <input type="file" accept=".md,.markdown,.txt,.csv,.pdf,.docx,.doc" multiple ref={filesInputRef} className="hidden" onChange={handleFilesUpload} />
-               <input type="file" ref={dirInputRef} className="hidden" onChange={handleDirUpload} multiple {...({ webkitdirectory: "", directory: "" } as any)} />
-
-                {/* Tree */}
-                 <div className="pb-10 min-h-[100px] flex flex-col">
-                     {visibleFlatNodes.length === 0 ? (
-                         <div className="text-center py-8 text-slate-400 text-xs italic">
-                             {searchQuery ? 'No matching files' : 'No files open'}
-                         </div>
-                      ) : (
-                          visibleFlatNodes.map((node) => (
-                              <FileTreeRow
-                                  key={node.id}
-                                  node={node}
-                                  activeFileId={activeFileId}
-                                  onSelect={onSelectFile}
-                                  onDelete={handleDeleteRequest}
-                                  onToggle={toggleFolder}
-                                  onRequestCreate={handleOpenCreation}
-                                  onDragStart={handleDragStart}
-                                  onDragOver={handleDragOver}
-                                  onDrop={handleDrop}
-                                  isDropTarget={dragOverNodeId === node.id}
-                                  onShowContextMenu={(fileId, fileName, x, y) => {
-                                    setContextMenu({ x, y, fileId, fileName });
-                                  }}
-                              />
-                          ))
-                      )}
-                     
-                     {/* Root Drop Zone - Only visible when dragging */}
-                     <div 
-                       className={`flex-1 border-2 border-dashed rounded-lg flex items-center justify-center text-xs text-slate-400 transition-all min-h-[60px] mt-4 ${isRootDropTarget ? 'border-cyan-400 bg-cyan-50 dark:bg-cyan-900/20' : 'border-transparent'}`}
-                       onDragOver={(e) => handleDragOver(e, null)}
-                       onDrop={(e) => handleDrop(e, null)}
-                     >
-                         {isRootDropTarget ? "Drop to Root Directory" : ""}
-                     </div>
-                 </div>
-
-                {/* Tags Section */}
-                <div className="mt-2 border-t border-paper-200 dark:border-cyber-700 pt-2">
-                  <button
-                    onClick={() => setTagsExpanded(!tagsExpanded)}
-                    className="w-full flex items-center justify-between px-2 py-1.5 hover:bg-paper-200 dark:hover:bg-cyber-800 rounded transition-colors"
-                  >
-                    <span className="text-xs font-medium text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
-                      <Tag size={12} className="text-emerald-500" />
-                      {t.tags || 'Tags'}
-                    </span>
-                    <ChevronDown
-                      size={12}
-                      className={`text-slate-400 transition-transform ${tagsExpanded ? 'rotate-180' : ''}`}
-                    />
-                  </button>
-                    {tagsExpanded && (
-                      <div className="mt-2 px-2">
-                        <TagsBrowser files={files} onSelectFile={onSelectFile} />
-                        {onOpenTagSuggestion && (
-                          <button
-                            onClick={onOpenTagSuggestion}
-                            className="mt-2 w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs bg-gradient-to-r from-cyan-500 to-violet-500 text-white rounded-lg hover:from-cyan-600 hover:to-violet-600 transition-all"
-                          >
-                            <Sparkles size={12} />
-                            {t.aiTagSuggestions || 'AI Suggest Tags'}
-                          </button>
-                        )}
-                      </div>
-                    )}
-                </div>
+                  </div>
+                )}
+              </div>
             </>
           )}
 
@@ -1034,16 +1034,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     onClick={() => onInsertSnippet?.(snippet.content)}
                     className="group flex items-center gap-2 px-3 py-2 rounded-lg border border-paper-200 dark:border-cyber-700 bg-white dark:bg-cyber-900/50 hover:border-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/10 transition-all cursor-pointer"
                   >
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono shrink-0 ${
-                      snippet.category === 'code' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' :
-                      snippet.category === 'text' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' :
-                      snippet.category === 'wikilink' ? 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400' :
-                      'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400'
-                    }`}>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono shrink-0 ${snippet.category === 'code' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' :
+                        snippet.category === 'text' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' :
+                          snippet.category === 'wikilink' ? 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400' :
+                            'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400'
+                      }`}>
                       {snippet.category === 'code' ? t.codeCategory || 'code' :
-                       snippet.category === 'text' ? t.textCategory || 'text' :
-                       snippet.category === 'wikilink' ? t.wikiLinkCategory || 'wikilink' :
-                       t.templateCategory || 'template'}
+                        snippet.category === 'text' ? t.textCategory || 'text' :
+                          snippet.category === 'wikilink' ? t.wikiLinkCategory || 'wikilink' :
+                            t.templateCategory || 'template'}
                     </span>
                     <span className="text-sm font-medium text-slate-700 dark:text-slate-300 truncate">
                       {t[`snippet_${snippet.id}`] || snippet.name}
@@ -1059,19 +1058,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="space-y-0.5">
               {outline.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-10 text-slate-400 text-center opacity-60">
-                   <AlignLeft size={32} className="mb-2" />
-                   <p className="text-xs">No headings found</p>
+                  <AlignLeft size={32} className="mb-2" />
+                  <p className="text-xs">No headings found</p>
                 </div>
               ) : (
                 outline.map((item, idx) => (
                   <button
                     key={idx}
                     onClick={() => {
-                        const elementId = `heading-${item.slug}`;
-                        const element = document.getElementById(elementId);
-                        if (element) {
-                          element.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                        }
+                      const elementId = `heading-${item.slug}`;
+                      const element = document.getElementById(elementId);
+                      if (element) {
+                        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }
                     }}
                     className="w-full text-left py-1 px-2 rounded hover:bg-paper-200 dark:bg-cyber-900 text-slate-600 dark:text-slate-300 transition-colors flex items-center gap-2 group"
                     style={{ paddingLeft: `${(item.level - 1) * 12 + 4}px` }}
@@ -1087,76 +1086,76 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* OCR Progress - Only shown when processing */}
         {ocrStats?.isProcessing && (
-            <div className="mx-2 mb-2 p-3 bg-white dark:bg-cyber-900 rounded-lg border border-paper-200 dark:border-cyber-700 shadow-sm transition-all duration-300">
-                <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                        <Loader2 size={12} className="animate-spin text-amber-500" />
-                        {ocrStats.currentFile?.includes('(OCR)') ? t.ocrProcessing : t.pdfProcessing}
-                    </span>
-                    <span className="text-xs font-mono text-slate-500 dark:text-slate-400">
-                        {ocrStats.totalPages > 0
-                            ? `${ocrStats.processedPages}/${ocrStats.totalPages}`
-                            : t.detecting}
-                    </span>
-                </div>
-                <div className="w-full h-1.5 bg-paper-100 dark:bg-cyber-800 rounded-full overflow-hidden">
-                    <div
-                        className="h-full bg-amber-500 transition-all duration-300"
-                        style={{ width: `${ocrStats.totalPages > 0 ? (ocrStats.processedPages / ocrStats.totalPages) * 100 : 0}%` }}
-                    />
-                </div>
-                {ocrStats.currentFile && (
-                    <div className="mt-1.5 text-[10px] text-slate-500 dark:text-slate-400 truncate">
-                        {ocrStats.currentFile}
-                    </div>
-                )}
+          <div className="mx-2 mb-2 p-3 bg-white dark:bg-cyber-900 rounded-lg border border-paper-200 dark:border-cyber-700 shadow-sm transition-all duration-300">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <Loader2 size={12} className="animate-spin text-amber-500" />
+                {ocrStats.currentFile?.includes('(OCR)') ? t.ocrProcessing : t.pdfProcessing}
+              </span>
+              <span className="text-xs font-mono text-slate-500 dark:text-slate-400">
+                {ocrStats.totalPages > 0
+                  ? `${ocrStats.processedPages}/${ocrStats.totalPages}`
+                  : t.detecting}
+              </span>
             </div>
+            <div className="w-full h-1.5 bg-paper-100 dark:bg-cyber-800 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-amber-500 transition-all duration-300"
+                style={{ width: `${ocrStats.totalPages > 0 ? (ocrStats.processedPages / ocrStats.totalPages) * 100 : 0}%` }}
+              />
+            </div>
+            {ocrStats.currentFile && (
+              <div className="mt-1.5 text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                {ocrStats.currentFile}
+              </div>
+            )}
+          </div>
         )}
 
         {/* RAG Status */}
         {ragStats && (
-            <div className="mt-auto mb-2 mx-2 p-3 bg-white dark:bg-cyber-900 rounded-lg border border-paper-200 dark:border-cyber-700 shadow-sm transition-all duration-300">
-                <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                        <Database size={12} className="text-cyan-500" /> {t.knowledgeBase}
-                    </span>
-                    <div className="flex items-center gap-2">
-                        {ragStats.isIndexing && <Loader2 size={12} className="animate-spin text-cyan-500" />}
-                        <button
-                            onClick={(e) => { e.stopPropagation(); onRefreshIndex?.(); }}
-                            className="p-1 hover:bg-paper-100 dark:hover:bg-cyber-800 rounded-md text-slate-400 hover:text-cyan-500 transition-colors"
-                            title={t.refreshIndex}
-                            disabled={ragStats.isIndexing}
-                        >
-                            <RefreshCw size={12} className={ragStats.isIndexing ? 'animate-spin' : ''} />
-                        </button>
-                    </div>
-                </div>
-
-                <div className="space-y-1.5">
-                    <div className="flex justify-between text-[10px] text-slate-500 dark:text-slate-400">
-                        <span>{t.filesIndexed}</span>
-                        <span className="font-mono">{ragStats.indexedFiles} / {ragStats.totalFiles}</span>
-                    </div>
-                    <div className="w-full h-1 bg-paper-100 dark:bg-cyber-800 rounded-full overflow-hidden">
-                        <div
-                        className="h-full bg-cyan-500 transition-all duration-300"
-                        style={{ width: `${ragStats.totalFiles > 0 ? (ragStats.indexedFiles / ragStats.totalFiles) * 100 : 0}%` }}
-                        />
-                    </div>
-
-                    <div className="flex justify-between text-[10px] text-slate-500 dark:text-slate-400 pt-1">
-                        <span>{t.totalChunks}</span>
-                        <span className="font-mono">{ragStats.totalChunks}</span>
-                    </div>
-                </div>
+          <div className="mt-auto mb-2 mx-2 p-3 bg-white dark:bg-cyber-900 rounded-lg border border-paper-200 dark:border-cyber-700 shadow-sm transition-all duration-300">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <Database size={12} className="text-cyan-500" /> {t.knowledgeBase}
+              </span>
+              <div className="flex items-center gap-2">
+                {ragStats.isIndexing && <Loader2 size={12} className="animate-spin text-cyan-500" />}
+                <button
+                  onClick={(e) => { e.stopPropagation(); onRefreshIndex?.(); }}
+                  className="p-1 hover:bg-paper-100 dark:hover:bg-cyber-800 rounded-md text-slate-400 hover:text-cyan-500 transition-colors"
+                  title={t.refreshIndex}
+                  disabled={ragStats.isIndexing}
+                >
+                  <RefreshCw size={12} className={ragStats.isIndexing ? 'animate-spin' : ''} />
+                </button>
+              </div>
             </div>
+
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-[10px] text-slate-500 dark:text-slate-400">
+                <span>{t.filesIndexed}</span>
+                <span className="font-mono">{ragStats.indexedFiles} / {ragStats.totalFiles}</span>
+              </div>
+              <div className="w-full h-1 bg-paper-100 dark:bg-cyber-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-cyan-500 transition-all duration-300"
+                  style={{ width: `${ragStats.totalFiles > 0 ? (ragStats.indexedFiles / ragStats.totalFiles) * 100 : 0}%` }}
+                />
+              </div>
+
+              <div className="flex justify-between text-[10px] text-slate-500 dark:text-slate-400 pt-1">
+                <span>{t.totalChunks}</span>
+                <span className="font-mono">{ragStats.totalChunks}</span>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Footer */}
         <div className="p-2 border-t border-paper-200 dark:border-cyber-700 bg-paper-50 dark:bg-cyber-900/50 text-[10px] text-slate-400 text-center flex justify-between items-center px-4">
-            <span>{files.length} Files</span>
-            <span>TashanStone</span>
+          <span>{files.length} Files</span>
+          <span>TashanStone</span>
         </div>
 
         {/* Context Menu */}

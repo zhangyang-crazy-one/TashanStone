@@ -1,14 +1,42 @@
-import React, { useEffect, useRef, useCallback, useState, useMemo } from 'react';
+import React, { useEffect, useRef, useCallback, useState, useMemo, forwardRef, useImperativeHandle } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
-import { EditorView, Decoration, DecorationSet, ViewPlugin, ViewUpdate, hoverTooltip, Tooltip, showTooltip } from '@codemirror/view';
+import { EditorView, Decoration, DecorationSet, ViewPlugin, ViewUpdate, hoverTooltip, Tooltip, showTooltip, keymap } from '@codemirror/view';
 import { EditorState, RangeSetBuilder } from '@codemirror/state';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { syntaxHighlighting, defaultHighlightStyle, LanguageSupport } from '@codemirror/language';
-import { keymap } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { extractWikiLinks, WikiLink } from '../src/types/wiki';
 import { findFileByWikiLinkTarget } from '../src/services/wiki/wikiLinkService';
 import { FileText } from 'lucide-react';
+import type { CodeMirrorEditorRef } from '../types';
+
+// Custom keymap for link insertion shortcuts (CodeMirror 6 format)
+const linkInsertKeymap = keymap.of([
+  {
+    key: 'Ctrl-Alt-k',
+    run: (view: EditorView) => {
+      window.dispatchEvent(new CustomEvent('editor-action', { detail: 'insert_wikilink' }));
+      return true;
+    }
+  },
+  {
+    key: 'Ctrl-Alt-Shift-k',
+    run: (view: EditorView) => {
+      window.dispatchEvent(new CustomEvent('editor-action', { detail: 'insert_blockref' }));
+      return true;
+    }
+  },
+  {
+    key: 'Ctrl-Alt-l',
+    run: (view: EditorView) => {
+      window.dispatchEvent(new CustomEvent('editor-action', { detail: 'quick_link' }));
+      return true;
+    }
+  }
+]);
+
+// Export for external use
+export { linkInsertKeymap };
 
 interface EditorProps {
   content: string;
@@ -182,7 +210,7 @@ const getWikiLinkExtensions = (files: Array<{ id: string; name: string; path?: s
   ];
 };
 
-export const CodeMirrorEditor: React.FC<EditorProps> = ({
+export const CodeMirrorEditor = forwardRef<CodeMirrorEditorRef, EditorProps>(({
   content,
   onChange,
   onUndo,
@@ -191,7 +219,7 @@ export const CodeMirrorEditor: React.FC<EditorProps> = ({
   initialCursor,
   files = [],
   onNavigate
-}) => {
+}, ref) => {
   const viewRef = useRef<EditorView | null>(null);
   const [currentWikiLink, setCurrentWikiLink] = useState<WikiLink | null>(null);
   const [linkTargetExists, setLinkTargetExists] = useState(false);
@@ -218,6 +246,25 @@ export const CodeMirrorEditor: React.FC<EditorProps> = ({
     currentWikiLinkRef.current = currentWikiLink;
     linkTargetExistsRef.current = linkTargetExists;
   }, [currentWikiLink, linkTargetExists]);
+
+  // Expose methods to parent via ref
+  useImperativeHandle(ref, () => ({
+    view: viewRef.current,
+    insertText: (text: string) => {
+      if (!viewRef.current) return;
+      const { state } = viewRef.current;
+      const selection = state.selection.main;
+      viewRef.current.dispatch({
+        changes: { from: selection.from, to: selection.to, insert: text },
+        selection: { anchor: selection.from + text.length }
+      });
+    },
+    getSelection: () => {
+      if (!viewRef.current) return '';
+      const { state } = viewRef.current;
+      return state.sliceDoc(state.selection.main.from, state.selection.main.to);
+    }
+  }));
 
   const handleChange = useCallback((value: string) => {
     onChange(value);
@@ -263,6 +310,7 @@ export const CodeMirrorEditor: React.FC<EditorProps> = ({
     syntaxHighlighting(defaultHighlightStyle),
     history(),
     keymap.of([...defaultKeymap, ...historyKeymap]),
+    linkInsertKeymap,  // Add link insertion shortcuts
     EditorView.lineWrapping,
     EditorView.updateListener.of(handleCursorChange),
     EditorView.domEventHandlers({
@@ -436,6 +484,6 @@ export const CodeMirrorEditor: React.FC<EditorProps> = ({
       )}
     </div>
   );
-};
+});
 
 export default CodeMirrorEditor;

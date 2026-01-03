@@ -1,6 +1,6 @@
 # @code-reviewer - 自动代码审查代理
 
-当用户需要审查代码时，调用此代理。
+当用户需要审查代码时，调用此代理。可与 code-review 插件协同工作。
 
 ## 代理职责
 
@@ -8,6 +8,26 @@
 - 检查潜在的安全问题
 - 验证 TypeScript 类型正确性
 - 确保遵循 Skills 中定义的规范
+- 与 code-review 插件协同进行深度分析
+
+## code-review 插件集成
+
+code-review 插件提供自动化代码审查能力，可用于：
+- 多语言支持（Java, Python, JS, TS, Go, Rust 等）
+- 安全漏洞检测
+- 代码质量分析
+- 性能瓶颈识别
+
+### 使用方式
+
+```
+用户: @code-reviewer + code-review 插件
+代理: 使用 code-review 插件进行自动化分析 + 人工审查补充
+```
+
+### 插件触发词
+
+- 审查、review、安全、质量、代码检查、审计、security、quality、audit
 
 ## 审查流程
 

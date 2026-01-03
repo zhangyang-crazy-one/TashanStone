@@ -1,15 +1,16 @@
 ---
 name: react-frontend
 description: |
-  React 前端开发规范。
+  React 前端和 WebAssembly 开发规范。
 
   触发场景：
   - 开发 React 组件
   - 使用 hooks 管理状态
   - TypeScript 类型定义
   - Tailwind CSS 样式
+  - WebAssembly 模块开发
 
-  触发词：React、前端、组件、hooks、typescript、jsx、tsx、UI、样式、Tailwind
+  触发词：React、前端、组件、hooks、typescript、jsx、tsx、UI、样式、Tailwind、wasm、webassembly
 ---
 
 # React 前端开发规范
@@ -199,6 +200,106 @@ if (previewMemory?.id === memory.id) {
 }
 ```
 
+## WebAssembly 开发
+
+当开发 WebAssembly 模块时，使用 rust-analyzer 进行 Rust 代码分析：
+
+### Rust WebAssembly 开发流程
+
+```rust
+// src/lib.rs - Rust WebAssembly 模块
+use wasm_bindgen::prelude::*;
+
+#[wasm_bindgen]
+pub fn process_text(input: &str) -> String {
+    // 高性能文本处理
+    input.to_uppercase()
+}
+
+#[wasm_bindgen]
+pub struct Processor {
+    data: Vec<u8>,
+}
+
+#[wasm_bindgen]
+impl Processor {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Processor {
+        Processor { data: Vec::new() }
+    }
+
+    pub fn process(&mut self, input: &[u8]) {
+        // 高性能数据处理
+    }
+}
+```
+
+### React 中加载 WebAssembly
+
+```typescript
+// hooks/useWasmModule.ts
+import { useState, useEffect, useCallback } from 'react';
+
+interface WasmModule {
+  processText: (input: string) => string;
+  Processor: new () => WasmProcessor;
+}
+
+interface WasmProcessor {
+  process: (input: Uint8Array) => void;
+}
+
+export function useWasmModule() {
+  const [module, setModule] = useState<WasmModule | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadWasm = async () => {
+      try {
+        const wasm = await import('../../pkg/my_wasm_module');
+        setModule(wasm);
+      } catch (e) {
+        setError(`Failed to load WASM: ${e}`);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadWasm();
+  }, []);
+
+  const processText = useCallback((input: string) => {
+    if (!module?.processText) throw new Error('WASM not loaded');
+    return module.processText(input);
+  }, [module]);
+
+  return { module, loading, error, processText };
+}
+```
+
+### WebAssembly 编译
+
+```bash
+# 安装 wasm-pack
+cargo install wasm-pack
+
+# 编译为 WebAssembly
+wasm-pack build --target web
+
+# 输出到 pkg/ 目录
+# - my_wasm_module_bg.wasm
+# - my_wasm_module_bg.js
+# - my_wasm_module.d.ts
+```
+
+## rust-analyzer 集成
+
+开发 Rust WebAssembly 时，使用 rust-analyzer 获取：
+- 准确的类型推断
+- borrow checker 指导
+- 自动实现 trait
+- 代码补全和导航
+
 ## 检查清单
 
 - [ ] 是否使用函数组件 + hooks
@@ -207,3 +308,4 @@ if (previewMemory?.id === memory.id) {
 - [ ] 是否通过 electronAPI 调用主进程功能
 - [ ] 是否处理了 loading/error 状态
 - [ ] Memory 操作后是否同步更新本地状态
+- [ ] WebAssembly 代码是否使用 rust-analyzer

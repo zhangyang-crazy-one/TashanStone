@@ -62,7 +62,7 @@ const rehypeFilterAttributes = () => {
 };
 
 // --- Rehype Plugin to transform Block References ---
-// Transforms <<PageName:LineNumber>> or <<PageName:start-end>> into custom elements
+// Transforms <<PageName:LineNumber>> or (((PageName#LineNumber))) into custom elements
 // IMPORTANT: This is a plugin factory that returns a rehype plugin
 const rehypeBlockReferences = (files: MarkdownFile[]) => {
   // Return the actual plugin function (this is what unified expects)
@@ -76,8 +76,11 @@ const rehypeBlockReferences = (files: MarkdownFile[]) => {
 
         const value = node.value;
 
-        // 支持两种格式: <<filename:line>> 和 <<{filename}:{line}>>
-        const blockRefRegex = /<<\{?([^:}]+)\}?:\{?(\d+)\}?(?:-\{?(\d+)\}?)?>>(?!>)/g;
+        // 支持三种格式:
+        // 1. <<filename:line>> 或 <<filename:start-end>>
+        // 2. <<{filename}:{line}>> 或 <<{filename}:{start}-{end}>>
+        // 3. (((filename#line))) 或 (((filename#start-end))) - 新格式
+        const blockRefRegex = /(?:<<\{?([^:}]+)\}?:\{?(\d+)\}?(?:-\{?(\d+)\}?)?>>(?!>)|\(\(\(([^#)]+)#(\d+)(?:-(\d+))?\)\)\))/g;
         const matches = [...value.matchAll(blockRefRegex)];
 
         if (matches.length > 0) {
@@ -92,20 +95,23 @@ const rehypeBlockReferences = (files: MarkdownFile[]) => {
               });
             }
 
-            const target = match[1].trim();
-            const startLine = parseInt(match[2], 10);
-            const endLine = match[3] ? parseInt(match[3], 10) : startLine;
+            // Handle both formats: match[1-3] for <<>> format, match[4-6] for ((())) format
+            const target = (match[1] || match[4])?.trim();
+            const startLine = parseInt(match[2] || match[5], 10);
+            const endLine = match[3] ? parseInt(match[3], 10) : (match[6] ? parseInt(match[6], 10) : startLine);
 
-            children.push({
-              type: 'element',
-              tagName: 'blockref',
-              properties: {
-                'data-target': target,
-                'data-start-line': startLine,
-                'data-end-line': endLine
-              },
-              children: [{ type: 'text', value: `<<${target}:${startLine}${endLine > startLine ? `-${endLine}` : ''}>>` }]
-            });
+            if (target && !isNaN(startLine)) {
+              children.push({
+                type: 'element',
+                tagName: 'blockref',
+                properties: {
+                  'data-target': target,
+                  'data-start-line': startLine,
+                  'data-end-line': endLine
+                },
+                children: [{ type: 'text', value: `${target}#${startLine}${endLine > startLine ? `-${endLine}` : ''}` }]
+              });
+            }
 
             lastIndex = match.index + match[0].length;
           });
@@ -380,9 +386,9 @@ const BlockReferencePreview: React.FC<BlockReferencePreviewProps> = ({ target, s
 
   const formatLabel = () => {
     if (endLine && endLine > startLine) {
-      return `<<${target}:${startLine}-${endLine}>>`;
+      return `(((${target}#${startLine}-${endLine})))`;
     }
-    return `<<${target}:${startLine}>>`;
+    return `(((${target}#${startLine})))`;
   };
 
   const handleClick = (e: React.MouseEvent) => {

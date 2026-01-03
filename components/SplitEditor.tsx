@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { EditorPane, MarkdownFile } from '../types';
+import { EditorPane, MarkdownFile, CodeMirrorEditorRef } from '../types';
 import { Editor } from './Editor';
 import { CodeMirrorEditor } from './CodeMirrorEditor';
 import { Preview } from './Preview';
@@ -18,6 +18,7 @@ interface SplitEditorProps {
   splitMode: 'none' | 'horizontal' | 'vertical';
   language?: Language;
   editorRef?: React.RefObject<HTMLTextAreaElement>;
+  codeMirrorRef?: React.RefObject<CodeMirrorEditorRef>;
   useCodeMirror?: boolean;
 }
 
@@ -33,6 +34,7 @@ export const SplitEditor: React.FC<SplitEditorProps> = ({
   splitMode,
   language = 'en',
   editorRef,
+  codeMirrorRef,
   useCodeMirror = false
 }) => {
   const t = translations[language];
@@ -122,6 +124,7 @@ export const SplitEditor: React.FC<SplitEditorProps> = ({
             useCodeMirror ? (
               <CodeMirrorEditor
                 key={`cm-editor-${file.id}-${pane.id}`}
+                ref={codeMirrorRef}
                 content={file.content}
                 onChange={(content) => onContentChange(file.id, content)}
                 onCursorChange={(position) => onCursorChange?.(file.id, position)}

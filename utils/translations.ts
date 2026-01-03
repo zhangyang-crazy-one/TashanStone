@@ -276,7 +276,28 @@ export const translations = {
     applySuggestion: 'Apply',
     dismissSuggestion: 'Dismiss',
     noSuggestions: 'No organization suggestions available',
-    analyzingFile: 'Analyzing file content...'
+    analyzingFile: 'Analyzing file content...',
+    // Link Insert translations
+    linkInsert: {
+      title: {
+        wikilink: 'Insert WikiLink',
+        blockref: 'Insert Block Reference',
+        quick_link: 'Quick Link'
+      },
+      placeholder: 'Search files...',
+      alias: 'Alias (optional)',
+      startLine: 'Start Line',
+      endLine: 'End Line (optional)',
+      noFilesFound: 'No matching files found',
+      back: '← Back',
+      insert: 'Insert',
+      linkedTo: 'Linked to',
+      confirmCreate: 'File does not exist. Create it?',
+      createAndLink: 'Create & Link',
+      linkOnly: 'Link Only',
+      selectLines: 'Select lines by clicking',
+      quickLinkHint: 'Link selected text to file'
+    }
   },
   zh: {
     explorer: "资源管理器",
@@ -553,7 +574,28 @@ export const translations = {
     applySuggestion: '应用',
     dismissSuggestion: '忽略',
     noSuggestions: '暂无整理建议',
-    analyzingFile: '正在分析文件内容...'
+    analyzingFile: '正在分析文件内容...',
+    // Link Insert translations
+    linkInsert: {
+      title: {
+        wikilink: '插入 WikiLink',
+        blockref: '插入块引用',
+        quick_link: '快速链接'
+      },
+      placeholder: '搜索文件...',
+      alias: '别名（可选）',
+      startLine: '起始行',
+      endLine: '结束行（可选）',
+      noFilesFound: '未找到匹配的文件',
+      back: '← 返回',
+      insert: '插入',
+      linkedTo: '已链接到',
+      confirmCreate: '文件不存在，是否创建？',
+      createAndLink: '创建并链接',
+      linkOnly: '仅链接',
+      selectLines: '点击选择行',
+      quickLinkHint: '将选中文本链接到文件'
+    }
   }
 };
 

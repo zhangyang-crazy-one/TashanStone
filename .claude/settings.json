@@ -15,6 +15,17 @@
         ]
       }
     ],
+    "SkillInvocation": [
+      {
+        "matcher": "spec-interview",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"Write-Host 'Spec Interview skill activated'\""
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "matcher": "",
@@ -63,5 +74,10 @@
       }
     ]
   },
-  "mcpServers": {}
+  "mcpServers": {
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"]
+    }
+  }
 }
