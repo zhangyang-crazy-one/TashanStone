@@ -535,6 +535,20 @@ export interface SpeechRecognitionErrorEvent extends Event {
 }
 
 // ========================
+// Memory Candidate (for Compact Memory Prompt)
+// ========================
+
+export interface MemoryCandidate {
+  summary: string;
+  topics: string[];
+  decisions: string[];
+  keyFindings: string[];
+  score: number;
+  shouldPromote: boolean;
+  messageCount: number;
+}
+
+// ========================
 // Global Window Extensions
 // ========================
 

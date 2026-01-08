@@ -612,12 +612,17 @@ export const parseToolCallsFromContent = (content: string): Array<{
     content?: string;
     toolName?: string;
     result?: string;
+    args?: Record<string, string>;
   }
 
   const matches: MatchItem[] = [];
 
   const thinkPattern = /<(?:think|thinking)>([\s\S]*?)<\/(?:think|thinking)>/gi;
-  const toolPattern = /🔧\s*\*\*(?:Tool|Executing):\s*([^*]+)\*\*(?:\.\.\.)?\s*(?:```json\s*([\s\S]*?)```)?/g;
+  const toolPattern = /🔧\s*\*\*(?:Tool|Executing):\s*([^*]+)\*\*(?:\.\.\.)?(?:\s*```json\s*([\s\S]*?)```)?/g;
+  // MiniMax/Anthropic XML tool_call format: <minimax:tool_call> or generic XML invoke
+  const xmlToolPattern = /<(?:minimax:)?tool_call>\s*<invoke\s+name="([^"]+)">([\s\S]*?)<\/invoke>\s*<\/(?:minimax:)?tool_call>/gi;
+  // Fallback: partial/malformed XML tool calls (shown as raw in stream)
+  const partialXmlToolPattern = /\*\*Tool:\s*([^">\s]+)["']?>\s*<parameter[^>]*>([^<]*)<\/parameter>\s*(?:<\/invoke>)?\s*(?:<\/(?:minimax:)?tool_call>)?/gi;
 
   const thinkMatches = [...content.matchAll(thinkPattern)];
   for (const match of thinkMatches) {
@@ -638,6 +643,48 @@ export const parseToolCallsFromContent = (content: string): Array<{
       toolName: match[1]?.trim(),
       result: match[2]?.trim()
     });
+  }
+
+  // Parse MiniMax XML tool_call format
+  const xmlToolMatches = [...content.matchAll(xmlToolPattern)];
+  for (const match of xmlToolMatches) {
+    const toolName = match[1]?.trim();
+    const paramsXml = match[2] || '';
+    // Extract parameters from XML
+    const args: Record<string, string> = {};
+    const paramPattern = /<parameter\s+name="([^"]+)">([^<]*)<\/parameter>/gi;
+    let paramMatch;
+    while ((paramMatch = paramPattern.exec(paramsXml)) !== null) {
+      args[paramMatch[1]] = paramMatch[2];
+    }
+    matches.push({
+      index: match.index,
+      length: match[0].length,
+      type: 'tool',
+      toolName,
+      args
+    });
+  }
+
+  // Parse partial/malformed XML (like in screenshot)
+  const partialXmlMatches = [...content.matchAll(partialXmlToolPattern)];
+  for (const match of partialXmlMatches) {
+    // Avoid duplicates - check if this range overlaps with existing matches
+    const matchStart = match.index;
+    const matchEnd = match.index + match[0].length;
+    const isOverlapping = matches.some(m => 
+      (matchStart >= m.index && matchStart < m.index + m.length) ||
+      (matchEnd > m.index && matchEnd <= m.index + m.length)
+    );
+    if (!isOverlapping) {
+      matches.push({
+        index: match.index,
+        length: match[0].length,
+        type: 'tool',
+        toolName: match[1]?.trim(),
+        args: { path: match[2]?.trim() }
+      });
+    }
   }
 
   matches.sort((a, b) => a.index - b.index);
@@ -678,7 +725,8 @@ export const parseToolCallsFromContent = (content: string): Array<{
         type: 'tool',
         toolName: match.toolName,
         status,
-        result: match.result
+        result: match.result,
+        args: match.args
       });
     }
 

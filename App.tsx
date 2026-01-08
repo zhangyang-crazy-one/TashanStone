@@ -25,8 +25,9 @@ import { SmartOrganizeModal } from './components/SmartOrganizeModal';
 import { SearchModal } from './components/SearchModal';
 import { StudyPlanPanel } from './components/StudyPlanPanel';
 import { LinkInsertModal } from './components/LinkInsertModal';
-import { ViewMode, AIState, MarkdownFile, AIConfig, ChatMessage, GraphData, AppTheme, Quiz, RAGStats, OCRStats, AppShortcut, RAGResultData, EditorPane, Snippet, StudyPlan, ExamResult, KnowledgePointStat, QuestionBank, QuizQuestion, LinkInsertResult, CodeMirrorEditorRef } from './types';
-import { polishContent, expandContent, generateAIResponse, generateAIResponseStream, generateKnowledgeGraph, synthesizeKnowledgeBase, generateQuiz, generateMindMap, extractQuizFromRawContent, compactConversation, searchPermanentMemories, autoCreateMemoryFromSession, initPersistentMemory, getEmbedding } from './services/aiService';
+import { CompactMemoryPrompt } from './components/CompactMemoryPrompt';
+import { ViewMode, AIState, MarkdownFile, AIConfig, ChatMessage, GraphData, AppTheme, Quiz, RAGStats, OCRStats, AppShortcut, RAGResultData, EditorPane, Snippet, StudyPlan, ExamResult, KnowledgePointStat, QuestionBank, QuizQuestion, LinkInsertResult, CodeMirrorEditorRef, MemoryCandidate } from './types';
+import { polishContent, expandContent, generateAIResponse, generateAIResponseStream, generateKnowledgeGraph, synthesizeKnowledgeBase, generateQuiz, generateMindMap, extractQuizFromRawContent, compactConversation, searchPermanentMemories, autoCreateMemoryFromSession, initPersistentMemory, getEmbedding, analyzeSessionForMemory, createMemoryFromCandidate } from './services/aiService';
 import { applyTheme, getAllThemes, getSavedThemeId, saveCustomTheme, deleteCustomTheme, DEFAULT_THEMES, getLastUsedThemeIdForMode } from './services/themeService';
 import { readDirectory, readDirectoryEnhanced, saveFileToDisk, processPdfFile, extractTextFromFile, parseCsvToQuiz, isExtensionSupported } from './services/fileService';
 import { VectorStore } from './services/ragService';
@@ -389,6 +390,11 @@ const App: React.FC = () => {
   // Link Insert Modal State
   const [isLinkInsertOpen, setIsLinkInsertOpen] = useState(false);
   const [linkInsertMode, setLinkInsertMode] = useState<'wikilink' | 'blockref' | 'quick_link'>('wikilink');
+
+  // Compact Memory Prompt State
+  const [showCompactMemoryPrompt, setShowCompactMemoryPrompt] = useState(false);
+  const [compactMemoryCandidate, setCompactMemoryCandidate] = useState<MemoryCandidate | null>(null);
+  const [isCompactSaving, setIsCompactSaving] = useState(false);
 
   // 同步存储光标位置的 ref（解决 React 18 异步状态批处理导致的竞态条件）
   const cursorPositionsRef = useRef<Map<string, { start: number; end: number }>>(new Map());
@@ -2282,46 +2288,37 @@ IMPORTANT:
       return;
     }
 
-    setAiState({ isThinking: true, message: "Analyzing conversation for permanent memory...", error: null });
-
-    try {
-      // Step 1: Try to auto-create permanent memory before compacting
-      // This preserves important insights from the session
-      if (chatMessages.length >= 5) {
-        const sessionId = `session_${Date.now()}`;
-
-        // Create embedding service using getEmbedding from aiService
-        const embeddingService = async (text: string): Promise<number[]> => {
-          try {
-            return await getEmbedding(text, aiConfig);
-          } catch (error) {
-            console.warn('[AutoMemory] Embedding failed:', error);
-            return [];
-          }
-        };
-
-        // Initialize persistent memory service
-        await initPersistentMemory();
-
-        const memory = await autoCreateMemoryFromSession(
-          sessionId,
+    // Analyze session for memory candidate and show prompt
+    if (chatMessages.length >= 5) {
+      setAiState({ isThinking: true, message: "Analyzing conversation...", error: null });
+      
+      try {
+        const candidate = analyzeSessionForMemory(
           chatMessages.map(m => ({
             role: m.role as 'user' | 'assistant' | 'system',
             content: m.content,
             timestamp: m.timestamp
-          })),
-          embeddingService
+          }))
         );
-
-        if (memory) {
-          showToast(lang === 'zh'
-            ? `已创建永久记忆: ${memory.topics.slice(0, 2).join(', ')}`
-            : `Created permanent memory: ${memory.topics.slice(0, 2).join(', ')}`);
-        }
+        
+        setCompactMemoryCandidate(candidate);
+        setShowCompactMemoryPrompt(true);
+        setAiState(prev => ({ ...prev, isThinking: false, message: null }));
+      } catch (e: any) {
+        console.error('[CompactChat] Analysis failed:', e);
+        // If analysis fails, proceed with compaction directly
+        await performCompact();
       }
+    } else {
+      // Not enough messages for memory, just compact
+      await performCompact();
+    }
+  };
 
-      // Step 2: Compact the conversation
-      setAiState({ isThinking: true, message: "Summarizing conversation...", error: null });
+  // Perform the actual compaction
+  const performCompact = async () => {
+    setAiState({ isThinking: true, message: "Summarizing conversation...", error: null });
+    try {
       const compacted = await compactConversation(chatMessages, aiConfig);
       setChatMessages(compacted);
       showToast("Context compacted.");
@@ -2330,6 +2327,58 @@ IMPORTANT:
     } finally {
       setAiState(prev => ({ ...prev, isThinking: false, message: null }));
     }
+  };
+
+  // Handle saving memory from compact prompt
+  const handleCompactMemorySave = async (editedSummary: string, autoInject: boolean, markImportant: boolean) => {
+    if (!compactMemoryCandidate) return;
+    
+    setIsCompactSaving(true);
+    try {
+      const sessionId = `session_${Date.now()}`;
+      
+      // Create embedding service
+      const embeddingService = async (text: string): Promise<number[]> => {
+        try {
+          return await getEmbedding(text, aiConfig);
+        } catch (error) {
+          console.warn('[CompactMemory] Embedding failed:', error);
+          return [];
+        }
+      };
+
+      // Initialize persistent memory service
+      await initPersistentMemory();
+
+      const memory = await createMemoryFromCandidate(
+        sessionId,
+        compactMemoryCandidate,
+        editedSummary,
+        embeddingService
+      );
+
+      if (memory) {
+        showToast(lang === 'zh'
+          ? `已创建永久记忆: ${memory.topics.slice(0, 2).join(', ')}`
+          : `Created permanent memory: ${memory.topics.slice(0, 2).join(', ')}`);
+      }
+
+      // Close prompt and perform compaction
+      setShowCompactMemoryPrompt(false);
+      setCompactMemoryCandidate(null);
+      await performCompact();
+    } catch (e: any) {
+      showToast(e.message, true);
+    } finally {
+      setIsCompactSaving(false);
+    }
+  };
+
+  // Handle skipping memory save from compact prompt
+  const handleCompactMemorySkip = async () => {
+    setShowCompactMemoryPrompt(false);
+    setCompactMemoryCandidate(null);
+    await performCompact();
   };
 
   // --- Keyboard Shortcuts Logic ---
@@ -2887,6 +2936,18 @@ IMPORTANT:
         onInsert={handleLinkInsert}
         onClose={() => setIsLinkInsertOpen(false)}
         selectedText={getSelectedText()}
+      />
+
+      <CompactMemoryPrompt
+        isOpen={showCompactMemoryPrompt}
+        candidate={compactMemoryCandidate}
+        language={lang}
+        onSave={handleCompactMemorySave}
+        onSkip={handleCompactMemorySkip}
+        onClose={() => {
+          setShowCompactMemoryPrompt(false);
+          setCompactMemoryCandidate(null);
+        }}
       />
     </div>
   );
