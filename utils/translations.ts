@@ -300,6 +300,28 @@ export const translations = {
       linkOnly: 'Link Only',
       selectLines: 'Select lines by clicking',
       quickLinkHint: 'Link selected text to file'
+    },
+    // Compact Memory Prompt translations
+    compactMemory: {
+      title: 'Save to Memory?',
+      subtitle: 'AI detected valuable content in this session',
+      lowValueSubtitle: 'This session has some content that might be worth saving',
+      topics: 'Topics',
+      decisions: 'Decisions',
+      keyFindings: 'Key Findings',
+      summary: 'Summary',
+      editSummary: 'Edit summary before saving',
+      autoInject: 'Auto-inject in future chats',
+      markImportant: 'Mark as important',
+      skipAndCompact: 'Skip & Compact',
+      saveMemory: 'Save Memory',
+      saving: 'Saving...',
+      noDecisions: 'No decisions detected',
+      noFindings: 'No key findings detected',
+      messageCount: '{count} messages analyzed',
+      qualityScore: 'Quality Score',
+      highValue: 'High Value',
+      lowValue: 'Low Value'
     }
   },
   zh: {
@@ -601,6 +623,28 @@ export const translations = {
       linkOnly: '仅链接',
       selectLines: '点击选择行',
       quickLinkHint: '将选中文本链接到文件'
+    },
+    // Compact Memory Prompt translations
+    compactMemory: {
+      title: '是否保存为记忆？',
+      subtitle: 'AI 检测到本次会话包含有价值的内容',
+      lowValueSubtitle: '本次会话有一些内容可能值得保存',
+      topics: '话题',
+      decisions: '决策',
+      keyFindings: '关键发现',
+      summary: '摘要',
+      editSummary: '保存前编辑摘要',
+      autoInject: '在未来对话中自动注入',
+      markImportant: '标记为重要',
+      skipAndCompact: '跳过并压缩',
+      saveMemory: '保存记忆',
+      saving: '保存中...',
+      noDecisions: '未检测到决策',
+      noFindings: '未检测到关键发现',
+      messageCount: '已分析 {count} 条消息',
+      qualityScore: '质量评分',
+      highValue: '高价值',
+      lowValue: '低价值'
     }
   }
 };

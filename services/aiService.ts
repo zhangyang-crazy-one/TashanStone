@@ -3781,6 +3781,76 @@ export async function getAllMemoryStats(): Promise<{
 }
 
 // ========================
+// Memory Analysis for Compact Prompt
+// ========================
+
+import type { MemoryCandidate } from '../types';
+
+/**
+ * Analyze session for memory without saving - returns MemoryCandidate for user review
+ */
+export function analyzeSessionForMemory(
+  messages: ChatMessageForMemory[]
+): MemoryCandidate {
+  const summary = generateSessionSummary(messages);
+  const topics = extractTopics(messages);
+  const decisions = extractDecisions(messages);
+  const keyFindings = extractKeyFindings(messages);
+
+  // Calculate score
+  const hasCodeFix = decisions.some(d =>
+    /\b(fix|bug|error|issue|repair|solve|resolve)\b/i.test(d)
+  );
+  const hasLearning = keyFindings.some(f =>
+    /\b(learn|discover|understand|realize|notice)\b/i.test(f)
+  );
+  const hasTechStack = topics.some(t =>
+    /\b(react|typescript|electron|node|python|api|database|server|client)\b/i.test(t)
+  );
+
+  const score = (hasCodeFix ? 3 : 0) +
+                (hasLearning ? 2 : 0) +
+                (hasTechStack ? 1 : 0);
+
+  const shouldPromote = score >= 3 || messages.length >= 15;
+
+  return {
+    summary,
+    topics,
+    decisions,
+    keyFindings,
+    score,
+    shouldPromote,
+    messageCount: messages.length
+  };
+}
+
+/**
+ * Create memory from user-confirmed candidate
+ */
+export async function createMemoryFromCandidate(
+  sessionId: string,
+  candidate: MemoryCandidate,
+  editedSummary: string,
+  embeddingService: (text: string) => Promise<number[]>
+): Promise<MemoryDocument | null> {
+  if (!persistentMemoryService) {
+    console.warn('[CreateMemory] Service not initialized');
+    return null;
+  }
+
+  persistentMemoryService.setEmbeddingService(embeddingService);
+
+  return persistentMemoryService.createMemoryFromSession(
+    sessionId,
+    editedSummary || candidate.summary,
+    candidate.topics,
+    candidate.decisions,
+    candidate.keyFindings
+  );
+}
+
+// ========================
 // Memory Auto-Creation Integration
 // ========================
 

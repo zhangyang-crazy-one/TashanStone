@@ -119,10 +119,10 @@ function MessageItemComponent(props: MessageItemProps): React.ReactElement {
             className={`
               w-8 h-8 rounded-full flex items-center justify-center shrink-0
               ${msg.role === 'user'
-                  ? 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400'
-                  : msg.role === 'system'
-                     ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
-                     : 'bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400'}
+                ? 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400'
+                : msg.role === 'system'
+                  ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+                  : 'bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400'}
             `}
           >
             {msg.role === 'user' ? <User size={16} /> : (msg.role === 'system' ? <Sparkles size={16} /> : <Bot size={16} />)}
@@ -657,19 +657,17 @@ ${memoryContents}
                 <div className="flex items-center gap-1 shrink-0">
                   <div className="h-1.5 w-12 bg-slate-200/50 dark:bg-slate-700/50 rounded-full overflow-hidden">
                     <div
-                      className={`h-full rounded-full transition-all ${
-                        tokenUsage / maxTokens > 0.9 ? 'bg-red-500' :
-                        tokenUsage / maxTokens > 0.7 ? 'bg-amber-500' :
-                        'bg-emerald-500'
-                      }`}
+                      className={`h-full rounded-full transition-all ${tokenUsage / maxTokens > 0.9 ? 'bg-red-500' :
+                          tokenUsage / maxTokens > 0.7 ? 'bg-amber-500' :
+                            'bg-emerald-500'
+                        }`}
                       style={{ width: `${Math.min((tokenUsage / maxTokens) * 100, 100)}%` }}
                     />
                   </div>
-                  <span className={`text-[10px] font-medium ${
-                    tokenUsage / maxTokens > 0.9 ? 'text-red-500' :
-                    tokenUsage / maxTokens > 0.7 ? 'text-amber-500' :
-                    'text-emerald-500'
-                   }`}>
+                  <span className={`text-[10px] font-medium ${tokenUsage / maxTokens > 0.9 ? 'text-red-500' :
+                      tokenUsage / maxTokens > 0.7 ? 'text-amber-500' :
+                        'text-emerald-500'
+                    }`}>
                     {Math.round((tokenUsage / maxTokens) * 100)}%
                   </span>
                 </div>
@@ -701,11 +699,10 @@ ${memoryContents}
                   console.log('[Brain] Toggle Memory Management clicked, current state:', showMemorySearch);
                   setShowMemorySearch(!showMemorySearch);
                 }}
-                className={`p-1.5 rounded-md transition-all relative ${
-                  showMemorySearch 
-                    ? 'text-violet-500 bg-violet-100/50 dark:bg-violet-900/30' 
+                className={`p-1.5 rounded-md transition-all relative ${showMemorySearch
+                    ? 'text-violet-500 bg-violet-100/50 dark:bg-violet-900/30'
                     : 'text-slate-400 hover:text-violet-500 hover:bg-violet-100/50 dark:hover:bg-violet-900/30'
-                }`}
+                  }`}
                 title={language === 'zh' ? '管理记忆' : 'Manage Memories'}
               >
                 <Brain size={15} />
@@ -739,8 +736,8 @@ ${memoryContents}
 
                   {/* Auto-injected notice */}
                   <div className="mb-3 p-2 bg-amber-50 dark:bg-amber-900/20 rounded text-xs text-amber-700 dark:text-amber-400">
-                    💡 {language === 'zh' 
-                      ? 'AI 会自动根据对话内容注入相关记忆' 
+                    💡 {language === 'zh'
+                      ? 'AI 会自动根据对话内容注入相关记忆'
                       : 'AI automatically injects relevant memories based on your messages'}
                   </div>
 
@@ -860,40 +857,130 @@ ${memoryContents}
           </div>
         </div>
 
-        {/* Messages with Virtual Scrolling */}
-        <div className="flex-1 custom-scrollbar">
-          <AutoSizer
-            renderProp={({ height, width }: { height: number; width: number }) => {
-              if (messages.length === 0) {
+        {/* Messages - Normal scrollable list instead of virtual list */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar">
+          {messages.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-slate-400 text-center space-y-2 opacity-60">
+              <Bot size={48} />
+              <p className="max-w-[80%]">{t.askMe}</p>
+            </div>
+          ) : (
+            <div className="py-4">
+              {messages.map((msg, index) => {
+                const isLastMessage = index === messages.length - 1;
+                const isStreamingMessage = msg.role === 'assistant' && isLastMessage && isStreaming;
+
                 return (
-                  <div className="flex flex-col items-center justify-center h-full text-slate-400 text-center space-y-2 opacity-60" style={{ height }}>
-                    <Bot size={48} />
-                    <p className="max-w-[80%]">{t.askMe}</p>
+                  <div key={msg.id || index} className="px-4">
+                    <div className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'} ${compactMode ? 'mb-2' : 'mb-4'}`}>
+                      {!msg.ragResults && !compactMode && (
+                        <div
+                          className={`
+                            w-8 h-8 rounded-full flex items-center justify-center shrink-0
+                            ${msg.role === 'user'
+                              ? 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400'
+                              : msg.role === 'system'
+                                ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+                                : 'bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400'}
+                          `}
+                        >
+                          {msg.role === 'user' ? <User size={16} /> : (msg.role === 'system' ? <Sparkles size={16} /> : <Bot size={16} />)}
+                        </div>
+                      )}
+
+                      {msg.ragResults ? (
+                        <div className="flex-1">
+                          <RAGResultsCard
+                            totalChunks={msg.ragResults.totalChunks}
+                            queryTime={msg.ragResults.queryTime}
+                            results={msg.ragResults.results}
+                          />
+                        </div>
+                      ) : isStreamingMessage ? (
+                        <div
+                          className={`
+                            max-w-[85%] rounded-2xl text-sm leading-relaxed
+                            ${compactMode ? 'p-2' : 'p-3'}
+                            bg-white dark:bg-cyber-800/50 border border-paper-200 dark:border-cyber-700 text-slate-700 dark:text-slate-300 rounded-tl-none
+                          `}
+                        >
+                          {msg.content.length === 0 ? (
+                            <div className="flex items-center gap-2">
+                              <Loader2 size={14} className="animate-spin text-violet-500" />
+                              <span className="text-xs text-slate-500 italic">{language === 'zh' ? 'AI 正在思考...' : 'AI is thinking...'}</span>
+                              {onStopStreaming && (
+                                <button
+                                  onClick={onStopStreaming}
+                                  className="ml-2 p-1 hover:bg-red-100 dark:hover:bg-red-900/20 rounded text-red-500 transition-colors"
+                                  title={t.stopGeneration}
+                                >
+                                  <Square size={12} />
+                                </button>
+                              )}
+                            </div>
+                          ) : (
+                            <div>
+                              <SmartMessageContent content={msg.content} isStreaming={true} />
+                              <div className="flex items-center gap-2 mt-2 pt-2 border-t border-paper-100 dark:border-cyber-700">
+                                <Loader2 size={12} className="animate-spin text-violet-400" />
+                                <span className="text-[10px] text-slate-400 italic">{language === 'zh' ? '生成中...' : 'Generating...'}</span>
+                                {onStopStreaming && (
+                                  <button
+                                    onClick={onStopStreaming}
+                                    className="ml-auto p-1 hover:bg-red-100 dark:hover:bg-red-900/20 rounded text-red-500 transition-colors"
+                                    title={t.stopGeneration}
+                                  >
+                                    <Square size={10} />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div
+                          className={`
+                            max-w-[85%] rounded-2xl text-sm leading-relaxed
+                            ${compactMode ? 'p-2' : 'p-3'}
+                            ${msg.role === 'user'
+                              ? 'bg-cyan-50 dark:bg-cyber-800 text-slate-800 dark:text-slate-200 rounded-tr-none'
+                              : msg.role === 'system'
+                                ? 'bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 text-slate-700 dark:text-slate-300 italic text-xs'
+                                : 'bg-white dark:bg-cyber-800/50 border border-paper-200 dark:border-cyber-700 text-slate-700 dark:text-slate-300 rounded-tl-none'}
+                          `}
+                        >
+                          {msg.role === 'assistant' ? (
+                            <SmartMessageContent content={msg.content} isStreaming={false} />
+                          ) : (
+                            <div className="chat-markdown-content">
+                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                {msg.content}
+                              </ReactMarkdown>
+                            </div>
+                          )}
+
+                          {msg.toolCalls && msg.toolCalls.length > 0 && !compactMode && (
+                            <div className="space-y-2 mt-3 pt-3 border-t border-neutral-200 dark:border-neutral-700">
+                              <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-2">
+                                {language === 'zh' ? '工具调用' : 'Tool Calls'} ({msg.toolCalls.length})
+                              </div>
+                              {msg.toolCalls.map(tc => (
+                                <ToolCallCard
+                                  key={tc.id}
+                                  toolCall={tc}
+                                  language={language}
+                                />
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 );
-              }
-
-              const rowData = {
-                messages,
-                isStreaming,
-                compactMode,
-                language,
-                onStopStreaming,
-                t
-              };
-
-              return (
-                <List
-                  style={{ height, width }}
-                  rowCount={messages.length}
-                  rowHeight={MESSAGE_ITEM_HEIGHT}
-                  rowComponent={MessageItem as any}
-                  rowProps={rowData}
-                  overscanCount={3}
-                />
-              );
-            }}
-          />
+              })}
+            </div>
+          )}
 
           {/* Thinking indicator after the list */}
           {aiState.isThinking && (
@@ -940,19 +1027,18 @@ ${memoryContents}
                   type="button"
                   onClick={toggle}
                   disabled={aiState.isThinking || isProcessing}
-                  className={`p-3 rounded-xl transition-all shrink-0 ${
-                    isProcessing
+                  className={`p-3 rounded-xl transition-all shrink-0 ${isProcessing
                       ? 'bg-amber-500 text-white animate-pulse shadow-lg shadow-amber-500/50'
                       : isListening
-                      ? 'bg-red-500 text-white animate-pulse shadow-lg shadow-red-500/50'
-                      : 'bg-neutral-700 hover:bg-neutral-600 text-neutral-300 disabled:opacity-50'
-                  }`}
+                        ? 'bg-red-500 text-white animate-pulse shadow-lg shadow-red-500/50'
+                        : 'bg-neutral-700 hover:bg-neutral-600 text-neutral-300 disabled:opacity-50'
+                    }`}
                   title={
                     isProcessing
                       ? (language === 'zh' ? '正在转录...' : 'Processing...')
                       : isListening
-                      ? (t.voice?.stopRecording || 'Stop Recording')
-                      : (t.voice?.startRecording || 'Start Recording')
+                        ? (t.voice?.stopRecording || 'Stop Recording')
+                        : (t.voice?.startRecording || 'Start Recording')
                   }
                 >
                   {isProcessing ? <Loader2 size={20} className="animate-spin" /> : isListening ? <MicOff size={20} /> : <Mic size={20} />}
@@ -999,9 +1085,9 @@ ${memoryContents}
           isOpen={showCheckpointDrawer}
           onClose={() => setShowCheckpointDrawer(false)}
           checkpoints={checkpoints}
-          onRestore={onRestoreCheckpoint || (async () => {})}
-          onDelete={onDeleteCheckpoint || (async () => {})}
-          onCreate={onCreateCheckpoint || (async () => {})}
+          onRestore={onRestoreCheckpoint || (async () => { })}
+          onDelete={onDeleteCheckpoint || (async () => { })}
+          onCreate={onCreateCheckpoint || (async () => { })}
         />
 
         <MemoryPreviewModal
