@@ -1,0 +1,66 @@
+# Dependabot Configuration
+# Automatically creates PRs to update dependencies
+
+version: 2
+updates:
+  # npm dependencies
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "npm"
+    groups:
+      # Group minor and patch updates for production dependencies
+      production:
+        patterns:
+          - "react*"
+          - "@codemirror/*"
+          - "lucide-react"
+          - "react-markdown"
+        update-types:
+          - "minor"
+          - "patch"
+      # Group all dev dependencies
+      development:
+        patterns:
+          - "@types/*"
+          - "@vitejs/*"
+          - "@testing-library/*"
+          - "vitest"
+          - "typescript"
+          - "vite*"
+          - "electron*"
+          - "tailwindcss"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # Ignore major version updates for critical packages
+      - dependency-name: "electron"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "dependencies"
+      - "github-actions"
