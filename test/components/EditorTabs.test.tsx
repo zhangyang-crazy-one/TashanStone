@@ -5,9 +5,9 @@ import { EditorTabs } from '../../components/EditorTabs';
 import type { EditorPane, MarkdownFile } from '../../types';
 
 const mockFiles: MarkdownFile[] = [
-  { id: 'file1', name: 'README.md', content: '# Hello', path: '/docs/README.md' },
-  { id: 'file2', name: 'Notes.md', content: '# Notes', path: '/docs/Notes.md' },
-  { id: 'file3', name: 'Todo.md', content: '# Todo', path: '/docs/Todo.md' },
+  { id: 'file1', name: 'README.md', content: '# Hello', path: '/docs/README.md', lastModified: Date.now() },
+  { id: 'file2', name: 'Notes.md', content: '# Notes', path: '/docs/Notes.md', lastModified: Date.now() },
+  { id: 'file3', name: 'Todo.md', content: '# Todo', path: '/docs/Todo.md', lastModified: Date.now() },
 ];
 
 const mockPanes: EditorPane[] = [
