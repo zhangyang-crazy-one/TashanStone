@@ -46,7 +46,7 @@ NUL
 
 # Temporary files
 false/
-test/
+# test/ - Tests are now tracked in git for CI/CD
 *.znb
 *.wav
 *.mp3
