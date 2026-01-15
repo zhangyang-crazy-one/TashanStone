@@ -281,9 +281,8 @@ describe('Toolbar', () => {
       const splitButton = screen.getByLabelText('Split horizontally');
       fireEvent.click(splitButton);
       
+      // Verify onSplitModeChange was called with correct argument
       expect(onSplitModeChange).toHaveBeenCalledWith('horizontal');
-      // Note: setViewMode is also called in the onClick handler, but we verify that
-      // through the onSplitModeChange call which confirms the handler executed
     });
   });
 
