@@ -233,6 +233,8 @@ TashanStone is a modern AI-powered Markdown editor designed for knowledge worker
 
 ## Development
 
+### Using npm
+
 ```bash
 # Install dependencies
 npm install
@@ -246,12 +248,31 @@ npm run dist:mac      # macOS (see docs/BUILD_MAC.md)
 npm run dist:linux    # Linux
 ```
 
+### Using bun (Recommended)
+
+```bash
+# Install dependencies
+bun install
+
+# Run tests
+bun run bun:test
+
+# Development mode
+bun run bun:dev:electron
+
+# Build for production
+bun run bun:dist:win      # Windows
+bun run bun:dist:mac      # macOS
+bun run bun:dist:linux    # Linux
+bun run bun:dist:all      # Windows + Linux
+```
+
 ## Tech Stack
 
 - **Frontend**: React 19, TypeScript, Tailwind CSS v4
 - **Desktop**: Electron 33
 - **Database**: SQLite (better-sqlite3)
-- **Build**: Vite, electron-builder
+- **Build**: Vite, electron-builder, **bun** (recommended)
 
 ## License
 
