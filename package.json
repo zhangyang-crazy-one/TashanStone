@@ -27,7 +27,19 @@
     "dist:all": "npm run build:electron && electron-builder --win --linux",
     "postinstall": "electron-builder install-app-deps",
     "download:sherpa-model": "node scripts/download-sherpa-model.cjs",
-    "download:ocr-model": "node scripts/download-ocr-model.cjs"
+    "download:ocr-model": "node scripts/download-ocr-model.cjs",
+    "bun:dev": "bun run vite",
+    "bun:dev:electron": "bun run concurrently -k \"vite --port 5173 --strictPort\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
+    "bun:build": "bun run tsc && bun run vite build",
+    "bun:build:electron": "cross-env ELECTRON=true bun run bun:build && bun run tsc -p electron/tsconfig.json && bun run tsc -p electron/tsconfig.preload.json && bun -e \"require('fs').renameSync('dist-electron/electron/preload.js','dist-electron/electron/preload.cjs')\"",
+    "bun:dist": "bun run bun:build:electron && bun run electron-builder",
+    "bun:dist:win": "bun run bun:build:electron && bun run electron-builder --win",
+    "bun:dist:mac": "bun run bun:build:electron && bun run electron-builder --mac",
+    "bun:dist:linux": "bun run bun:build:electron && bun run electron-builder --linux",
+    "bun:dist:linux-x64": "bun run bun:build:electron && bun run electron-builder --linux --x64",
+    "bun:dist:linux-arm64": "bun run bun:build:electron && bun run electron-builder --linux --arm64",
+    "bun:dist:all": "bun run bun:build:electron && bun run electron-builder --win --linux",
+    "bun:test": "bun run vitest run"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.1",
