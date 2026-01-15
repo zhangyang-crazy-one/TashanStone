@@ -65,15 +65,7 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Run Tests
-        run: npx vitest run --coverage
-
-      - name: Upload Coverage
-        uses: codecov/codecov-action@v4
-        if: always()
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./coverage/lcov.info
-          fail_ci_if_error: false
+        run: npx vitest run
 
   # Job 3: Build Frontend
   build:
