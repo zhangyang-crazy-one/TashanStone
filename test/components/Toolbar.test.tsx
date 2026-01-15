@@ -270,19 +270,22 @@ describe('Toolbar', () => {
 
     it('should call onSplitModeChange with correct mode', () => {
       const onSplitModeChange = vi.fn();
-      const setViewMode = vi.fn();
-      render(
-        <Toolbar 
-          {...defaultProps} 
-          onSplitModeChange={onSplitModeChange}
-          setViewMode={setViewMode}
-        />
-      );
+      const localSetViewMode = vi.fn();
       
-      fireEvent.click(screen.getByLabelText('Split horizontally'));
+      // Create props without setViewMode from defaultProps to avoid any confusion
+      const testProps = {
+        ...defaultProps,
+        setViewMode: localSetViewMode,
+        onSplitModeChange: onSplitModeChange,
+      };
+      
+      render(<Toolbar {...testProps} />);
+      
+      const splitButton = screen.getByLabelText('Split horizontally');
+      fireEvent.click(splitButton);
       
       expect(onSplitModeChange).toHaveBeenCalledWith('horizontal');
-      expect(setViewMode).toHaveBeenCalledWith(ViewMode.Split);
+      expect(localSetViewMode).toHaveBeenCalledWith(ViewMode.Split);
     });
   });
 
