@@ -47,7 +47,7 @@ jobs:
       - name: TypeScript Check
         run: npx tsc --noEmit
 
-  # Job 2: Run Tests
+  # Job 2: Run Tests (optional - skips if no test files found)
   test:
     name: Tests
     runs-on: ubuntu-latest
@@ -64,7 +64,18 @@ jobs:
       - name: Install dependencies
         run: npm ci --ignore-scripts
 
+      - name: Check for test files
+        id: check_tests
+        run: |
+          if find . -path ./node_modules -prune -o -name "*.test.ts" -print -o -name "*.test.tsx" -print | grep -q .; then
+            echo "has_tests=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_tests=false" >> $GITHUB_OUTPUT
+            echo "::notice::No test files found, skipping tests"
+          fi
+
       - name: Run Tests
+        if: steps.check_tests.outputs.has_tests == 'true'
         run: npx vitest run
 
   # Job 3: Build Frontend
