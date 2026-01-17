@@ -20,10 +20,10 @@
 
 | 平台 Platform | 下载链接 Download |
 |:---:|:---:|
-| Windows x64 | [TashanStone-Setup-1.7.0-x64.exe](https://github.com/tashanstone/tashanstone/releases/download/v1.7.0/TashanStone-Setup-1.7.0-x64.exe) |
+| Windows x64 | [TashanStone-Setup-1.7.5-x64.exe](https://github.com/tashanstone/tashanstone/releases/download/v1.7.5/TashanStone-Setup-1.7.5-x64.exe) |
 | macOS (Intel / Apple Silicon) | [📖 查看编译指南 / Build Guide](docs/BUILD_MAC.md) |
-| Linux x64 (Debian/Ubuntu/麒麟) | [tashanstone_1.7.0_amd64.deb](https://github.com/tashanstone/tashanstone/releases/download/v1.7.0/tashanstone_1.7.0_amd64.deb) |
-| Linux AppImage | [TashanStone-1.7.0.AppImage](https://github.com/tashanstone/tashanstone/releases/download/v1.7.0/TashanStone-1.7.0.AppImage) |
+| Linux x64 (Debian/Ubuntu/麒麟) | [tashanstone_1.7.5_amd64.deb](https://github.com/tashanstone/tashanstone/releases/download/v1.7.5/tashanstone_1.7.5_amd64.deb) |
+| Linux AppImage | [TashanStone-1.7.5.AppImage](https://github.com/tashanstone/tashanstone/releases/download/v1.7.5/TashanStone-1.7.5.AppImage) |
 
 > 💡 **macOS 用户**: 由于缺少 Apple 开发者签名，macOS 版本需要用户自行编译。请参考 [macOS 编译指南](docs/BUILD_MAC.md)
 
