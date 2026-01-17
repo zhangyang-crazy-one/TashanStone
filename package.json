@@ -65,7 +65,7 @@
     "@types/react-virtualized-auto-sizer": "^1.0.4",
     "@uiw/react-codemirror": "^4.25.4",
     "better-sqlite3": "^12.6.0",
-    "canvas": "^3.2.0",
+    "canvas": "^3.2.1",
     "clsx": "^2.1.0",
     "d3": "^7.9.0",
     "diff": "^8.0.2",
