@@ -279,24 +279,20 @@ export const TagsBrowser: React.FC<TagsBrowserProps> = ({ files, onSelectFile, o
         </button>
       )}
 
-      <div className="space-y-1 group" onClick={() => console.log('[TagsBrowser] [CLICK] Container clicked')}>
+      <div className="space-y-1 group">
         {tagStats.map(({ tag, count, files: tagFiles }) => (
           <div
             key={tag}
             className="border-b border-paper-100 dark:border-cyber-800 pb-1 last:border-0"
             onClick={(e) => {
-              console.log('[TagsBrowser] [CLICK] Row clicked:', tag);
               e.stopPropagation();
             }}
           >
-            <div className="flex items-center gap-1" onClick={(e) => {
-              console.log('[TagsBrowser] [CLICK] Inner container clicked:', tag);
-            }}>
+            <div className="flex items-center gap-1">
               {editMode !== 'none' && editMode !== 'merge' && (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    console.log('[TagsBrowser] [CLICK] Checkbox clicked:', tag);
                     toggleTagSelection(tag);
                   }}
                   className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${selectedTags.has(tag)
@@ -310,25 +306,19 @@ export const TagsBrowser: React.FC<TagsBrowserProps> = ({ files, onSelectFile, o
 
               <button
                 onClick={(e) => {
-                  console.log('[TagsBrowser] Tag clicked:', tag, 'editMode:', editMode, 'editingTag:', editingTag);
                   // 防止事件冒泡
                   e.stopPropagation();
 
                   if (editMode === 'none') {
-                    console.log('[TagsBrowser] Mode is none, navigating to file');
                     if (tagFiles.length > 0) {
                       onSelectFile(tagFiles[0].id);
                     }
                   } else if (editingTag === null) {
                     if (editMode === 'delete') {
-                      console.log('[TagsBrowser] Mode is delete, calling handleDelete');
                       handleDelete(tag);
                     } else {
-                      console.log('[TagsBrowser] Mode is rename/merge, setting editingTag');
                       setEditingTag(tag);
                     }
-                  } else {
-                    console.log('[TagsBrowser] editingTag is not null, ignoring click');
                   }
                 }}
                 onContextMenu={(e) => {
@@ -465,12 +455,7 @@ export const TagsBrowser: React.FC<TagsBrowserProps> = ({ files, onSelectFile, o
                 <Edit2 size={12} />
               </button>
               <button
-                onClick={() => {
-                  console.log('[TagsBrowser] === DELETE MODE BUTTON CLICKED ===');
-                  console.log('[TagsBrowser] Before: editMode =', editMode);
-                  setEditMode('delete');
-                  console.log('[TagsBrowser] After: editMode should be delete');
-                }}
+                onClick={() => setEditMode('delete')}
                 className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
                 title="Delete Mode"
               >

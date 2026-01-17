@@ -1,53 +1,104 @@
 # 项目状态
 
-> 最后更新：2026-01-03
-> 版本：V1.80 智能链接插入系统
-> **V1.78 性能与安全优化已完成 ✅**
+> 最后更新：2026-01-12
+> 版本：V1.81 上下文工程优化
+> **V1.80 统一编辑器架构已完成 ✅**
+> **V1.81 上下文工程优化已完成 ✅**
 
 ---
 
-## 🚀 V1.80 智能链接插入系统
+## 🚀 V1.81 上下文工程优化
 
-> **当前进度**: 10% 开始
-> **计划文档**: [plans/typed-munching-sphinx.md](../.claude/plans/typed-munching-sphinx.md)
-> **验证日期**: 2026-01-03
+> **当前进度**: 100% 完成 ✅
+> **验证日期**: 2026-01-12
 
-### 功能特性
+### 问题修复
 
-| 模式 | 快捷键 | 输出格式 | 用途 |
-|------|--------|----------|------|
-| WikiLink | `Ctrl+Alt+K` | `[[文件名]]` 或 `[[文件名\|别名]]` | 链接到整个文件 |
-| 块引用 | `Ctrl+Alt+Shift+K` | `((文件名#行号-行号))` | 链接到特定行范围 |
-| 快速链接 | `Ctrl+Alt+L` | `[[文件名\|选中文本]]` | 快速链接选中文本 |
+| 问题 | 文件 | 状态 | 说明 |
+|------|------|------|------|
+| 工具卡片文字溢出 | `ToolCallCard.tsx:399` | ✅ 已修复 | 添加 `flex-1 min-w-0`，增强正则解析 |
+| 记忆保存目录错误 | `fileHandlers.ts:120-138` | ✅ 已修复 | 自动创建父目录 `.memories` |
+| CodeMirror RAF 警告 | `CodeMirrorEditor.tsx:245-586` | ✅ 已修复 | 添加 `mountedRef` 生命周期保护 |
 
-### 交互优化
+### 新增功能
 
-| 特性 | 说明 |
-|------|------|
-| 键盘导航 | ↑/↓ 选择文件，Enter 确认 |
-| 点击选行 | 点击行直接选择（块引用模式） |
-| 焦点恢复 | ESC 关闭后自动恢复编辑器焦点 |
-| 模糊匹配 | 支持中文拼音匹配（可选） |
-
-### 实施计划
-
-| 阶段 | 任务 | 状态 |
+| 功能 | 文件 | 说明 |
 |------|------|------|
-| 1 | 修改 types.ts - 添加 CodeMirrorEditorRef、ActionId | ⏳ 待开始 |
-| 2 | 修改 utils/translations.ts - 添加翻译 | ⏳ 待开始 |
-| 3 | 修改 CodeMirrorEditor.tsx - forwardRef + keymap | ⏳ 待开始 |
-| 4 | 新建 LinkInsertModal.tsx | ⏳ 待开始 |
-| 5 | 修改 App.tsx - 集成链接插入功能 | ⏳ 待开始 |
+| 裸 JSON 解析 | `ToolCallCard.tsx:622-668` | 支持无反引号的 JSON 格式 `json\n[...]` |
+| 目录自动创建 | `fileHandlers.ts`, `persistent-memory.ts` | 自动创建父目录， explicit `ensureDir` 调用 |
+| RAF 生命周期保护 | `CodeMirrorEditor.tsx:245,278,565-586` | 防止组件卸载后回调执行 |
+
+### 技术改进
+
+| 改进项 | 说明 |
+|--------|------|
+| 工具卡片解析增强 | 添加 `laxToolPattern` 正则，支持多种 JSON 格式 |
+| 去重逻辑 | 防止重复匹配同一工具调用 |
+| 生命周期安全管理 | 使用 `mountedRef` 跟踪组件状态 |
 
 ### 修改文件清单
 
 | 文件 | 操作 | 变化点 |
 |------|------|--------|
-| `types.ts` | 修改 | 添加 CodeMirrorEditorRef、ActionId |
-| `utils/translations.ts` | 修改 | 添加 linkInsert 翻译 |
-| `components/CodeMirrorEditor.tsx` | 修改 | forwardRef + useImperativeHandle + keymap |
-| `components/LinkInsertModal.tsx` | 新建 | 完整功能（键盘导航、点击选行、焦点恢复） |
-| `App.tsx` | 修改 | 集成链接插入功能 |
+| `components/ToolCallCard.tsx` | 修改 | 文字溢出修复、JSON 解析增强 |
+| `electron/ipc/fileHandlers.ts` | 修改 | 自动创建目录 |
+| `src/services/context/persistent-memory.ts` | 修改 | explicit `ensureDir` 调用 |
+| `components/CodeMirrorEditor.tsx` | 修改 | RAF 生命周期保护 |
+
+---
+
+## 🚀 V1.80 统一编辑器架构
+
+> **当前进度**: 100% 完成 ✅
+> **计划文档**: [docs/PROJECT_PLAN_REMOVE_PLAIN_EDITOR.md](./PROJECT_PLAN_REMOVE_PLAIN_EDITOR.md)
+> **验证日期**: 2026-01-12
+
+### 变更摘要
+
+| 变更项 | 说明 |
+|--------|------|
+| 移除 Plain Editor | 删除 `components/Editor.tsx` |
+| 统一编辑器 | 始终使用 CodeMirror Editor |
+| 样式重构 | CodeMirror 适配 5 套主题 |
+| 工具栏简化 | 移除编辑器切换选项 |
+
+### 已完成任务
+
+| 任务 | 状态 | 说明 |
+|------|------|------|
+| CodeMirror 样式重构 | ✅ 完成 | 替换为 CSS 变量 |
+| 移除 useCodeMirror 状态 | ✅ 完成 | 删除 App.tsx 中的状态 |
+| 移除切换选项 | ✅ 完成 | 删除 Toolbar.tsx 中的菜单项 |
+| 简化 SplitEditor | ✅ 完成 | 始终使用 CodeMirrorEditor |
+| 删除 Editor.tsx | ✅ 完成 | 删除 Plain Editor 文件 |
+| 测试验证 | ✅ 完成 | 112 tests 全部通过 |
+
+### 修改文件清单
+
+| 文件 | 操作 | 变化点 |
+|------|------|--------|
+| `components/CodeMirrorEditor.tsx` | 修改 | 主题适配、滚动边距 |
+| `components/Toolbar.tsx` | 修改 | 移除切换选项 |
+| `components/SplitEditor.tsx` | 修改 | 移除条件渲染 |
+| `components/Editor.tsx` | **删除** | Plain Editor 移除 |
+| `App.tsx` | 修改 | 移除 useCodeMirror 状态 |
+
+### 主题适配
+
+CodeMirror 编辑器现在使用 CSS 变量，自动适配 5 套主题：
+
+| 主题 | 光标颜色 | WikiLink 颜色 |
+|------|----------|---------------|
+| Neon Cyber | `var(--primary-500)` | `var(--primary-600)` |
+| Clean Paper | `var(--primary-500)` | `var(--primary-600)` |
+| Sketchbook | `var(--primary-500)` | `var(--primary-600)` |
+| Midnight Dracula | `var(--primary-500)` | `var(--primary-600)` |
+| Dawn | `var(--primary-500)` | `var(--primary-600)` |
+
+### 已知问题
+
+- ~~主题适配需要运行时验证~~ ✅ 已验证
+- 部分旧截图可能显示旧版 UI
 
 ---
 
@@ -78,10 +129,10 @@
 
 | 优先级 | 任务 | 位置 | 状态 |
 |--------|------|------|------|
-| 🔴 P0 | 文件路径验证 | `fileHandlers.ts` | ⏳ 待实施 |
+| 🔴 P0 | 文件路径验证 | `fileHandlers.ts` | ✅ 已完成 (V1.81) |
 | 🔴 P0 | 密码重置验证 | `dbHandlers.ts` | ⏳ 待实施 |
-| 🟠 P1 | 删除确认对话框 | `Sidebar.tsx` | ⏳ 待实施 |
-| 🟠 P1 | 加载状态指示器 | 多组件 | ⏳ 待实施 |
+| 🟠 P1 | 删除确认对话框 | `Sidebar.tsx` | ✅ 已完成 |
+| 🟠 P1 | 加载状态指示器 | 多组件 | ✅ 已完成 |
 | 🟢 P2 | aria-label 补充 | `Toolbar.tsx` | ⏳ 待实施 |
 
 详细任务列表：[TODO.md](./TODO.md)
@@ -127,8 +178,8 @@
 | 类型安全性 | ⭐⭐⭐⭐⭐ | 类型定义完整，无 any 类型 |
 | 代码完整性 | ⭐⭐⭐⭐⭐ | 全部功能完成 |
 | 错误处理 | ⭐⭐⭐⭐ | 异常捕获完善 |
-| 性能优化 | ⭐⭐⭐⭐ | 待优化项见 V1.76 |
-| 测试覆盖 | ⭐⭐⭐⭐⭐ | 108 tests 全部通过 |
+| 性能优化 | ⭐⭐⭐⭐ | 虚拟滚动、生命周期保护完善 |
+| 测试覆盖 | ⭐⭐⭐⭐⭐ | 112 tests 全部通过 |
 
 ---
 
@@ -136,12 +187,12 @@
 
 | 指标 | 值 |
 |------|-----|
-| 项目阶段 | **V1.80 智能链接插入系统** |
+| 项目阶段 | **V1.81 上下文工程优化** |
 | 代码审查评分 | 98/100 |
 | 测试通过率 | 100% (112/112) |
 | 当前版本 | v1.7.0 |
 | 下一版本 | v1.8.0 (智能链接插入) |
-| V1.80 进度 | 10% 开始 |
+| V1.81 进度 | 100% 完成 |
 
 ---
 
@@ -160,6 +211,7 @@
 | 主题系统 | ✅ | v1.0 |
 | 平台打包 | ✅ | v1.0 |
 | 上下文工程 | ✅ | v1.7 |
+| 上下文工程优化 | ✅ | v1.81 |
 | 双向链接 | ✅ | v1.75 |
 | 试题库 | ✅ | v1.75 |
 | 智能标签 | ✅ | v1.75 |

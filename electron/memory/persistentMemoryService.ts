@@ -246,26 +246,57 @@ export class MainProcessMemoryService {
 
     const queryLower = query.toLowerCase();
     const results: MemoryDocument[] = [];
+    const seenIds = new Set<string>();
 
     for (const memoryInfo of index.memories) {
-      const topicsMatch = memoryInfo.topics?.some(
-        (t: string) => t.toLowerCase().includes(queryLower)
-      );
+      if (seenIds.has(memoryInfo.id)) continue;
+      
+      let matched = false;
+      let matchType: 'content' | 'topics' | null = null;
 
-      if (topicsMatch) {
-        try {
-          const content = fs.readFileSync(memoryInfo.filePath, 'utf-8');
-          const memory = this.parseMarkdownToMemory(content, memoryInfo);
-          results.push(memory);
-        } catch {
-          logger.warn('[MainProcessMemoryService] Failed to read memory file:', memoryInfo.filePath);
+      try {
+        // 🔧 修复: 同时搜索 topics 和 content
+        const content = fs.readFileSync(memoryInfo.filePath, 'utf-8');
+        
+        // 1. 搜索内容（更全面）
+        if (content.toLowerCase().includes(queryLower)) {
+          matched = true;
+          matchType = 'content';
         }
+        
+        // 2. 搜索 topics（作为补充）
+        const topicsMatch = memoryInfo.topics?.some(
+          (t: string) => t.toLowerCase().includes(queryLower)
+        );
+        
+        if (topicsMatch) {
+          matched = true;
+          matchType = 'topics';
+        }
+
+        if (matched) {
+          const memory = this.parseMarkdownToMemory(content, memoryInfo);
+          (memory as any)._matchType = matchType; // 记录匹配类型用于调试
+          results.push(memory);
+          seenIds.add(memoryInfo.id);
+          logger.debug('[MainProcessMemoryService] Memory matched:', { 
+            id: memoryInfo.id, 
+            matchType,
+            query 
+          });
+        }
+      } catch {
+        logger.warn('[MainProcessMemoryService] Failed to read memory file:', memoryInfo.filePath);
       }
 
       if (results.length >= limit) break;
     }
 
-    logger.info('[MainProcessMemoryService] Search completed:', { query, resultCount: results.length });
+    logger.info('[MainProcessMemoryService] Search completed:', { 
+      query, 
+      resultCount: results.length,
+      limit 
+    });
     return results;
   }
 

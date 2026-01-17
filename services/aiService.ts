@@ -4,6 +4,7 @@ import { GoogleGenAI, FunctionDeclaration, Type } from "@google/genai";
 import { AIConfig, MarkdownFile, GraphData, Quiz, QuizQuestion, ChatMessage } from "../types";
 import { mcpService } from "../src/services/mcpService";
 import { platformFetch, platformStreamFetch } from "../src/services/ai/platformFetch";
+import { ToolAnalyzer, createToolAnalyzer } from "./toolSelector";
 import {
   ContextManager,
   createContextManager,
@@ -35,10 +36,11 @@ interface MCPConfig {
   mcpServers: Record<string, MCPServerConfig>;
 }
 
-interface MCPTool {
+export interface MCPTool {
   name: string;
   description: string;
   inputSchema: any;
+  parameters?: any; // For MCP tools, the parameters structure
 }
 
 // --- Dynamic MCP Tool Guide Generator ---
@@ -178,13 +180,9 @@ export class VirtualMCPClient {
     const results = await Promise.all(entries.map(async ([name, srv]) => {
       return this.launchVirtualServer(name, srv);
     }));
-    
-    console.log(`[MCP] Connected to ${results.filter(r => r).length} servers.`);
   }
 
   private async launchVirtualServer(name: string, config: MCPServerConfig) {
-    console.log(`[MCP] Starting server '${name}' with command: ${config.command} ${config.args.join(' ')}`);
-    
     // Simulate Async Startup
     await new Promise(r => setTimeout(r, 500)); 
 
@@ -252,8 +250,6 @@ export class VirtualMCPClient {
   }
 
   async executeTool(name: string, args: any): Promise<any> {
-    console.log(`[MCP] Executing ${name}`, args);
-    
     // Virtual Implementation of specific known tools
     if (name === 'console_log') {
         console.log(`%c[AI Tool Log]`, "color: #06b6d4; font-weight:bold;", args.message);
@@ -857,10 +853,15 @@ async function* streamAnthropic(
 
   messages.push({ role: 'user', content: prompt });
 
+  // 🔧 修复: 当 modelOutputLimit 未设置时，自动从 modelContextLimit 计算
+  const MODEL_LIMIT = config.contextEngine?.modelContextLimit ?? 200000;
+  const MAX_OUTPUT_TOKENS = config.contextEngine?.modelOutputLimit ?? 
+                            Math.floor(MODEL_LIMIT * 0.08) ?? 4096;
+  
   try {
     const requestBody: any = {
       model: config.model || 'claude-sonnet-4-20250514',
-      max_tokens: 4096,
+      max_tokens: MAX_OUTPUT_TOKENS,
       messages,
       stream: true
     };
@@ -1342,7 +1343,17 @@ export const compactConversation = async (messages: ChatMessage[], config: AICon
         model: config.compactModel || config.model 
     };
 
-    const summary = await generateAIResponse(prompt, compactionConfig, "You are a helpful assistant summarizer.");
+    const summary = await generateAIResponse(
+      prompt,
+      compactionConfig,
+      "You are a helpful assistant summarizer.",
+      false, // jsonMode
+      [], // contextFiles
+      undefined, // toolsCallback
+      undefined, // retrievedContext
+      undefined, // conversationHistory
+      true // disableTools: true - CRITICAL: No tools needed for summarization
+    );
     
     const summaryMessage: ChatMessage = {
         id: `summary-${Date.now()}`,
@@ -1546,8 +1557,9 @@ const callGemini = async (
         generateConfig.responseMimeType = 'application/json';
       }
 
-      const MODEL_LIMIT = 1000000;
-      const MAX_OUTPUT_TOKENS = 8192;
+      // 从用户配置获取限制，默认为 Gemini 1.5 Pro (1M)
+      const MODEL_LIMIT = config.contextEngine?.modelContextLimit ?? 1000000;
+      const MAX_OUTPUT_TOKENS = config.contextEngine?.modelOutputLimit ?? 8192;
       const MAX_INPUT_TOKENS = MODEL_LIMIT - MAX_OUTPUT_TOKENS - 500;
 
       const estimateTokens = (text: string): number => {
@@ -1631,8 +1643,12 @@ const callGemini = async (
           GEMINI_SEARCH_KB_TOOL
         ];
 
-        // Dynamic MCP Tools
-        const dynamicTools = mcpClient ? mcpClient.getTools() : [];
+        // Dynamic MCP Tools - 根据意图选择工具
+        const allTools = mcpClient ? mcpClient.getTools() : [];
+        const userQuery = prompt || '';
+        const toolAnalyzer = createToolAnalyzer();
+        const analysisResult = toolAnalyzer.analyze(allTools, userQuery);
+        const dynamicTools = toolAnalyzer.selectByIntent(allTools, analysisResult.intent);  // 根据意图选择工具
 
         generateConfig.tools = [{
             functionDeclarations: [...baseTools, ...dynamicTools]
@@ -1742,8 +1758,9 @@ const callOllama = async (
     const baseUrl = config.baseUrl || 'http://localhost:11434';
     const model = config.model || 'llama3';
 
-    const MODEL_LIMIT = 8192;
-    const MAX_OUTPUT_TOKENS = 2048;
+    // 从用户配置获取限制，默认 Ollama 模型 (8K)
+    const MODEL_LIMIT = config.contextEngine?.modelContextLimit ?? 8192;
+    const MAX_OUTPUT_TOKENS = config.contextEngine?.modelOutputLimit ?? 2048;
     const MAX_INPUT_TOKENS = MODEL_LIMIT - MAX_OUTPUT_TOKENS - 500;
 
     const estimateTokens = (text: string): number => {
@@ -1821,7 +1838,11 @@ const callOllama = async (
     // Define tools
     let tools = undefined;
     if (toolsCallback && !jsonMode) {
-        const dynamicTools = mcpClient ? mcpClient.getTools() : [];
+        const allTools = mcpClient ? mcpClient.getTools() : [];
+        // 根据意图选择工具
+        const toolAnalyzer = createToolAnalyzer();
+        const analysisResult = toolAnalyzer.analyze(allTools, prompt || '');
+        const dynamicTools = toolAnalyzer.selectByIntent(allTools, analysisResult.intent);
         // Map dynamic tools back to OpenAI format for Ollama
         const mappedDynamic = dynamicTools.map(t => ({
              type: 'function',
@@ -1919,8 +1940,9 @@ const callOpenAICompatible = async (
     const baseUrl = config.baseUrl || 'https://api.openai.com/v1';
     const endpoint = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
 
-    const MODEL_LIMIT = 128000;
-    const MAX_OUTPUT_TOKENS = 4096;
+    // 从用户配置获取限制，默认为 128K
+    const MODEL_LIMIT = config.contextEngine?.modelContextLimit ?? 128000;
+    const MAX_OUTPUT_TOKENS = config.contextEngine?.modelOutputLimit ?? 4096;
     const MAX_INPUT_TOKENS = MODEL_LIMIT - MAX_OUTPUT_TOKENS - 500;
 
     const estimateTokens = (text: string): number => {
@@ -1997,7 +2019,11 @@ const callOpenAICompatible = async (
 
     let tools = undefined;
     if (toolsCallback && !jsonMode) {
-        const dynamicTools = mcpClient ? mcpClient.getTools() : [];
+        const allTools = mcpClient ? mcpClient.getTools() : [];
+        // 根据意图选择工具
+        const toolAnalyzer = createToolAnalyzer();
+        const analysisResult = toolAnalyzer.analyze(allTools, prompt || '');
+        const dynamicTools = toolAnalyzer.selectByIntent(allTools, analysisResult.intent);
         const mappedDynamic = dynamicTools.map(t => ({
              type: 'function',
              function: {
@@ -2105,24 +2131,25 @@ const callAnthropic = async (
     const baseUrl = config.baseUrl || 'https://api.anthropic.com';
     const endpoint = `${baseUrl.replace(/\/$/, '')}/v1/messages`;
 
-    const MODEL_TOKEN_LIMITS: Record<string, number> = {
-      'claude-3-opus': 200000,
-      'claude-3-sonnet': 200000,
-      'claude-3-haiku': 200000,
-      'claude-3-5-sonnet': 200000,
-      'claude-3-5-sonnet-20241022': 200000,
-      'claude-sonnet-4-20250514': 200000,
-      'claude-4-sonnet': 200000,
-      'claude-4-haiku': 200000,
-      'claude-opus-4-20250514': 200000,
-      'claude-haiku-4-20250514': 200000,
-    };
-
+    // 获取模型限制 - 优先使用用户配置
     const MODEL = config.model || 'claude-3-5-sonnet';
-    const MODEL_LIMIT = MODEL_TOKEN_LIMITS[MODEL] || 200000;
-    const MAX_OUTPUT_TOKENS = 4096;
+    const MODEL_LIMIT = config.contextEngine?.modelContextLimit ?? 200000;
+    
+    // 🔧 修复: 当 modelOutputLimit 未设置时，自动从 modelContextLimit 计算
+    // 通常 max_tokens 约为 context window 的 5-10%
+    const MAX_OUTPUT_TOKENS = config.contextEngine?.modelOutputLimit ?? 
+                              Math.floor(MODEL_LIMIT * 0.08) ?? 4096;
+    
     const RESERVED_BUFFER = 1000;
     const MAX_INPUT_TOKENS = MODEL_LIMIT - MAX_OUTPUT_TOKENS - RESERVED_BUFFER;
+
+    // 调试日志
+    console.log('[Anthropic] 配置生效:', {
+      modelContextLimit: config.contextEngine?.modelContextLimit,
+      modelOutputLimit: config.contextEngine?.modelOutputLimit,
+      calculatedMaxTokens: MAX_OUTPUT_TOKENS,
+      MODEL
+    });
 
     const estimateTokens = (text: string): number => {
       return Math.ceil(text.length / 3);
@@ -2135,15 +2162,16 @@ const callAnthropic = async (
       timestamp: msg.timestamp || Date.now(),
     });
 
+    // 从用户配置创建 contextConfig
     const contextConfig: ContextConfig = {
       max_tokens: MODEL_LIMIT,
       reserved_output_tokens: MAX_OUTPUT_TOKENS,
-      compact_threshold: 0.75,
-      prune_threshold: 0.85,
-      truncate_threshold: 0.95,
-      messages_to_keep: 10,
-      buffer_percentage: 0.1,
-      checkpoint_interval: 50,
+      compact_threshold: config.contextEngine?.compactThreshold ?? 0.85,
+      prune_threshold: config.contextEngine?.pruneThreshold ?? 0.70,
+      truncate_threshold: config.contextEngine?.truncateThreshold ?? 0.90,
+      messages_to_keep: config.contextEngine?.messagesToKeep ?? 3,
+      buffer_percentage: 0.10,
+      checkpoint_interval: config.contextEngine?.checkpointInterval ?? 20,
     };
 
     const sessionId = `anthropic-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -2154,7 +2182,8 @@ const callAnthropic = async (
       contextManager.addMessages(apiMessages);
     }
 
-    const manageResult = await contextManager.manageContext(systemInstruction || '');
+    // 🔧 修复: 传递 pendingPrompt 以便 context manager 正确计算预算
+    const manageResult = await contextManager.manageContext(systemInstruction || '', undefined, prompt);
     const { messages: managedMessages, usage, action, saved_tokens } = manageResult;
 
     if (saved_tokens && saved_tokens > 0) {
@@ -2173,8 +2202,10 @@ const callAnthropic = async (
       // 1. 过滤掉 system 消息
       const filtered = msgs.filter(msg => msg.role !== 'system');
 
+      // 🔧 修复: 确保至少有一条消息，避免空数组发送到 API
       if (filtered.length === 0) {
-        return [];
+        console.warn('[Anthropic] buildApiMessages: 所有消息都是 system 角色，返回占位消息');
+        return [{ role: 'user', content: '[对话开始]' }];
       }
 
       const result: any[] = [];
@@ -2241,38 +2272,19 @@ const callAnthropic = async (
 
     let messagesToSend = buildApiMessages(managedMessages);
 
+    // 🔧 修复: Context manager 现在已经包含 pendingPrompt，所以不再需要二次截断
+    // 但保留验证日志以确保一切正常
     const finalCheck = estimateTokens(
       JSON.stringify(messagesToSend) + (systemInstruction || '') + prompt
     );
 
     if (finalCheck > MAX_INPUT_TOKENS) {
-      console.warn(`[Anthropic] 二次验证失败，强制保留最后消息`);
-      const criticalLimit = MAX_INPUT_TOKENS - estimateTokens(prompt) - estimateTokens(systemInstruction || '') - 500;
-
-      const truncatedMessages: ApiMessage[] = [];
-      let currentTokens = 0;
-
-      for (let i = managedMessages.length - 1; i >= 0; i--) {
-        const msg = managedMessages[i];
-        // 跳过 system 消息
-        if (msg.role === 'system') continue;
-
-        const msgTokens = estimateTokens(msg.content);
-
-        if (currentTokens + msgTokens > criticalLimit) {
-          truncatedMessages.unshift({
-            ...msg,
-            content: `[截断 - 省略早期消息] ${msg.content}`,
-          });
-          break;
-        }
-
-        truncatedMessages.unshift(msg);
-        currentTokens += msgTokens;
-      }
-
-      messagesToSend = buildApiMessages(truncatedMessages);
-      console.warn(`[Anthropic] 紧急截断后保留 ${truncatedMessages.length} 条消息`);
+      console.warn(`[Anthropic] 警告: 即使经过 context manager 处理，总 tokens (${finalCheck}) 仍超过限制 (${MAX_INPUT_TOKENS})`);
+      console.warn(`[Anthropic] 这可能是因为消息中包含了大量工具输出或长内容`);
+      // 不再进行二次截断，因为 context manager 应该已经处理过了
+      // 如果仍然超出，可能是配置问题或消息内容异常
+    } else {
+      console.log(`[Anthropic] ContextManager 处理完成: ${(usage.percentage * 100).toFixed(1)}% (${usage.total}/${usage.limit} tokens)`);
     }
 
     // 检查最后一条消息是否是 assistant，如果是则直接添加 user 消息
@@ -2292,7 +2304,14 @@ const callAnthropic = async (
     // Build tools array for Anthropic format
     let tools: any[] | undefined = undefined;
     if (toolsCallback && !jsonMode) {
-        const dynamicTools = mcpClient ? mcpClient.getTools() : [];
+        const allTools = mcpClient ? mcpClient.getTools() : [];
+
+        // 根据意图选择工具
+        const userQuery = prompt || messagesToSend[messagesToSend.length - 1]?.content || '';
+        const toolAnalyzer = createToolAnalyzer();
+        const analysisResult = toolAnalyzer.analyze(allTools, userQuery);
+        const dynamicTools = toolAnalyzer.selectByIntent(allTools, analysisResult.intent);
+
         // Map to Anthropic tool format
         const baseToolsAnthropic = [
             {
@@ -2465,14 +2484,93 @@ const callAnthropic = async (
           return "Total timeout reached (10 minutes).";
         }
 
+        // 🔧 诊断日志：输出完整的请求体信息
+        const systemTokenCount = systemInstruction ? estimateTokens(systemInstruction) : 0;
+        const messagesTokenCount = estimateTokens(JSON.stringify(messagesToSend));
+        let finalSystemInstruction = systemInstruction;
+        let finalMessagesToSend = [...messagesToSend];
+        let totalTokens = systemTokenCount + messagesTokenCount + MAX_OUTPUT_TOKENS;
+        
+        console.log('[Anthropic] 请求诊断:');
+        console.log('  - 模型:', config.model);
+        console.log('  - 模型限制 (MODEL_LIMIT):', MODEL_LIMIT);
+        console.log('  - 输出限制 (max_tokens):', MAX_OUTPUT_TOKENS);
+        console.log('  - system 消息长度:', systemInstruction?.length || 0, '字符');
+        console.log('  - system 消息 tokens:', systemTokenCount);
+        console.log('  - messages 数量:', messagesToSend.length);
+        console.log('  - messages tokens:', messagesTokenCount);
+        console.log('  - 预估总 tokens:', totalTokens);
+        console.log('  - 是否超过限制:', totalTokens > MODEL_LIMIT ? '是' : '否');
+
+        // 🔧 修复：如果总 tokens 超过限制，进行截断
+        if (totalTokens > MODEL_LIMIT) {
+          console.warn('[Anthropic] 上下文过长，尝试截断...');
+          
+          // 计算可用于 system 和 messages 的空间
+          const reservedForOutput = MAX_OUTPUT_TOKENS + 500; // 输出 + 缓冲
+          const availableForContent = MODEL_LIMIT - reservedForOutput;
+          
+          if (availableForContent > 0) {
+            // 优先保留 messages，system 可截断
+            const maxSystemTokens = Math.floor(availableForContent * 0.3); // system 最多 30%
+            const maxMessageTokens = availableForContent - maxSystemTokens;
+            
+            // 截断 system 消息
+            if (systemTokenCount > maxSystemTokens) {
+              const maxSystemChars = maxSystemTokens * 3;
+              finalSystemInstruction = systemInstruction.slice(0, maxSystemChars) + '\n\n...[系统消息已截断]';
+              console.warn('[Anthropic] system 消息截断:', systemTokenCount, '->', maxSystemTokens, 'tokens');
+            }
+            
+            // 如果 messages 仍然过长，从后向前截断
+            let currentMessageTokens = 0;
+            const truncatedMessages: any[] = [];
+            for (let i = finalMessagesToSend.length - 1; i >= 0; i--) {
+              const msg = finalMessagesToSend[i];
+              const msgTokens = estimateTokens(typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content));
+              
+              if (currentMessageTokens + msgTokens <= maxMessageTokens) {
+                truncatedMessages.unshift(msg);
+                currentMessageTokens += msgTokens;
+              } else if (truncatedMessages.length === 0) {
+                // 第一条消息就超出限制，强制截断
+                const truncatedContent = typeof msg.content === 'string' 
+                  ? msg.content.slice(0, maxMessageTokens * 3) + '...[截断]'
+                  : JSON.stringify(msg.content).slice(0, maxMessageTokens * 3) + '...[截断]';
+                truncatedMessages.unshift({ ...msg, content: truncatedContent });
+                currentMessageTokens = maxMessageTokens;
+                break;
+              } else {
+                break; // 空间已满
+              }
+            }
+            finalMessagesToSend = truncatedMessages;
+            console.log('[Anthropic] 消息截断后保留:', finalMessagesToSend.length, '条');
+          }
+          
+          // 重新计算
+          totalTokens = estimateTokens(finalSystemInstruction || '') + estimateTokens(JSON.stringify(finalMessagesToSend)) + MAX_OUTPUT_TOKENS;
+          console.log('[Anthropic] 截断后总 tokens:', totalTokens, '(限制:', MODEL_LIMIT, ')');
+        }
+
+        // 检查是否是 MiniMax 模型
+        const isMiniMax = (config.model || '').toLowerCase().includes('minimax');
+        
         const requestBody: any = {
           model: config.model || 'claude-sonnet-4-20250514',
-          max_tokens: 4096,
-          messages: messagesToSend
+          max_tokens: MAX_OUTPUT_TOKENS,
+          messages: finalMessagesToSend
         };
 
-        if (systemInstruction) {
-          requestBody.system = systemInstruction;
+        // MiniMax 可能需要 OpenAI 兼容格式（将 system 移入 messages）
+        if (isMiniMax && finalSystemInstruction) {
+          console.log('[Anthropic] 使用 MiniMax 兼容格式 (system 移入 messages)');
+          requestBody.messages = [
+            { role: 'system', content: finalSystemInstruction },
+            ...finalMessagesToSend
+          ];
+        } else if (finalSystemInstruction) {
+          requestBody.system = finalSystemInstruction;
         }
 
         if (tools && tools.length > 0) {
@@ -2582,6 +2680,18 @@ const callAnthropic = async (
         
         try {
           const emergencyMessages = conversationHistory?.slice(-2) || [];
+          
+          // 🔧 修复: 确保 emergencyMessages 不为空
+          if (emergencyMessages.length === 0) {
+            console.warn('[Anthropic] 紧急重试: conversationHistory 为空，添加占位消息');
+            emergencyMessages.push({
+              id: `emergency-${Date.now()}`,
+              role: 'user',
+              content: '[对话继续]',
+              timestamp: Date.now(),
+            });
+          }
+          
           const emergencyApiMessages = emergencyMessages.map(toApiMessage);
           
           const emergencyContextManager = createContextManager(`emergency-${sessionId}`, contextConfig);
@@ -2589,6 +2699,13 @@ const callAnthropic = async (
           
           const { messages: managedEmergencyMessages } = await emergencyContextManager.manageContext(systemInstruction || '');
           let emergencyMessagesToSend = buildApiMessages(managedEmergencyMessages);
+          
+          // 🔧 修复: 确保 emergencyMessagesToSend 不为空
+          if (emergencyMessagesToSend.length === 0) {
+            console.warn('[Anthropic] 紧急重试: buildApiMessages 返回空数组，使用占位消息');
+            emergencyMessagesToSend = [{ role: 'user', content: '[对话继续]' }];
+          }
+          
           emergencyMessagesToSend.push({ role: 'user', content: prompt });
           
           const response = await platformFetch(endpoint, {
@@ -2640,8 +2757,9 @@ export const expandContent = async (content: string, config: AIConfig): Promise<
 export const generateKnowledgeGraph = async (files: MarkdownFile[], config: AIConfig): Promise<GraphData> => {
   const combinedContent = files.map(f => `<<< FILE_START: ${f.name} >>>\n${f.content}\n<<< FILE_END >>>`).join('\n\n');
 
-  // Use huge context for Gemini to allow full graph generation
-  const limit = config.provider === 'gemini' ? 2000000 : 15000;
+  // 从用户配置获取限制，Gemini 使用完整上下文，其他模型使用配置的 1/10
+  const contextLimit = config.contextEngine?.modelContextLimit ?? 200000;
+  const limit = config.provider === 'gemini' ? contextLimit : Math.floor(contextLimit / 10);
 
   const prompt = `Task: Generate a comprehensive Knowledge Graph from the provided notes.
   Goal: Identify granular concepts (entities) and their inter-relationships across the entire knowledge base.
@@ -2715,16 +2833,18 @@ export const generateKnowledgeGraph = async (files: MarkdownFile[], config: AICo
 export const synthesizeKnowledgeBase = async (files: MarkdownFile[], config: AIConfig): Promise<string> => {
   const combinedContent = files.map(f => `--- File: ${f.name} ---\n${f.content}`).join('\n\n');
   
-  // Use huge context for Gemini
-  const limit = config.provider === 'gemini' ? 2000000 : 30000;
+  // 从用户配置获取限制
+  const contextLimit = config.contextEngine?.modelContextLimit ?? 200000;
+  const limit = config.provider === 'gemini' ? contextLimit : Math.floor(contextLimit / 6);
   
   const prompt = `Read the notes. Organize info. Synthesize key findings. Produce a Master Summary in Markdown.\nNotes:\n${combinedContent.substring(0, limit)}`;
   return generateAIResponse(prompt, config, "You are a Knowledge Manager.");
 };
 
 export const generateMindMap = async (content: string, config: AIConfig): Promise<string> => {
-  // Use huge context for Gemini
-  const limit = config.provider === 'gemini' ? 2000000 : 15000;
+  // 从用户配置获取限制
+  const contextLimit = config.contextEngine?.modelContextLimit ?? 200000;
+  const limit = config.provider === 'gemini' ? contextLimit : Math.floor(contextLimit / 10);
 
   const prompt = `Generate a Mermaid.js mind map from the content below.
 
@@ -3074,12 +3194,13 @@ export const extractQuizFromRawContent = async (content: string, config: AIConfi
    const hasStrongQuestionMarker = strongQuestionPattern.test(content);
    const hasOptions = optionPattern.test(content);
 
-   // Only try to extract if we have STRONG indicators of quiz content
-   if (hasStrongQuestionMarker || hasOptions) {
-       // Gemini can handle huge content
-       const limit = config.provider === 'gemini' ? 2000000 : 500000;
+    // Only try to extract if we have STRONG indicators of quiz content
+    if (hasStrongQuestionMarker || hasOptions) {
+        // 从用户配置获取限制
+        const contextLimit = config.contextEngine?.modelContextLimit ?? 200000;
+        const limit = config.provider === 'gemini' ? contextLimit : Math.floor(contextLimit / 4);
 
-       const prompt = `Task: Extract ALL questions from the provided text verbatim into a JSON format.
+        const prompt = `Task: Extract ALL questions from the provided text verbatim into a JSON format.
 
        Rules:
        1. Preserve the exact text of questions and options.

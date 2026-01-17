@@ -83,19 +83,10 @@ export const MemoryPreviewModal: React.FC<MemoryPreviewModalProps> = ({
   const handleSave = async () => {
     if (!onSave) return;
 
-    console.log('[MemoryPreview] handleSave called');
-    console.log('[MemoryPreview] Original memory.content length:', memory.content?.length);
-    console.log('[MemoryPreview] Original memory.content preview:', memory.content?.substring(0, 100));
-    console.log('[MemoryPreview] editContent length:', editContent?.length);
-    console.log('[MemoryPreview] editContent preview:', editContent?.substring(0, 100));
-    console.log('[MemoryPreview] Content changed:', memory.content !== editContent);
-
     setIsSaving(true);
     try {
       const updatedMemory = { ...memory, content: editContent, updatedAt: Date.now() };
-      console.log('[MemoryPreview] updatedMemory.content length:', updatedMemory.content?.length);
       await onSave(updatedMemory);
-      console.log('[MemoryPreview] Save success:', memory.id);
     } catch (error) {
       console.error('[MemoryPreview] Save failed:', error);
     } finally {
@@ -109,7 +100,6 @@ export const MemoryPreviewModal: React.FC<MemoryPreviewModalProps> = ({
     setIsStarring(true);
     try {
       await onStar(memory.id, !memory.isStarred);
-      console.log('[MemoryPreview] Star toggle success:', memory.id, !memory.isStarred);
     } catch (error) {
       console.error('[MemoryPreview] Star toggle failed:', error);
     } finally {
@@ -126,8 +116,6 @@ export const MemoryPreviewModal: React.FC<MemoryPreviewModalProps> = ({
   const openSourceFile = () => {
     if (memory.filePath && (window as any).electronAPI?.file?.openFile) {
       (window as any).electronAPI.file.openFile(memory.filePath);
-    } else if (memory.filePath) {
-      console.log('[MemoryPreview] Would open file:', memory.filePath);
     }
   };
 

@@ -224,6 +224,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         {/* View Mode Dropdown */}
         <div className="relative" ref={viewMenuRef}>
           <button
+            data-testid="view-mode"
             onClick={(e) => { e.stopPropagation(); setShowViewMenu(!showViewMenu); }}
             className="flex items-center gap-2 px-3 py-2 rounded-lg bg-paper-100 dark:bg-cyber-800 border border-paper-200 dark:border-cyber-700 text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-cyber-700 transition-all whitespace-nowrap"
             title={t.viewMode || 'View Mode'}
@@ -460,6 +461,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         </button>
 
         <button
+          data-testid="settings"
           onClick={toggleSettings}
           className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg transition-colors"
           title={t.settings}

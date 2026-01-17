@@ -127,8 +127,6 @@ export class VectorStore {
         // 如果在 Electron 环境，从 LanceDB 加载向量
         if (this.isElectron()) {
             try {
-                console.log('[VectorStore] Initializing from LanceDB...');
-
                 // 初始化 LanceDB
                 await window.electronAPI.lancedb.init();
 
@@ -153,19 +151,9 @@ export class VectorStore {
                 for (const [fileId, lastModified] of Object.entries(fileMetadata)) {
                     this.fileSignatures.set(fileId, lastModified);
                 }
-
-                const stats = await window.electronAPI.lancedb.getStats();
-                console.log('[VectorStore] Initialized from LanceDB', {
-                    totalFiles: stats.totalFiles,
-                    totalChunks: stats.totalChunks,
-                    fileSignaturesLoaded: this.fileSignatures.size
-                });
             } catch (e) {
-                console.warn('[VectorStore] Failed to load vectors from LanceDB:', e);
                 // 出错时继续,使用空的内存存储
             }
-        } else {
-            console.log('[VectorStore] Running in Web mode, using in-memory storage');
         }
 
         this.initialized = true;

@@ -106,15 +106,30 @@ export class ContextManager {
     this.onContextUpdated?.(this.messages);
   }
 
-  async calculateTokenUsage(systemPrompt: string): Promise<TokenUsage> {
-    return this.tokenBudget.calculateUsage(systemPrompt, this.messages);
+  async calculateTokenUsage(systemPrompt: string, pendingPrompt?: string): Promise<TokenUsage> {
+    // 估计 systemPrompt 的 token 数
+    const systemTokens = systemPrompt ? await this.tokenBudget.estimateTokens(systemPrompt) : 0;
+    const messagesTokens = await this.tokenBudget.calculateTokenUsage(this.messages, pendingPrompt);
+    
+    // 计算总使用量（messages 已包含 pendingPrompt）
+    const total = messagesTokens.total + systemTokens;
+    const contextLimit = this.tokenBudget.getContextLimit();
+    const percentage = contextLimit > 0 ? total / contextLimit : 0;
+
+    return {
+      prompt: messagesTokens.prompt + systemTokens,
+      completion: 0,
+      total,
+      limit: contextLimit,
+      percentage,
+    };
   }
 
-  async analyzeUsage(systemPrompt: string): Promise<{
+  async analyzeUsage(systemPrompt: string, pendingPrompt?: string): Promise<{
     usage: TokenUsage;
     status: UsageStatus;
   }> {
-    const usage = await this.calculateTokenUsage(systemPrompt);
+    const usage = await this.calculateTokenUsage(systemPrompt, pendingPrompt);
     const status = this.tokenBudget.checkThresholds(usage);
     return { usage, status };
   }
@@ -129,9 +144,11 @@ export class ContextManager {
 
   async manageContext(
     systemPrompt: string,
-    aiCompactFn?: (content: string) => Promise<string>
+    aiCompactFn?: (content: string) => Promise<string>,
+    pendingPrompt?: string  // 添加待处理的 prompt 用于预算计算
   ): Promise<ManageResult> {
-    const { usage, status } = await this.analyzeUsage(systemPrompt);
+    // 计算预算时包含待处理的 prompt
+    const { usage, status } = await this.analyzeUsage(systemPrompt, pendingPrompt);
 
     if (!status.should_prune && !status.should_compact && !status.should_truncate) {
       return {
@@ -143,50 +160,83 @@ export class ContextManager {
 
     let result: CompressionResult;
     let action: CompressionType = 'pruned';
+    let currentMessages = [...this.messages];
 
-    if (status.should_truncate) {
-      const targetTokens = Math.floor(this.config.max_tokens * this.config.truncate_threshold * 0.9);
-      const truncateResult = await this.compaction.truncate(this.messages, targetTokens);
-      this.messages = truncateResult.truncated_messages;
-      result = {
-        original_count: this.messages.length,
-        compressed_count: this.messages.length,
-        saved_tokens: truncateResult.removed_tokens,
-        method: 'truncated',
-        retained_messages: truncateResult.truncated_messages,
-      };
-      action = 'truncated';
-    } else if (status.should_compact && aiCompactFn) {
-      const compactResult = await this.compaction.compact(
-        this.messages,
-        systemPrompt,
-        aiCompactFn
-      );
-      this.messages = compactResult.retained_messages;
-      result = compactResult;
-      action = 'compacted';
-    } else {
-      const pruneResult = await this.compaction.prune(this.messages);
-      this.messages = pruneResult.pruned_messages;
-      result = {
-        original_count: this.messages.length,
-        compressed_count: this.messages.length,
-        saved_tokens: pruneResult.removed_tokens,
-        method: 'pruned',
-        retained_messages: pruneResult.pruned_messages,
-      };
-      action = 'pruned';
+    // 🔧 修复: 实现级联压缩逻辑
+    // Stage 1: 优先尝试 Prune（最小侵入性）
+    if (status.should_prune || status.should_compact || status.should_truncate) {
+      console.log(`[ContextManager] 开始压缩流程: ${status.level}`);
+      const pruneResult = await this.compaction.prune(currentMessages);
+      currentMessages = pruneResult.pruned_messages;
+      
+      // 重新评估
+      const afterPruneUsage = await this.calculateTokenUsage(systemPrompt, pendingPrompt);
+      const afterPruneStatus = this.tokenBudget.checkThresholds(afterPruneUsage);
+      
+      console.log(`[ContextManager] Prune 后: ${(afterPruneUsage.percentage * 100).toFixed(1)}% (节省 ${pruneResult.removed_tokens} tokens)`);
+      
+      // 如果 prune 后不再需要 truncate，完成
+      if (!afterPruneStatus.should_truncate) {
+        this.messages = currentMessages;
+        return {
+          messages: currentMessages,
+          usage: afterPruneUsage,
+          action: 'pruned',
+          saved_tokens: pruneResult.removed_tokens,
+        };
+      }
     }
 
-    const newUsage = await this.calculateTokenUsage(systemPrompt);
+    // Stage 2: 尝试 Compact（如果提供了 AI 函数）
+    if ((status.should_compact || status.should_truncate) && aiCompactFn) {
+      console.log(`[ContextManager] 执行 Compact...`);
+      try {
+        const compactResult = await this.compaction.compact(
+          currentMessages,
+          systemPrompt,
+          aiCompactFn
+        );
+        currentMessages = compactResult.retained_messages;
+        
+        // 重新评估
+        const afterCompactUsage = await this.calculateTokenUsage(systemPrompt, pendingPrompt);
+        const afterCompactStatus = this.tokenBudget.checkThresholds(afterCompactUsage);
+        
+        console.log(`[ContextManager] Compact 后: ${(afterCompactUsage.percentage * 100).toFixed(1)}% (节省 ${compactResult.saved_tokens} tokens)`);
+        
+        // 如果 compact 后不再需要 truncate，完成
+        if (!afterCompactStatus.should_truncate) {
+          this.messages = currentMessages;
+          return {
+            messages: currentMessages,
+            usage: afterCompactUsage,
+            action: 'compacted',
+            saved_tokens: compactResult.saved_tokens,
+          };
+        }
+      } catch (error) {
+        console.warn(`[ContextManager] Compact 失败，继续 truncate:`, error);
+        // Compact 失败，继续到 Stage 3
+      }
+    }
+
+    // Stage 3: Truncate（最后手段）
+    console.log(`[ContextManager] 执行 Truncate...`);
+    const targetTokens = Math.floor(this.tokenBudget.getConfig().max_tokens * this.tokenBudget.getConfig().truncate_threshold * 0.9);
+    const truncateResult = await this.compaction.truncate(currentMessages, targetTokens);
+    currentMessages = truncateResult.truncated_messages;
+    action = 'truncated';
+
+    const newUsage = await this.calculateTokenUsage(systemPrompt, pendingPrompt);
+    this.messages = currentMessages;
 
     const checkpoint = await this.createCheckpoint(`Auto-${action}`);
 
     return {
-      messages: this.messages,
+      messages: currentMessages,
       usage: newUsage,
       action,
-      saved_tokens: result.saved_tokens,
+      saved_tokens: truncateResult.removed_tokens,
       checkpoint,
     };
   }

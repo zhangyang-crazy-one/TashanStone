@@ -48,18 +48,28 @@ export class FileMemoryStorage implements MemoryFileStorage {
     try {
       const electronAPI = (window as any).electronAPI;
       const fsAPI = electronAPI?.fs || electronAPI?.file;
-      
+
       if (fsAPI?.writeFile) {
         const fileName = this.generateFileName(memory);
         const fullPath = this.getMemoryFilePath(fileName);
-        
+
+        // 确保目录存在 - 先用 ensureDir，如果不存在就尝试 writeFile（handler 会自动创建）
+        const dirPath = fullPath.substring(0, fullPath.lastIndexOf('/'));
+        if (fsAPI.ensureDir) {
+          try {
+            await fsAPI.ensureDir(dirPath);
+          } catch (ensureDirError) {
+            console.warn('[FileMemoryStorage] ensureDir failed, will rely on writeFile handler:', ensureDirError);
+          }
+        }
+
         const content = this.formatMemoryAsMarkdown(memory);
         await fsAPI.writeFile(fullPath, content);
-        
+
         memory.filePath = fullPath;
         this.memoriesCache.set(memory.id, memory);
         await this.updateIndex();
-        
+
         console.log(`[FileMemoryStorage] Saved memory: ${fileName}`);
       }
     } catch (error) {
@@ -305,7 +315,6 @@ export class PersistentMemoryService {
         const memoriesFolder = this.fileStorage['memoriesFolder'];
         await (window as any).electronAPI.file.ensureDir(memoriesFolder);
         this.initialized = true;
-        console.log('[PersistentMemoryService] Initialized');
       }
     } catch (error) {
       console.error('[PersistentMemoryService] Failed to initialize:', error);
@@ -324,7 +333,6 @@ export class PersistentMemoryService {
     keyFindings: string[]
   ): Promise<MemoryDocument | null> {
     if (!this.embeddingService) {
-      console.warn('[PersistentMemoryService] No embedding service configured');
       return null;
     }
 
@@ -359,7 +367,9 @@ export class PersistentMemoryService {
   }
 
   async searchMemories(query: string, limit: number = 5): Promise<MemoryDocument[]> {
+    // 🔧 修复: 简单情况 - 无 embedding 服务时使用关键词搜索
     if (!this.embeddingService) {
+      console.log('[PersistentMemoryService] Using keyword search (no embedding service)');
       const all = await this.getAllMemories();
       return all.filter(m => 
         m.content.toLowerCase().includes(query.toLowerCase()) ||
@@ -371,28 +381,82 @@ export class PersistentMemoryService {
       const embedding = await this.embeddingService(query);
       
       if (typeof window !== 'undefined' && (window as any).electronAPI?.lancedb) {
+        console.log('[PersistentMemoryService] Using LanceDB vector search');
         const results = await (window as any).electronAPI.lancedb.search(embedding, limit);
         
         const memories: MemoryDocument[] = [];
+        const missingIds: string[] = [];
+        
         for (const result of results) {
           try {
             const metadata = JSON.parse(result.metadata || '{}');
-            if (metadata.type === 'memory_document') {
+            
+            // 🔧 修复: 放宽类型检查，支持旧数据
+            const isMemoryDoc = metadata.type === 'memory_document' || !metadata.type;
+            
+            if (isMemoryDoc) {
               const memory = await this.fileStorage.getMemory(result.id);
-              if (memory) memories.push(memory);
+              if (memory) {
+                memories.push(memory);
+              } else {
+                missingIds.push(result.id);
+                console.warn('[PersistentMemoryService] Memory file not found:', result.id);
+              }
             }
-          } catch {
+          } catch (parseError) {
+            console.warn('[PersistentMemoryService] Failed to parse result metadata:', parseError);
             continue;
           }
         }
         
-        return memories;
+        // 🔧 修复: 如果有缺失的记忆文件，尝试回退到关键词搜索
+        if (missingIds.length > 0 && memories.length < limit) {
+          console.log('[PersistentMemoryService] Fallback to keyword search for missing results');
+          const keywordResults = await this.keywordSearchFallback(query, limit - memories.length);
+          memories.push(...keywordResults);
+        }
+        
+        // 🔧 修复: 如果 LanceDB 结果为空，回退到关键词搜索
+        if (memories.length === 0 && results.length === 0) {
+          console.log('[PersistentMemoryService] LanceDB returned empty, using keyword search');
+          return await this.keywordSearchFallback(query, limit);
+        }
+        
+        return memories.slice(0, limit);
       }
     } catch (error) {
-      console.error('[PersistentMemoryService] Search failed:', error);
+      console.error('[PersistentMemoryService] LanceDB search failed:', error);
+      console.log('[PersistentMemoryService] Falling back to keyword search...');
+      
+      // 🔧 修复: 错误时回退到关键词搜索
+      return await this.keywordSearchFallback(query, limit);
     }
 
-    return [];
+    // 最后回退：关键词搜索
+    return await this.keywordSearchFallback(query, limit);
+  }
+
+  // 🔧 新增: 关键词搜索回退方法
+  private async keywordSearchFallback(query: string, limit: number): Promise<MemoryDocument[]> {
+    console.log('[PersistentMemoryService] Keyword search fallback for:', query);
+    
+    try {
+      const all = await this.getAllMemories();
+      const queryLower = query.toLowerCase();
+      
+      const results = all.filter(m => {
+        const contentMatch = m.content.toLowerCase().includes(queryLower);
+        const topicsMatch = m.topics?.some(t => t.toLowerCase().includes(queryLower));
+        // MemoryDocument 没有 title 字段，移除 titleMatch
+        return contentMatch || topicsMatch;
+      }).slice(0, limit);
+      
+      console.log('[PersistentMemoryService] Keyword search found:', results.length, 'results');
+      return results;
+    } catch (error) {
+      console.error('[PersistentMemoryService] Keyword search fallback failed:', error);
+      return [];
+    }
   }
 
   async updateMemory(id: string, content: string): Promise<boolean> {
@@ -408,7 +472,6 @@ export class PersistentMemoryService {
 
     const success = await this.fileStorage.updateMemory(id, { content });
     if (!success) {
-      console.error('[PersistentMemoryService] Failed to update memory file');
       return false;
     }
 
@@ -424,7 +487,6 @@ export class PersistentMemoryService {
             await (window as any).electronAPI.lancedb.deleteById(id);
             deleteSuccess = true;
           } catch (deleteError) {
-            console.warn('[PersistentMemoryService] Failed to delete old index (may not exist):', deleteError);
             // Continue even if delete fails - the entry might not exist
             deleteSuccess = true; // Treat as success since we're creating new
           }
@@ -437,12 +499,7 @@ export class PersistentMemoryService {
           try {
             const searchResults = await (window as any).electronAPI.lancedb.search(embedding, 1);
             indexUpdateSuccess = searchResults?.some((r: any) => r.id === id);
-
-            if (!indexUpdateSuccess) {
-              console.warn('[PersistentMemoryService] Index verification failed - entry not found after indexing');
-            }
           } catch (verifyError) {
-            console.warn('[PersistentMemoryService] Failed to verify index update:', verifyError);
             // Assume success if verification fails but indexing didn't throw
             indexUpdateSuccess = true;
           }
@@ -457,7 +514,6 @@ export class PersistentMemoryService {
           });
           memory.content = originalContent;
           memory.updated = originalUpdated;
-          console.log('[PersistentMemoryService] Rolled back file changes after index failure');
         } catch (rollbackError) {
           console.error('[PersistentMemoryService] Rollback failed - inconsistent state:', rollbackError);
         }
@@ -561,13 +617,13 @@ export class PersistentMemoryService {
       if (typeof window !== 'undefined' && (window as any).electronAPI?.lancedb) {
         const chunk = {
           id: memory.id,
-          file_id: memory.id,
+          fileId: memory.id,
           text: memory.content,
           embedding,
-          chunk_start: 0,
-          chunk_end: memory.content.length,
-          file_name: memory.filePath.split('/').pop() || memory.id,
-          file_last_modified: memory.updated,
+          chunkStart: 0,
+          chunkEnd: memory.content.length,
+          fileName: memory.filePath.split('/').pop() || memory.id,
+          fileLastModified: memory.updated,
           metadata: JSON.stringify({
             topics: memory.topics,
             type: 'memory_document',
@@ -576,7 +632,6 @@ export class PersistentMemoryService {
         };
 
         await (window as any).electronAPI.lancedb.add([chunk]);
-        console.log(`[PersistentMemoryService] Indexed memory: ${memory.id}`);
       }
     } catch (error) {
       console.error('[PersistentMemoryService] Failed to index memory:', error);

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Scissors, Archive, RefreshCw, Check, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
+import { DEFAULT_CONTEXT_CONFIG } from '@/src/services/context/types';
 
 interface CompactButtonProps {
   onCompact: () => Promise<void>;
@@ -19,8 +20,8 @@ export const CompactButton: React.FC<CompactButtonProps> = ({
   onTruncate,
   disabled = false,
   tokenUsage = 0,
-  maxTokens = 200000,
-  compactThreshold = 0.85,
+  maxTokens = DEFAULT_CONTEXT_CONFIG.max_tokens,
+  compactThreshold = DEFAULT_CONTEXT_CONFIG.compact_threshold,
   size = 'md',
   showMenu = false,
 }) => {
@@ -176,7 +177,7 @@ export const CompactActionMenu: React.FC<CompactActionMenuProps> = ({
   onTruncate,
   onCreateCheckpoint,
   tokenUsage = 0,
-  maxTokens = 200000,
+  maxTokens = DEFAULT_CONTEXT_CONFIG.max_tokens,
 }) => {
   const percentage = tokenUsage / maxTokens;
   const needsAttention = percentage >= 0.7;

@@ -598,11 +598,5 @@ AI 辅助笔记整理:
 | 日志 | `%APPDATA%/tashanstone/logs/` |
 | 备份 | `%USERPROFILE%/Documents/TashaStone Backups/` |
 
-### C. 反馈与支持
-
-- GitHub Issues: [github.com/zhangyang-crazy-one/Zhang_Note/issues](https://github.com/zhangyang-crazy-one/Zhang_Note/issues)
-- 文档: [docs/PROJECT.md](./PROJECT.md)
-
----
 
 *TashaStone - AI 驱动的智能笔记应用*

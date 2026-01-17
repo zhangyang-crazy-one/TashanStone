@@ -45,13 +45,13 @@ export class LanceDBMemoryStorage implements LongTermMemoryStorage {
     try {
       const chunk = {
         id: conversation.id,
-        file_id: conversation.session_id,
+        fileId: conversation.session_id,
         text: conversation.content,
         embedding: conversation.embedding,
-        chunk_start: 0,
-        chunk_end: conversation.content.length,
-        file_name: `conversation-${conversation.session_id}`,
-        file_last_modified: conversation.metadata.date,
+        chunkStart: 0,
+        chunkEnd: conversation.content.length,
+        fileName: `conversation-${conversation.session_id}`,
+        fileLastModified: conversation.metadata.date,
         metadata: JSON.stringify({
           topics: conversation.metadata.topics,
           type: 'context_memory',

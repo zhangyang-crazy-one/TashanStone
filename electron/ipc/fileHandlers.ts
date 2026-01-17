@@ -124,6 +124,12 @@ export function registerFileHandlers(): void {
                 throw new Error('Access denied: file path outside allowed directory');
             }
 
+            // Ensure parent directory exists before writing
+            const dirPath = path.dirname(filePath);
+            if (!fs.existsSync(dirPath)) {
+                fs.mkdirSync(dirPath, { recursive: true });
+            }
+
             fs.writeFileSync(filePath, content, 'utf-8');
             return true;
         } catch (error) {
@@ -167,14 +173,20 @@ export function registerFileHandlers(): void {
     // List files in a directory
     ipcMain.handle('fs:listFiles', async (_, dirPath: string) => {
         try {
-            if (!fs.existsSync(dirPath)) {
+            // Handle relative paths - convert to userData path
+            let resolvedPath = dirPath;
+            if (dirPath.startsWith('.memories') || dirPath === '.memories') {
+                resolvedPath = path.join(ALLOWED_BASE_PATH, dirPath);
+            }
+            
+            if (!fs.existsSync(resolvedPath)) {
                 return [];
             }
-            const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+            const entries = fs.readdirSync(resolvedPath, { withFileTypes: true });
             const files: any[] = [];
             for (const entry of entries) {
                 if (entry.isFile()) {
-                    const filePath = path.join(dirPath, entry.name);
+                    const filePath = path.join(resolvedPath, entry.name);
                     const stats = fs.statSync(filePath);
                     files.push({
                         name: entry.name,
@@ -282,7 +294,158 @@ export function registerFileHandlers(): void {
         }
     });
 
+    // Save pasted image to assets folder
+    ipcMain.handle('image:save', async (_, options: { imageData: string; fileName?: string }) => {
+        try {
+            const { imageData, fileName } = options;
+
+            // Create assets directory if it doesn't exist
+            const assetsDir = path.join(ALLOWED_BASE_PATH, 'assets');
+            if (!fs.existsSync(assetsDir)) {
+                fs.mkdirSync(assetsDir, { recursive: true });
+            }
+
+            // Generate unique filename
+            const timestamp = Date.now();
+            const randomId = Math.random().toString(36).substring(2, 8);
+            const ext = getImageExtension(imageData);
+            // Clean filename: remove spaces, special chars, non-ASCII characters
+            const baseName = fileName
+                ? path.basename(fileName, path.extname(fileName))
+                    .replace(/[\s\u4e00-\u9fa5()[\]{}<>!@#$%^&*=+~`,;:'"\\|]/g, '_')
+                    .replace(/_+/g, '_')
+                    .replace(/^_|_$/g, '')
+                : 'image';
+            const safeFileName = `${baseName}-${timestamp}-${randomId}${ext}`;
+            const filePath = path.join(assetsDir, safeFileName);
+
+            // Decode base64 data URL and save
+            const base64Data = imageData.replace(/^data:image\/\w+;base64,/, '');
+            const buffer = Buffer.from(base64Data, 'base64');
+            fs.writeFileSync(filePath, buffer);
+
+            // Return relative path for Markdown
+            const relativePath = `assets/${safeFileName}`;
+            logger.info('Image saved successfully', { filePath: relativePath });
+
+            return {
+                success: true,
+                path: relativePath,
+                fullPath: filePath
+            };
+        } catch (error) {
+            logger.error('image:save failed', error);
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error'
+            };
+        }
+    });
+    
+    // Get image URL from relative path (for proper rendering in Electron)
+    ipcMain.handle('image:getUrl', async (_, relativePath: string) => {
+        try {
+            // Handle data URLs directly
+            if (relativePath.startsWith('data:')) {
+                return { success: true, url: relativePath };
+            }
+
+            // Handle already absolute paths
+            if (path.isAbsolute(relativePath)) {
+                return { success: true, url: `file://${relativePath}` };
+            }
+
+            // Decode URL-encoded paths (e.g., %E5%B1%8F -> 屏)
+            const decodedPath = decodeURIComponent(relativePath);
+
+            // Build absolute path
+            const assetsDir = path.join(ALLOWED_BASE_PATH, 'assets');
+            let absolutePath: string;
+
+            // Handle paths that already contain 'assets/' prefix
+            if (decodedPath.startsWith('assets/')) {
+                // Extract just the filename from 'assets/xxx.png'
+                // assets/ 是 7 个字符 (索引 0-6)，所以从索引 7 开始取
+                const fileName = decodedPath.substring(7);
+                // Use path.join to properly join path components
+                absolutePath = path.join(assetsDir, fileName);
+            } else {
+                // Use as-is (shouldn't normally happen)
+                absolutePath = path.join(assetsDir, decodedPath);
+            }
+
+            // Normalize path separators
+            absolutePath = path.normalize(absolutePath);
+
+            logger.info('image:getUrl', {
+                relativePath,
+                decodedPath,
+                assetsDir,
+                absolutePath,
+                exists: fs.existsSync(absolutePath)
+            });
+
+            // Validate path is within allowed directory
+            if (!validateFilePath(absolutePath)) {
+                return { success: false, error: 'Invalid path' };
+            }
+
+            // Check if file exists
+            if (!fs.existsSync(absolutePath)) {
+                return { success: false, error: 'File not found' };
+            }
+
+            // Read file and return as base64 data URL to avoid browser security restrictions
+            const imageBuffer = fs.readFileSync(absolutePath);
+            const mimeType = getMimeType(absolutePath);
+            const base64Data = imageBuffer.toString('base64');
+            const dataUrl = `data:${mimeType};base64,${base64Data}`;
+
+            return { success: true, url: dataUrl };
+        } catch (error) {
+            logger.error('image:getUrl failed', error);
+            return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+        }
+    });
+
     logger.info('File system IPC handlers registered');
+}
+
+/**
+ * Get image extension from data URL or mime type
+ */
+function getImageExtension(dataUrl: string): string {
+    if (dataUrl.startsWith('data:')) {
+        const mimeType = dataUrl.split(';')[0];
+        const mimeToExt: Record<string, string> = {
+            'data:image/png': '.png',
+            'data:image/jpeg': '.jpg',
+            'data:image/jpg': '.jpg',
+            'data:image/gif': '.gif',
+            'data:image/webp': '.webp',
+            'data:image/svg+xml': '.svg',
+            'data:image/bmp': '.bmp',
+        };
+        return mimeToExt[mimeType] || '.png';
+    }
+    return '.png';
+}
+
+/**
+ * Get mime type from file extension
+ */
+function getMimeType(filePath: string): string {
+    const ext = path.extname(filePath).toLowerCase();
+    const extToMime: Record<string, string> = {
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.gif': 'image/gif',
+        '.webp': 'image/webp',
+        '.svg': 'image/svg+xml',
+        '.bmp': 'image/bmp',
+    };
+    return extToMime[ext] || 'image/png';
 }
 
 /**

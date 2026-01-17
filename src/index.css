@@ -3,6 +3,126 @@
 /* Enable dark mode via class strategy */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Local Fonts Registration */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/Inter-Regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('./fonts/Inter-Medium.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('./fonts/Inter-SemiBold.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./fonts/Inter-Bold.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url('./fonts/Inter-ExtraBold.woff2') format('woff2');
+}
+
+/* Alibaba Health Font - rounded, friendly style for dark themes */
+@font-face {
+  font-family: 'AlibabaHealthFont';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/AlibabaHealthFont20CN-85B.woff2') format('woff2');
+}
+
+/* DOUYIN SANS BOLD - warm, modern Chinese for light themes */
+@font-face {
+  font-family: 'DOUYINSANSBOLD';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/DOUYINSANSBOLD-GB-pc-EUC-h.woff2') format('woff2');
+}
+
+/* Virgil - handwritten font for English text (no Chinese support)
+@font-face {
+  font-family: 'Virgil';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/Virgil.woff2') format('woff2');
+} */
+
+/* Handwrighing - Chinese handwritten font for sketchbook theme */
+@font-face {
+  font-family: 'Handwrighing';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/handwrighting.woff2') format('woff2');
+}
+
+/* Fusion Pixel - pixel-style font for retro themes */
+@font-face {
+  font-family: 'Fusion Pixel';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/Fusion-Pixel-12px-Proportional-Regular.woff2') format('woff2');
+}
+
+/* LXGW WenKai - kept for reference (font file may be damaged)
+@font-face {
+  font-family: 'LXGW WenKai';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/LXGWWenKai-Regular.woff2') format('woff2');
+} */
+
+/* Noto Sans SC - kept for reference (font file may be damaged)
+@font-face {
+  font-family: 'Noto Sans SC';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/NotoSansSC-Regular.woff2') format('woff2');
+} */
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/JetBrainsMono-Regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./fonts/JetBrainsMono-Bold.woff2') format('woff2');
+}
+
 /* Base layout - ensure full height for Electron */
 html, body, #root {
   height: 100%;

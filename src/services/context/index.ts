@@ -119,3 +119,18 @@ export {
   parseMemoryFile,
   formatProjectContextForInjection,
 } from './project-memory';
+
+export {
+  MemoryAutoUpgradeService,
+  memoryAutoUpgradeService,
+  type MemoryAutoUpgradeConfig,
+  type MidTermMemoryRecord,
+  type PermanentMemoryTemplate,
+} from './memoryAutoUpgrade';
+
+export {
+  MemoryCleanupService,
+  memoryCleanupService,
+  type CleanupReport,
+  type CleanupStats,
+} from './memoryCleanupService';

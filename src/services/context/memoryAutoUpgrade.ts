@@ -31,18 +31,23 @@ export interface MidTermMemoryRecord {
   isStarred: boolean;
 }
 
-interface MemoryAutoUpgradeConfig {
-  midTermMaxAge: number;
-  permanentThreshold: number;
-  autoUpgradeEnabled: boolean;
+export interface MemoryAutoUpgradeConfig {
+  /** Enable/disable auto-upgrade feature */
+  enabled: boolean;
+  /** Days of no access before upgrading mid-term to long-term memory */
+  daysThreshold: number;
+  /** Minimum access count before considering upgrade */
+  minAccessCount: number;
+  /** Enable AI-powered summary generation during upgrade */
   aiSummaryEnabled: boolean;
+  /** Check interval in milliseconds */
   checkIntervalMs: number;
 }
 
 const DEFAULT_CONFIG: MemoryAutoUpgradeConfig = {
-  midTermMaxAge: 7 * 24 * 60 * 60 * 1000,
-  permanentThreshold: 30 * 24 * 60 * 60 * 1000,
-  autoUpgradeEnabled: true,
+  enabled: true,
+  daysThreshold: 30,
+  minAccessCount: 3,
   aiSummaryEnabled: true,
   checkIntervalMs: 60 * 60 * 1000,
 };
@@ -81,6 +86,23 @@ export class MemoryAutoUpgradeService {
     console.log('[MemoryAutoUpgrade] Service stopped');
   }
 
+  getConfig(): MemoryAutoUpgradeConfig {
+    return { ...this.config };
+  }
+
+  async updateConfig(newConfig: Partial<MemoryAutoUpgradeConfig>): Promise<void> {
+    this.config = { ...this.config, ...newConfig };
+    console.log('[MemoryAutoUpgrade] Config updated:', this.config);
+
+    // Restart with new interval if checkIntervalMs changed
+    if (newConfig.checkIntervalMs && this.checkInterval) {
+      clearInterval(this.checkInterval);
+      this.checkInterval = setInterval(() => {
+        this.checkAndUpgrade();
+      }, this.config.checkIntervalMs);
+    }
+  }
+
   async checkAndUpgrade(): Promise<{
     upgraded: number;
     starred: number;
@@ -92,7 +114,7 @@ export class MemoryAutoUpgradeService {
       errors: [] as string[],
     };
 
-    if (!this.config.autoUpgradeEnabled) {
+    if (!this.config.enabled) {
       console.log('[MemoryAutoUpgrade] Auto-upgrade disabled');
       return result;
     }
@@ -102,13 +124,14 @@ export class MemoryAutoUpgradeService {
     try {
       const midTermMemories = await this.getMidTermMemories();
       const now = Date.now();
+      const thresholdMs = this.config.daysThreshold * 24 * 60 * 60 * 1000;
 
       for (const memory of midTermMemories) {
         try {
           const daysSinceAccess = (now - memory.lastAccessedAt) / (1000 * 60 * 60 * 24);
           const shouldUpgrade = 
-            daysSinceAccess * 24 * 60 * 60 * 1000 > this.config.permanentThreshold ||
-            memory.accessCount >= 3 ||
+            daysSinceAccess * 24 * 60 * 60 * 1000 > thresholdMs ||
+            memory.accessCount >= this.config.minAccessCount ||
             memory.isStarred;
 
           if (shouldUpgrade) {
@@ -168,7 +191,19 @@ export class MemoryAutoUpgradeService {
     };
 
     await this.saveToPermanent(permanentMemory);
-    await this.markAsPromoted(memory.id);
+    
+    // 🔧 修复: 正确处理 markAsPromoted 错误
+    try {
+      await this.markAsPromoted(memory.id);
+    } catch (error) {
+      console.error('[MemoryAutoUpgrade] Critical: Failed to mark memory as promoted:', {
+        memoryId: memory.id,
+        permanentMemoryId: permanentMemory.id,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      // 注意：这里不抛出错误，因为永久记忆已经保存了
+      // 但在日志中标记这是一个不完整的状态
+    }
 
     return permanentMemory;
   }
@@ -249,7 +284,18 @@ export class MemoryAutoUpgradeService {
   private async getMidTermMemories(): Promise<MidTermMemoryRecord[]> {
     try {
       if ((window as any).electronAPI?.memory?.getMidTermMemories) {
-        return await (window as any).electronAPI.memory.getMidTermMemories();
+        const memories = await (window as any).electronAPI.memory.getMidTermMemories();
+        
+        // 🔧 修复: 更新每个记忆的访问信息
+        for (const memory of memories) {
+          try {
+            await (window as any).electronAPI.memory.updateMemoryAccess(memory.sessionId);
+          } catch (updateError) {
+            console.warn('[MemoryAutoUpgrade] Failed to update access for:', memory.sessionId, updateError);
+          }
+        }
+        
+        return memories;
       }
     } catch (error) {
       console.warn('[MemoryAutoUpgrade] Failed to get mid-term memories:', error);
@@ -260,7 +306,18 @@ export class MemoryAutoUpgradeService {
   private async getStarredMemories(): Promise<MidTermMemoryRecord[]> {
     try {
       if ((window as any).electronAPI?.memory?.getStarredMemories) {
-        return await (window as any).electronAPI.memory.getStarredMemories();
+        const memories = await (window as any).electronAPI.memory.getStarredMemories();
+        
+        // 🔧 修复: 更新每个记忆的访问信息
+        for (const memory of memories) {
+          try {
+            await (window as any).electronAPI.memory.updateMemoryAccess(memory.sessionId);
+          } catch (updateError) {
+            console.warn('[MemoryAutoUpgrade] Failed to update access for:', memory.sessionId, updateError);
+          }
+        }
+        
+        return memories;
       }
     } catch (error) {
       console.warn('[MemoryAutoUpgrade] Failed to get starred memories:', error);
@@ -282,13 +339,32 @@ export class MemoryAutoUpgradeService {
     }
   }
 
-  private async markAsPromoted(memoryId: string): Promise<void> {
+  private async markAsPromoted(memoryId: string): Promise<boolean> {
     try {
       if ((window as any).electronAPI?.memory?.markAsPromoted) {
-        await (window as any).electronAPI.memory.markAsPromoted(memoryId);
+        const result = await (window as any).electronAPI.memory.markAsPromoted(memoryId);
+        
+        // 检查响应格式
+        if (result && result.success) {
+          console.log('[MemoryAutoUpgrade] Memory marked as promoted:', {
+            memoryId,
+            newTier: result.newTier,
+            promotedAt: result.promotedAt
+          });
+          return true;
+        } else {
+          console.warn('[MemoryAutoUpgrade] Mark as promoted returned failure:', result);
+          return false;
+        }
       }
+      return false;
     } catch (error) {
-      console.warn('[MemoryAutoUpgrade] Failed to mark as promoted:', error);
+      console.error('[MemoryAutoUpgrade] Failed to mark as promoted:', {
+        memoryId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      // 重新抛出错误以便调用者处理
+      throw error;
     }
   }
 

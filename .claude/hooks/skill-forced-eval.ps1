@@ -1,4 +1,4 @@
-# skill-forced-eval.ps1 - Forced skill evaluation hook
+﻿# skill-forced-eval.ps1 - Forced skill evaluation hook
 # Trigger: Every time user submits a prompt
 # Function: Force evaluate and activate relevant skills before AI starts thinking
 
@@ -37,6 +37,11 @@ $SKILLS = @(
         Name = "bug-debug"
         Keywords = @("bug", "error", "exception", "debug", "troubleshoot", "problem")
         Description = "Bug debugging and troubleshooting"
+    },
+    @{
+        Name = "spec-interview"
+        Keywords = @("plan.md", "完善", "细化", "规格", "需求", "spec", "interview", "问我关于项目的问题")
+        Description = "Spec interview for refining project specifications"
     }
 )
 

@@ -15,17 +15,6 @@
         ]
       }
     ],
-    "SkillInvocation": [
-      {
-        "matcher": "spec-interview",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"Write-Host 'Spec Interview skill activated'\""
-          }
-        ]
-      }
-    ],
     "SessionStart": [
       {
         "matcher": "",

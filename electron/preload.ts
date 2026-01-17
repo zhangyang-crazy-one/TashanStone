@@ -107,9 +107,22 @@ try {
         version: process.versions.electron
     },
 
-    // Paths (统一前后端数据目录)
+    // Paths (统一前后端数据目录 - 跨平台支持)
     paths: {
-        userData: process.env.APPDATA + (process.platform === 'win32' ? '\\tashanstone' : '/tashanstone')
+        userData: (() => {
+            const platform = process.platform;
+            const appName = 'tashanstone';
+            if (platform === 'win32') {
+                // Windows: C:\Users\xxx\AppData\Roaming\tashanstone
+                return (process.env.APPDATA || '') + '\\' + appName;
+            } else if (platform === 'darwin') {
+                // macOS: ~/Library/Application Support/tashanstone
+                return (process.env.HOME || '') + '/Library/Application Support/' + appName;
+            } else {
+                // Linux: ~/.config/tashanstone (XDG Base Directory)
+                return (process.env.XDG_CONFIG_HOME || (process.env.HOME || '') + '/.config') + '/' + appName;
+            }
+        })()
     },
 
     // Window control (for custom title bar)
@@ -368,93 +381,113 @@ try {
             ipcRenderer.invoke('ocr:getStatus')
     },
 
-        // LanceDB vector database
-        lancedb: {
-            init: (): Promise<void> =>
-                ipcRenderer.invoke('lancedb:init'),
-            add: (chunks: any[]): Promise<void> =>
-                ipcRenderer.invoke('lancedb:add', chunks),
-            search: (queryVector: number[], limit?: number): Promise<any[]> =>
-                ipcRenderer.invoke('lancedb:search', queryVector, limit),
-            deleteByFile: (fileId: string): Promise<void> =>
-                ipcRenderer.invoke('lancedb:deleteByFile', fileId),
-            deleteById: (id: string): Promise<void> =>
-                ipcRenderer.invoke('lancedb:deleteById', id),
-            clear: (): Promise<void> =>
-                ipcRenderer.invoke('lancedb:clear'),
-            getAll: (): Promise<any[]> =>
-                ipcRenderer.invoke('lancedb:getAll'),
-            getFileIds: (): Promise<string[]> =>
-                ipcRenderer.invoke('lancedb:getFileIds'),
-            getStats: (): Promise<{ totalFiles: number; totalChunks: number }> =>
-                ipcRenderer.invoke('lancedb:getStats'),
-            getFileNameMapping: (): Promise<Record<string, string[]>> =>
-                ipcRenderer.invoke('lancedb:getFileNameMapping'),
-            cleanDuplicateFileNames: (fileNameToKeepId: Record<string, string>): Promise<number> =>
-                ipcRenderer.invoke('lancedb:cleanDuplicateFileNames', fileNameToKeepId),
-            getFileMetadata: (): Promise<Record<string, number>> =>
-                ipcRenderer.invoke('lancedb:getFileMetadata')
-        },
+    // LanceDB vector database
+    lancedb: {
+        init: (): Promise<void> =>
+            ipcRenderer.invoke('lancedb:init'),
+        add: (chunks: any[]): Promise<void> =>
+            ipcRenderer.invoke('lancedb:add', chunks),
+        search: (queryVector: number[], limit?: number): Promise<any[]> =>
+            ipcRenderer.invoke('lancedb:search', queryVector, limit),
+        deleteByFile: (fileId: string): Promise<void> =>
+            ipcRenderer.invoke('lancedb:deleteByFile', fileId),
+        deleteById: (id: string): Promise<void> =>
+            ipcRenderer.invoke('lancedb:deleteById', id),
+        clear: (): Promise<void> =>
+            ipcRenderer.invoke('lancedb:clear'),
+        getAll: (): Promise<any[]> =>
+            ipcRenderer.invoke('lancedb:getAll'),
+        getFileIds: (): Promise<string[]> =>
+            ipcRenderer.invoke('lancedb:getFileIds'),
+        getStats: (): Promise<{ totalFiles: number; totalChunks: number }> =>
+            ipcRenderer.invoke('lancedb:getStats'),
+        getFileNameMapping: (): Promise<Record<string, string[]>> =>
+            ipcRenderer.invoke('lancedb:getFileNameMapping'),
+        cleanDuplicateFileNames: (fileNameToKeepId: Record<string, string>): Promise<number> =>
+            ipcRenderer.invoke('lancedb:cleanDuplicateFileNames', fileNameToKeepId),
+        getFileMetadata: (): Promise<Record<string, number>> =>
+            ipcRenderer.invoke('lancedb:getFileMetadata')
+    },
 
-        // Permanent Memory operations
-        memory: {
-            search: (query: string, limit?: number): Promise<any[]> =>
-                ipcRenderer.invoke('memory:search', query, limit),
-            save: (memory: any): Promise<{ success: boolean; error?: string }> =>
-                ipcRenderer.invoke('memory:save', memory),
-            getAll: (): Promise<any[]> =>
-                ipcRenderer.invoke('memory:getAll'),
-            checkSyncStatus: (): Promise<{ needsSync: boolean; outdatedFiles: string[] }> =>
-                ipcRenderer.invoke('memory:checkSyncStatus'),
-            update: (data: { id: string; content: string; updatedAt?: number }): Promise<{ success: boolean; error?: string }> =>
-                ipcRenderer.invoke('memory:update', data),
-            star: (id: string, isStarred: boolean): Promise<{ success: boolean; error?: string }> =>
-                ipcRenderer.invoke('memory:star', id, isStarred),
-            getMemories: (filters?: { isStarred?: boolean; importance?: string }): Promise<any[]> =>
-                ipcRenderer.invoke('memory:getMemories', filters),
-            getMidTermMemories: (): Promise<any[]> =>
-                ipcRenderer.invoke('memory:getMidTermMemories'),
-            getStarredMemories: (): Promise<any[]> =>
-                ipcRenderer.invoke('memory:getStarredMemories'),
-            savePermanent: (memoryData: any): Promise<{ success: boolean; error?: string }> =>
-                ipcRenderer.invoke('memory:savePermanent', memoryData),
-            markAsPromoted: (originalId: string): Promise<{ success: boolean; error?: string }> =>
-                ipcRenderer.invoke('memory:markAsPromoted', originalId)
-        },
+    // Permanent Memory operations
+    memory: {
+        search: (query: string, limit?: number): Promise<any[]> =>
+            ipcRenderer.invoke('memory:search', query, limit),
+        save: (memory: any): Promise<{ success: boolean; error?: string }> =>
+            ipcRenderer.invoke('memory:save', memory),
+        getAll: (): Promise<any[]> =>
+            ipcRenderer.invoke('memory:getAll'),
+        checkSyncStatus: (): Promise<{ needsSync: boolean; outdatedFiles: string[] }> =>
+            ipcRenderer.invoke('memory:checkSyncStatus'),
+        update: (data: { id: string; content: string; updatedAt?: number }): Promise<{ success: boolean; error?: string }> =>
+            ipcRenderer.invoke('memory:update', data),
+        star: (id: string, isStarred: boolean): Promise<{ success: boolean; error?: string }> =>
+            ipcRenderer.invoke('memory:star', id, isStarred),
+        getMemories: (filters?: { isStarred?: boolean; importance?: string }): Promise<any[]> =>
+            ipcRenderer.invoke('memory:getMemories', filters),
+        getMidTermMemories: (): Promise<any[]> =>
+            ipcRenderer.invoke('memory:getMidTermMemories'),
+        getStarredMemories: (): Promise<any[]> =>
+            ipcRenderer.invoke('memory:getStarredMemories'),
+        // 🔧 新增: 更新记忆访问信息
+        updateMemoryAccess: (sessionId: string): Promise<boolean> =>
+            ipcRenderer.invoke('memory:updateAccess', sessionId),
+        savePermanent: (memoryData: any): Promise<{ success: boolean; error?: string }> =>
+            ipcRenderer.invoke('memory:savePermanent', memoryData),
+        markAsPromoted: (originalId: string): Promise<{ success: boolean; error?: string }> =>
+            ipcRenderer.invoke('memory:markAsPromoted', originalId),
+        // 🔧 新增: 清理相关 API
+        runCleanup: (): Promise<{
+            expiredMidTerm: number;
+            orphanedVectors: number;
+            danglingPromotions: number;
+            errors: string[];
+            freedSpace: number;
+        }> => ipcRenderer.invoke('memory:runCleanup'),
+        getCleanupStats: (): Promise<{
+            expiredCount: number;
+            orphanedCount: number;
+            danglingCount: number;
+            totalMidTerm: number;
+            totalLongTerm: number;
+        }> => ipcRenderer.invoke('memory:getCleanupStats'),
+        cleanupOrphanedVectors: (): Promise<{ deleted: number; errors: string[] }> =>
+            ipcRenderer.invoke('memory:cleanupOrphanedVectors'),
+    },
 
-        // Context Engineering (Phase 2)
-        context: {
-            getMessages: (sessionId: string): Promise<{ success: boolean; messages?: any[]; error?: string }> =>
-                ipcRenderer.invoke('context:getMessages', sessionId),
-            addMessage: (sessionId: string, message: any): Promise<{ success: boolean; error?: string }> =>
-                ipcRenderer.invoke('context:addMessage', sessionId, message),
-            addMessages: (sessionId: string, messages: any[]): Promise<{ success: boolean; error?: string }> =>
-                ipcRenderer.invoke('context:addMessages', sessionId, messages),
-            clear: (sessionId: string): Promise<{ success: boolean; error?: string }> =>
-                ipcRenderer.invoke('context:clear', sessionId),
-            updateMessageCompression: (messageId: string, updates: any): Promise<{ success: boolean; error?: string }> =>
-                ipcRenderer.invoke('context:updateMessageCompression', messageId, updates),
-            markMessagesAsCompacted: (messageIds: string[], summaryId: string): Promise<{ success: boolean; error?: string }> =>
-                ipcRenderer.invoke('context:markMessagesAsCompacted', messageIds, summaryId),
-            createCheckpoint: (sessionId: string, name: string, messages: any[]): Promise<{ success: boolean; checkpoint?: any; error?: string }> =>
-                ipcRenderer.invoke('context:createCheckpoint', sessionId, name, messages),
-            getCheckpoints: (sessionId: string): Promise<{ success: boolean; checkpoints?: any[]; error?: string }> =>
-                ipcRenderer.invoke('context:getCheckpoints', sessionId),
-            getCheckpoint: (checkpointId: string): Promise<{ success: boolean; checkpoint?: any; messages?: any[]; error?: string }> =>
-                ipcRenderer.invoke('context:getCheckpoint', checkpointId),
-            restoreCheckpoint: (checkpointId: string): Promise<{ success: boolean; checkpoint?: any; messages?: any[]; error?: string }> =>
-                ipcRenderer.invoke('context:restoreCheckpoint', checkpointId),
-            deleteCheckpoint: (checkpointId: string): Promise<{ success: boolean; error?: string }> =>
-                ipcRenderer.invoke('context:deleteCheckpoint', checkpointId),
-            saveCompactedSession: (session: any): Promise<{ success: boolean; error?: string }> =>
-                ipcRenderer.invoke('context:saveCompactedSession', session),
-            getCompactedSessions: (sessionId: string): Promise<{ success: boolean; sessions?: any[]; error?: string }> =>
-                ipcRenderer.invoke('context:getCompactedSessions', sessionId),
-            deleteCompactedSessions: (sessionId: string): Promise<{ success: boolean; deleted?: number; error?: string }> =>
-                ipcRenderer.invoke('context:deleteCompactedSessions', sessionId)
-        },
+    // Context Engineering (Phase 2)
+    context: {
+        getMessages: (sessionId: string): Promise<{ success: boolean; messages?: any[]; error?: string }> =>
+            ipcRenderer.invoke('context:getMessages', sessionId),
+        addMessage: (sessionId: string, message: any): Promise<{ success: boolean; error?: string }> =>
+            ipcRenderer.invoke('context:addMessage', sessionId, message),
+        addMessages: (sessionId: string, messages: any[]): Promise<{ success: boolean; error?: string }> =>
+            ipcRenderer.invoke('context:addMessages', sessionId, messages),
+        clear: (sessionId: string): Promise<{ success: boolean; error?: string }> =>
+            ipcRenderer.invoke('context:clear', sessionId),
+        updateMessageCompression: (messageId: string, updates: any): Promise<{ success: boolean; error?: string }> =>
+            ipcRenderer.invoke('context:updateMessageCompression', messageId, updates),
+        markMessagesAsCompacted: (messageIds: string[], summaryId: string): Promise<{ success: boolean; error?: string }> =>
+            ipcRenderer.invoke('context:markMessagesAsCompacted', messageIds, summaryId),
+        createCheckpoint: (sessionId: string, name: string, messages: any[]): Promise<{ success: boolean; checkpoint?: any; error?: string }> =>
+            ipcRenderer.invoke('context:createCheckpoint', sessionId, name, messages),
+        getCheckpoints: (sessionId: string): Promise<{ success: boolean; checkpoints?: any[]; error?: string }> =>
+            ipcRenderer.invoke('context:getCheckpoints', sessionId),
+        getCheckpoint: (checkpointId: string): Promise<{ success: boolean; checkpoint?: any; messages?: any[]; error?: string }> =>
+            ipcRenderer.invoke('context:getCheckpoint', checkpointId),
+        restoreCheckpoint: (checkpointId: string): Promise<{ success: boolean; checkpoint?: any; messages?: any[]; error?: string }> =>
+            ipcRenderer.invoke('context:restoreCheckpoint', checkpointId),
+        deleteCheckpoint: (checkpointId: string): Promise<{ success: boolean; error?: string }> =>
+            ipcRenderer.invoke('context:deleteCheckpoint', checkpointId),
+        saveCompactedSession: (session: any): Promise<{ success: boolean; error?: string }> =>
+            ipcRenderer.invoke('context:saveCompactedSession', session),
+        getCompactedSessions: (sessionId: string): Promise<{ success: boolean; sessions?: any[]; error?: string }> =>
+            ipcRenderer.invoke('context:getCompactedSessions', sessionId),
+        deleteCompactedSessions: (sessionId: string): Promise<{ success: boolean; deleted?: number; error?: string }> =>
+            ipcRenderer.invoke('context:deleteCompactedSessions', sessionId)
+    },
 
-        // Menu event listeners
+    // Menu event listeners
     onMenuEvent: (channel: string, callback: () => void) => {
         const validChannels = [
             'menu:newFile',
@@ -471,7 +504,11 @@ try {
             return () => ipcRenderer.removeListener(channel, callback);
         }
         return () => {};
-    }
+    },
+
+    // Generic IPC invoke for dynamic handlers
+    ipcInvoke: (channel: string, ...args: unknown[]): Promise<unknown> =>
+        ipcRenderer.invoke(channel, ...args)
 });
     console.log('[Preload] contextBridge.exposeInMainWorld completed successfully!');
 } catch (error) {
@@ -665,6 +702,8 @@ declare global {
                 deleteCompactedSessions: (sessionId: string) => Promise<{ success: boolean; deleted?: number; error?: string }>;
             },
             onMenuEvent: (channel: string, callback: () => void) => () => void;
+            // Generic IPC invoke for dynamic handlers
+            ipcInvoke: (channel: string, ...args: unknown[]) => Promise<unknown>;
         };
     }
 }

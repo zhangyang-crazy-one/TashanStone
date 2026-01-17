@@ -159,6 +159,8 @@ export interface AIConfig {
   contextEngine?: {
     enabled: boolean;
     maxTokens: number;
+    modelContextLimit?: number;
+    modelOutputLimit?: number;
     compactThreshold: number;
     pruneThreshold: number;
     truncateThreshold: number;

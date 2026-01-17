@@ -826,16 +826,130 @@ const createEnhancedCodeBlock = (renderHtml: boolean) => {
 
 /**
  * EnhancedImage: Handles image rendering with error fallback and loading state
+ * Converts relative asset paths to absolute file:// URLs for Electron
  */
+interface ImageGetUrlResult {
+  success: boolean;
+  url?: string;
+  error?: string;
+}
+
+// Cache for image URLs to prevent duplicate IPC calls
+const imageUrlCache = new Map<string, { url: string; timestamp: number }>();
+const CACHE_DURATION = 10000; // 10 seconds cache (increased)
+
 const EnhancedImage = ({ src, alt, ...props }: any) => {
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [imageSrc, setImageSrc] = useState<string | null>(null);
+  const loadIdRef = useRef<number>(0); // Unique load ID for this component instance
 
   // Reset state when src changes
   useEffect(() => {
-    setError(false);
-    setLoading(true);
+    // Skip if no valid src
+    if (!src) {
+      setImageSrc(null);
+      setLoading(false);
+      setError(false);
+      return;
+    }
+
+    // For data URLs, use directly (no IPC call needed)
+    if (src.startsWith('data:')) {
+      setImageSrc(src);
+      setLoading(false);
+      setError(false);
+      return;
+    }
+
+    // For already absolute URLs, use directly (no IPC call needed)
+    if (src.startsWith('file://') || src.startsWith('http://') || src.startsWith('https://')) {
+      setImageSrc(src);
+      setLoading(false);
+      setError(false);
+      return;
+    }
+
+    // Generate unique load ID for this effect run
+    loadIdRef.current++;
+    const currentLoadId = loadIdRef.current;
+
+    let isCancelled = false;
+
+    const loadImage = async () => {
+      // Check cache FIRST before any IPC call
+      if (imageUrlCache.has(src)) {
+        const cached = imageUrlCache.get(src)!;
+        if (Date.now() - cached.timestamp < CACHE_DURATION) {
+          if (!isCancelled) {
+            setImageSrc(cached.url);
+            setLoading(false);
+            setError(false);
+          }
+          return;
+        }
+      }
+
+      // For relative paths (assets/xxx.png), convert to absolute URL
+      if (src.startsWith('assets/')) {
+        try {
+          const result = await window.electronAPI.ipcInvoke('image:getUrl', src) as ImageGetUrlResult;
+
+          // Skip if this effect has been cancelled (component unmounted or re-rendered)
+          if (isCancelled || currentLoadId !== loadIdRef.current) {
+            return;
+          }
+
+          if (result.success && result.url) {
+            // Cache the URL
+            imageUrlCache.set(src, { url: result.url, timestamp: Date.now() });
+            setImageSrc(result.url);
+            setLoading(false);
+            setError(false);
+          } else {
+            setError(true);
+            setLoading(false);
+          }
+        } catch (err) {
+          if (isCancelled || currentLoadId !== loadIdRef.current) {
+            return;
+          }
+          setError(true);
+          setLoading(false);
+        }
+      } else {
+        // Unknown path type
+        setImageSrc(src);
+        setLoading(false);
+        setError(false);
+      }
+    };
+
+    loadImage();
+
+    return () => {
+      isCancelled = true;
+    };
   }, [src]);
+
+  // 🔧 Fix: Return null for empty/invalid src to avoid browser downloading whole page
+  if (!src || src === '') {
+    return null;
+  }
+
+  // Don't render img until we have a valid src (prevent empty string src warning)
+  if (!imageSrc) {
+    return (
+      <span className="block my-4 relative">
+        <span className="absolute inset-0 flex items-center justify-center bg-slate-100 dark:bg-cyber-800 rounded-lg animate-pulse">
+          <span className="text-xs text-slate-400">Loading...</span>
+        </span>
+        {alt && (
+          <span className="block mt-2 text-center text-xs text-slate-500 dark:text-slate-400 italic">{alt}</span>
+        )}
+      </span>
+    );
+  }
 
   if (error) {
     return (
@@ -853,13 +967,8 @@ const EnhancedImage = ({ src, alt, ...props }: any) => {
 
   return (
     <span className="block my-4 relative">
-      {loading && (
-        <span className="absolute inset-0 flex items-center justify-center bg-slate-100 dark:bg-cyber-800 rounded-lg animate-pulse">
-          <span className="text-xs text-slate-400">Loading...</span>
-        </span>
-      )}
       <img
-        src={src}
+        src={imageSrc}
         alt={alt || ''}
         onLoad={() => setLoading(false)}
         onError={() => { setLoading(false); setError(true); }}
@@ -933,7 +1042,7 @@ export const Preview: React.FC<PreviewProps> = ({ content, initialScrollRatio, f
   }, [initialScrollRatio]);
 
   return (
-    <div className="flex-1 h-full min-h-0 w-full bg-paper-50 dark:bg-cyber-900 relative flex flex-col transition-colors duration-300">
+    <div data-testid="preview" className="flex-1 h-full min-h-0 w-full bg-paper-50 dark:bg-cyber-900 relative flex flex-col transition-colors duration-300">
 
       {/* HTML Toggle Header - Only shown if HTML is detected */}
       {hasHtml && (

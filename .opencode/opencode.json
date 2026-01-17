@@ -3,25 +3,57 @@
   "instructions": [
     "AGENTS.md",
     "docs/PROJECT.md",
-    "docs/PROJECT_STATUS.md"
+    "docs/PROJECT_STATUS.md",
+    "./CLAUDE.md",
+    "C:/Users/Mr.zhang/CLAUDE.md"
   ],
-  "lsp": {
-    "typescript": {
-      "command": ["typescript-language-server", "--stdio"],
-      "extensions": [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts"]
+  "plugin": [
+    "opencode-antigravity-auth@beta",
+    "oh-my-opencode"
+  ],
+  "provider": {
+    "opencode": {
+      "options": {}
     },
-    "python": {
-      "command": ["pyright", "--stdio"],
-      "extensions": [".py", ".pyi"]
-    },
-    "go": {
-      "command": ["gopls"],
-      "extensions": [".go"]
-    },
-    "rust": {
-      "command": ["rust-analyzer"],
-      "extensions": [".rs"]
+    "google": {
+      "models": {
+         "antigravity-gemini-3-pro": {
+          "name": "Gemini 3 Pro (Antigravity)",
+          "limit": { "context": 1048576, "output": 65535 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "variants": {
+            "low": { "thinkingLevel": "low" },
+            "high": { "thinkingLevel": "high" }
+          }
+        },
+         "antigravity-gemini-3-flash": {
+          "name": "Gemini 3 Flash (Antigravity)",
+          "limit": { "context": 1048576, "output": 65536 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "variants": {
+            "minimal": { "thinkingLevel": "minimal" },
+            "low": { "thinkingLevel": "low" },
+            "medium": { "thinkingLevel": "medium" },
+            "high": { "thinkingLevel": "high" }
+          }
+        },
+       
+        "antigravity-claude-opus-4-5-thinking": {
+          "name": "Claude Opus 4.5 Thinking (Antigravity)",
+          "limit": { "context": 200000, "output": 64000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "variants": {
+            "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
+            "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
+          }
+        },
+        "antigravity-claude-sonnet-4-5-thinking": {
+          "name": "Claude Sonnet 4.5 Thinking (google)",
+          "limit": { "context": 200000, "output": 64000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
+        }
     }
+  }
   },
   "mcp": {
     "chrome-devtools": {
@@ -36,14 +68,6 @@
     "sequential-thinking": {
       "type": "local",
       "command": ["npx", "-y", "@modelcontextprotocol/server-sequential-thinking@latest"]
-    },
-    "zai-mcp-server": {
-            "type": "local",
-            "command": ["npx","-y","@z_ai/mcp-server"],
-            "environment": {
-                "Z_AI_API_KEY": "e247e649f1534651a3f12bfe47d2c42f.qlrVZegtSW0nFdMI",
-                "Z_AI_MODE": "ZHIPU"
-            }
     },
     "zread": {
             "type": "remote",
@@ -69,34 +93,7 @@
         "edit": false,
         "bash": false
       }
-    },
-    "bug-fixer": {
-      "description": "专业 Bug 修复代理，快速定位和修复代码问题",
-      "mode": "subagent",
-      "temperature": 0.1,
-      "maxSteps": 20
-    },
-    "code-reviewer": {
-      "description": "代码审查代理，检查代码质量、安全性和最佳实践",
-      "mode": "subagent",
-      "temperature": 0.1,
-      "maxSteps": 15
-    },
-    "frontend-dev": {
-      "description": "React 前端开发专家，构建 UI 组件和交互功能",
-      "mode": "subagent",
-      "temperature": 0.3,
-      "maxSteps": 30
-    },
-    "backend-dev": {
-      "description": "Electron 后端开发专家，IPC 通信和数据库操作",
-      "mode": "subagent",
-      "temperature": 0.3,
-      "maxSteps": 30
-    },
-    "project-manager": {
-      "description": "项目管理代理，维护项目进度和状态文档",
-      "mode": "subagent"
     }
+
   }
 }

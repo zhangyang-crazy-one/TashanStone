@@ -568,5 +568,76 @@ export const migrations: Migration[] = [
             `);
             logger.warn('Context engineering tables and columns dropped');
         }
+    },
+
+    // 版本 10: 添加中期记忆访问跟踪字段
+    {
+        version: 10,
+        description: 'Add access tracking fields to compacted_sessions',
+        up: (db) => {
+            db.exec(`ALTER TABLE compacted_sessions ADD COLUMN last_accessed_at INTEGER DEFAULT (strftime('%s', 'now') * 1000)`);
+            db.exec(`ALTER TABLE compacted_sessions ADD COLUMN access_count INTEGER DEFAULT 0`);
+            db.exec(`CREATE INDEX IF NOT EXISTS idx_compacted_accessed ON compacted_sessions(last_accessed_at DESC)`);
+            logger.info('Added access tracking fields to compacted_sessions');
+        },
+        down: (db) => {
+            db.exec(`DROP INDEX IF EXISTS idx_compacted_accessed`);
+            db.exec(`ALTER TABLE compacted_sessions DROP COLUMN access_count`);
+            db.exec(`ALTER TABLE compacted_sessions DROP COLUMN last_accessed_at`);
+            logger.info('Removed access tracking fields from compacted_sessions');
+        }
+    },
+
+    // 版本 11: 添加记忆层级跟踪和升级系统
+    {
+        version: 11,
+        description: 'Add memory tier tracking, promotion metadata, and upgrade system',
+        up: (db) => {
+            db.exec(`ALTER TABLE compacted_sessions ADD COLUMN tier TEXT DEFAULT 'mid-term'`);
+            db.exec(`ALTER TABLE compacted_sessions ADD COLUMN tier_updated_at INTEGER`);
+            db.exec(`ALTER TABLE compacted_sessions ADD COLUMN promotion_history TEXT`);
+            db.exec(`CREATE INDEX IF NOT EXISTS idx_compacted_tier ON compacted_sessions(tier)`);
+            db.exec(`CREATE INDEX IF NOT EXISTS idx_compacted_tier_updated ON compacted_sessions(tier, tier_updated_at)`);
+            
+            // 层级配置表
+            db.exec(`
+                CREATE TABLE IF NOT EXISTS memory_tier_config (
+                    tier_name TEXT PRIMARY KEY,
+                    max_items INTEGER DEFAULT 100,
+                    retention_days INTEGER DEFAULT 30,
+                    auto_promote BOOLEAN DEFAULT false,
+                    promote_criteria TEXT
+                )
+            `);
+            
+            // 升级日志表
+            db.exec(`
+                CREATE TABLE IF NOT EXISTS memory_promotion_log (
+                    id TEXT PRIMARY KEY,
+                    original_id TEXT NOT NULL,
+                    source_tier TEXT NOT NULL,
+                    target_tier TEXT NOT NULL,
+                    promoted_at INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+                    reason TEXT,
+                    success BOOLEAN DEFAULT true,
+                    error_message TEXT
+                )
+            `);
+            
+            db.exec(`CREATE INDEX IF NOT EXISTS idx_promotion_log_original ON memory_promotion_log(original_id)`);
+            
+            logger.info('Memory tier tracking columns and tables created');
+        },
+        down: (db) => {
+            db.exec(`DROP INDEX IF EXISTS idx_promotion_log_original`);
+            db.exec(`DROP TABLE IF EXISTS memory_promotion_log`);
+            db.exec(`DROP TABLE IF EXISTS memory_tier_config`);
+            db.exec(`DROP INDEX IF EXISTS idx_compacted_tier_updated`);
+            db.exec(`DROP INDEX IF EXISTS idx_compacted_tier`);
+            db.exec(`ALTER TABLE compacted_sessions DROP COLUMN promotion_history`);
+            db.exec(`ALTER TABLE compacted_sessions DROP COLUMN tier_updated_at`);
+            db.exec(`ALTER TABLE compacted_sessions DROP COLUMN tier`);
+            logger.info('Memory tier tracking columns and tables dropped');
+        }
     }
 ];

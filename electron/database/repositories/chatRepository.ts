@@ -36,6 +36,27 @@ export interface CompactedSessionRow {
     message_start: number;
     message_end: number;
     created_at: number;
+    last_accessed_at: number;
+    access_count: number;
+    tier: string;
+    tier_updated_at: number;
+    promotion_history: string;
+}
+
+export interface CompactedSession {
+    id: string;
+    session_id: string;
+    summary: string;
+    key_topics: string[];
+    decisions: string[];
+    message_start: number;
+    message_end: number;
+    created_at: number;
+    last_accessed_at?: number;
+    access_count?: number;
+    tier?: string;
+    tier_updated_at?: number;
+    promotion_history?: string;
 }
 
 export interface ChatMessage {
@@ -74,6 +95,8 @@ export interface CompactedSession {
     message_start: number;
     message_end: number;
     created_at: number;
+    last_accessed_at?: number;
+    access_count?: number;
 }
 
 export class ChatRepository {
@@ -408,7 +431,67 @@ export class ChatRepository {
             message_start: row.message_start,
             message_end: row.message_end,
             created_at: row.created_at,
+            last_accessed_at: row.last_accessed_at || row.created_at,
+            access_count: row.access_count || 0,
+            tier: row.tier || 'mid-term',
+            tier_updated_at: row.tier_updated_at || undefined,
+            promotion_history: row.promotion_history || undefined,
         };
+    }
+
+    // 🔧 新增: 更新记忆层级状态
+    updateMemoryTier(sessionId: string, tier: string, promotionHistory: object[]): void {
+        const db = getDatabase();
+        db.prepare(`
+            UPDATE compacted_sessions
+            SET tier = ?, tier_updated_at = ?, promotion_history = ?
+            WHERE id = ?
+        `).run(
+            tier,
+            Date.now(),
+            JSON.stringify(promotionHistory),
+            sessionId
+        );
+    }
+
+    // 🔧 新增: 获取需要升级的记忆
+    getMemoriesForPromotion(limit: number = 10): CompactedSession[] {
+        const db = getDatabase();
+        const rows = db.prepare(`
+            SELECT id, session_id, summary, key_topics, decisions, message_start, message_end, 
+                   created_at, last_accessed_at, access_count, tier, tier_updated_at, promotion_history
+            FROM compacted_sessions
+            WHERE tier = 'mid-term'
+            ORDER BY access_count DESC, last_accessed_at ASC
+            LIMIT ?
+        `).all(limit) as CompactedSessionRow[];
+
+        return rows.map(row => this.rowToCompactedSession(row));
+    }
+
+    // 🔧 新增: 更新记忆访问信息
+    updateMemoryAccess(sessionId: string): void {
+        const db = getDatabase();
+        db.prepare(`
+            UPDATE compacted_sessions
+            SET last_accessed_at = ?, access_count = access_count + 1
+            WHERE session_id = ?
+        `).run(Date.now(), sessionId);
+    }
+
+    // 🔧 新增: 获取记忆的访问信息
+    getMemoryAccessInfo(sessionId: string): { lastAccessedAt: number; accessCount: number } | null {
+        const db = getDatabase();
+        const row = db.prepare(`
+            SELECT last_accessed_at, access_count
+            FROM compacted_sessions
+            WHERE session_id = ?
+        `).get(sessionId) as { last_accessed_at: number; access_count: number } | undefined;
+
+        return row ? {
+            lastAccessedAt: row.last_accessed_at,
+            accessCount: row.access_count,
+        } : null;
     }
 }
 

@@ -32,7 +32,6 @@ export const QuizPanel: React.FC<QuizPanelProps> = ({ quiz, aiConfig, theme, onC
     // Initialize SRS service
     try {
       srsService.initialize();
-      console.log('[QuizPanel] SRS service initialized');
     } catch (error) {
       console.error('[QuizPanel] Failed to initialize SRS service:', error);
     }
@@ -73,7 +72,6 @@ export const QuizPanel: React.FC<QuizPanelProps> = ({ quiz, aiConfig, theme, onC
       // Auto-create study plan for new mistake (SRS integration)
       try {
         srsService.createStudyPlanForMistake(record, currentQuiz.title);
-        console.log('[QuizPanel] Created study plan for mistake:', record.id);
       } catch (error) {
         console.error('[QuizPanel] Failed to create study plan for mistake:', error);
       }

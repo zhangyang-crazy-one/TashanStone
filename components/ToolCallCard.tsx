@@ -619,8 +619,11 @@ export const parseToolCallsFromContent = (content: string): Array<{
 
   const thinkPattern = /<(?:think|thinking)>([\s\S]*?)<\/(?:think|thinking)>/gi;
   const toolPattern = /🔧\s*\*\*(?:Tool|Executing):\s*([^*]+)\*\*(?:\.\.\.)?(?:\s*```json\s*([\s\S]*?)```)?/g;
-  // MiniMax/Anthropic XML tool_call format: <minimax:tool_call> or generic XML invoke
+  const laxToolPattern = /🔧\s*\*\*(?:Tool|Executing):\s*([^*]+)\*\*(?:\.\.\.)?\s*(?:```json\s*)?([\[{][\s\S]*?[}\]])(?:```)?$/gim;
+  // MiniMax/Anthropic XML tool_call format: 啪啪ione or generic XML invoke
   const xmlToolPattern = /<(?:minimax:)?tool_call>\s*<invoke\s+name="([^"]+)">([\s\S]*?)<\/invoke>\s*<\/(?:minimax:)?tool_call>/gi;
+  // 简化的 <invoke name="tool_name"> 格式 (无 tool_call 包装)
+  const simpleInvokePattern = /<invoke\s+name="([^"]+)">([\s\S]*?)<\/invoke>/gi;
   // Fallback: partial/malformed XML tool calls (shown as raw in stream)
   const partialXmlToolPattern = /\*\*Tool:\s*([^">\s]+)["']?>\s*<parameter[^>]*>([^<]*)<\/parameter>\s*(?:<\/invoke>)?\s*(?:<\/(?:minimax:)?tool_call>)?/gi;
 
@@ -645,6 +648,27 @@ export const parseToolCallsFromContent = (content: string): Array<{
     });
   }
 
+  // Parse lax tool pattern (裸 JSON format without code block markers)
+  const laxToolMatches = [...content.matchAll(laxToolPattern)];
+  for (const match of laxToolMatches) {
+    // Avoid duplicates - check if this range overlaps with existing matches
+    const matchStart = match.index;
+    const matchEnd = match.index + match[0].length;
+    const isOverlapping = matches.some(m =>
+      (matchStart >= m.index && matchStart < m.index + m.length) ||
+      (matchEnd > m.index && matchEnd <= m.index + m.length)
+    );
+    if (!isOverlapping) {
+      matches.push({
+        index: match.index,
+        length: match[0].length,
+        type: 'tool',
+        toolName: match[1]?.trim(),
+        result: match[2]?.trim()
+      });
+    }
+  }
+
   // Parse MiniMax XML tool_call format
   const xmlToolMatches = [...content.matchAll(xmlToolPattern)];
   for (const match of xmlToolMatches) {
@@ -660,13 +684,45 @@ export const parseToolCallsFromContent = (content: string): Array<{
     matches.push({
       index: match.index,
       length: match[0].length,
-      type: 'tool',
-      toolName,
-      args
-    });
-  }
+       type: 'tool',
+       toolName,
+       args
+     });
+   }
 
-  // Parse partial/malformed XML (like in screenshot)
+   // Parse simple <invoke name="..."> format (standalone, without tool_call wrapper)
+   const simpleInvokeMatches = [...content.matchAll(simpleInvokePattern)];
+   for (const match of simpleInvokeMatches) {
+     // Avoid duplicates
+     const matchStart = match.index;
+     const matchEnd = match.index + match[0].length;
+     const isOverlapping = matches.some(m =>
+       (matchStart >= m.index && matchStart < m.index + m.length) ||
+       (matchEnd > m.index && matchEnd <= m.index + m.length)
+     );
+     if (!isOverlapping) {
+       // Extract args from the invoke content (could be JSON or other format)
+       let args: Record<string, string> = {};
+       const argsContent = match[2] || '';
+       // Try to parse as JSON
+       try {
+         args = JSON.parse(argsContent);
+       } catch {
+         // If not JSON, store as raw
+         args = { raw: argsContent.trim() };
+       }
+
+       matches.push({
+         index: match.index,
+         length: match[0].length,
+         type: 'tool',
+         toolName: match[1]?.trim(),
+         args
+       });
+     }
+   }
+
+   // Parse partial/malformed XML (like in screenshot)
   const partialXmlMatches = [...content.matchAll(partialXmlToolPattern)];
   for (const match of partialXmlMatches) {
     // Avoid duplicates - check if this range overlaps with existing matches

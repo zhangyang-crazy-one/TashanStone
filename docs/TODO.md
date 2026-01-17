@@ -1,8 +1,8 @@
 # 待办事项
 
-> 最后更新：2026-01-03
-> 版本：V1.80 智能链接插入系统
-> **v1.78 已完成 - 性能与安全优化 ✅**
+> 最后更新：2026-01-12
+> 版本：V1.81 上下文工程优化
+> **v1.81 上下文工程优化已完成 ✅**
 
 ---
 
@@ -36,7 +36,40 @@
 
 ---
 
-## 🔧 v1.78 - 性能优化与安全加固
+## 🔧 v1.81 - 上下文工程优化
+
+> **当前进度**: 100% 完成 ✅
+> **验证日期**: 2026-01-12
+
+### ✅ 已完成修复
+
+| 任务 | 位置 | 状态 | 说明 |
+|------|------|------|------|
+| 工具卡片文字溢出 | `ToolCallCard.tsx:399` | ✅ 已完成 | 添加 `flex-1 min-w-0` |
+| 工具卡片 JSON 解析 | `ToolCallCard.tsx:622-668` | ✅ 已完成 | 添加 `laxToolPattern` 正则 |
+| 记忆保存目录 | `fileHandlers.ts:120-138` | ✅ 已完成 | 自动创建父目录 |
+| 记忆目录 explicit | `persistent-memory.ts:47-72` | ✅ 已完成 | 添加 `ensureDir` 调用 |
+| CodeMirror RAF 警告 | `CodeMirrorEditor.tsx:245-586` | ✅ 已完成 | 添加 `mountedRef` 保护 |
+
+### 新增功能
+
+| 功能 | 文件 | 说明 |
+|------|------|------|
+| 裸 JSON 解析 | `ToolCallCard.tsx` | 支持 `json\n[...]` 和 `json\n{...}` 格式 |
+| 目录自动创建 | `fileHandlers.ts`, `persistent-memory.ts` | 自动创建 `.memories` 目录 |
+| 组件生命周期保护 | `CodeMirrorEditor.tsx` | 防止卸载后 RAF 回调执行 |
+
+### 待改进
+
+| 优先级 | 任务 | 说明 |
+|--------|------|------|
+| 🟡 | 动态工具选择 | 根据对话内容选择工具子集，减少 Token 消耗 |
+| 🟢 | Compact 函数统一 | 合并重复的 compact 函数，减少代码重复 |
+| 🟢 | 记忆压缩策略 | 实现更智能的记忆压缩算法 |
+
+---
+
+## ✅ v1.78 - 性能优化与安全加固
 
 > **当前进度**: 100% 完成 ✅
 > **验证日期**: 2026-01-02
@@ -55,7 +88,7 @@
 
 | 顺序 | 任务 | 位置 | 工时 | 说明 |
 |------|------|------|------|------|
-| 1 | 文件路径验证 | `electron/ipc/fileHandlers.ts` | - | ✅ 已存在 validateFilePath 函数 |
+| 1 | 文件路径验证 | `electron/ipc/fileHandlers.ts` | - | ✅ 已存在 validateFilePath 函数 (V1.81 增强) |
 | 2 | 密码重置验证 | `electron/ipc/dbHandlers.ts` | - | ✅ 已添加当前密码验证 |
 
 ### ✅ P1 UX 改进 (已完成)
@@ -69,7 +102,7 @@
 
 | 顺序 | 任务 | 位置 | 工时 | 说明 |
 |------|------|------|------|------|
-| 5 | aria-label 补充 | `Toolbar.tsx` | ✅ 完成 | 菜单/撤销/重做/粗体/斜体/分屏/聊天/设置/主题/下载/窗口控制 |
+| 5 | aria-label 补充 | `Toolbar.tsx` | ⏳ 待完成 | 部分按钮缺少 aria-label |
 | 6 | 键盘导航增强 | `KnowledgeGraph.tsx` | ✅ 完成 | 箭头键导航/Enter选择/Esc取消/+/-缩放/0重置 |
 
 ---
@@ -239,324 +272,4 @@ export interface KnowledgeIndex {
 |------|------|------|------|
 | [x] 1.2.1 | 实现 extractWikiLinks() | ✅ 完成 | `src/services/wiki/wikiLinkService.ts` |
 | [x] 1.2.2 | 实现 extractBlockReferences() | ✅ 完成 | `src/services/wiki/wikiLinkService.ts` |
-| [x] 1.2.3 | 实现 extractTags() | ✅ 完成 | `src/services/wiki/wikiLinkService.ts` |
-| [x] 1.2.4 | 实现 buildKnowledgeIndex() | ✅ 完成 | `src/services/wiki/wikiLinkService.ts` |
-| [x] 1.2.5 | 实现 preprocessWikiLinks() | ✅ 完成 | `src/services/wiki/wikiLinkService.ts` |
-
-**链接格式**:
-- `[[PageName]]` - 标准链接
-- `[[PageName|Alias]]` - 带别名链接
-- `[[Exam:QuizName]]` - 试题链接
-- `[[Question:QuestionID]]` - 问题链接
-- `<<PageName:LineNumber>>` - 块级引用
-
-**标签格式**:
-- `#tag` - 单级标签
-- `#nested/tag` - 嵌套标签
-- `#中文标签` - 中文支持
-
-#### 1.3 WikiLink 组件
-
-**参考实现**: `zhangnote/components/WikiLink.tsx`
-
-| 任务 | 描述 | 状态 | 文件 |
-|------|------|------|------|
-| [x] 1.3.1 | 创建 WikiLink 组件 | ✅ 完成 | `components/WikiLink.tsx` |
-| [x] 1.3.2 | 实现悬停预览 (500ms delay) | ✅ 完成 | `components/WikiLink.tsx` |
-| [x] 1.3.3 | 支持三种链接类型样式 | ✅ 完成 | `components/WikiLink.tsx` |
-| [x] 1.3.4 | 链接不存在时显示灰色 | ✅ 完成 | `components/WikiLink.tsx` |
-
-**组件特性**:
-```typescript
-// 链接类型
-const isExamLink = normalizedTarget.startsWith('exam:');
-const isQuestionLink = normalizedTarget.startsWith('question:');
-
-// 预览延迟
-timeoutRef.current = setTimeout(() => {
-  setShowPreview(true);
-}, 500);
-
-// 根据存在性显示样式
-targetFile
-  ? 'text-cyan-600 hover:bg-cyan-100'
-  : 'text-slate-400 cursor-not-allowed'
-```
-
-#### 1.4 反向链接面板
-
-**参考实现**: zhangnote 的链接索引逻辑
-
-| 任务 | 描述 | 状态 | 文件 |
-|------|------|------|------|
-| [x] 1.4.1 | 创建 BacklinkPanel 组件 | ✅ 完成 | `components/BacklinkPanel.tsx` |
-| [x] 1.4.2 | 显示引用当前页面的所有页面 | ✅ 完成 | `components/BacklinkPanel.tsx` |
-| [x] 1.4.3 | 支持点击跳转到源页面 | ✅ 完成 | `components/BacklinkPanel.tsx` |
-| [x] 1.4.4 | 显示引用上下文 | ✅ 完成 | `components/BacklinkPanel.tsx` |
-
-#### 1.5 Editor/Preview 集成
-
-| 任务 | 描述 | 状态 | 文件 | 优先级 |
-|------|------|------|------|--------|
-| [x] 1.5.1 | Editor 中渲染 WikiLink (悬停预览) | ✅ 完成 | `components/CodeMirrorEditor.tsx` | 🔴 高 |
-| [x] 1.5.2 | Preview 中渲染 WikiLink | ✅ 完成 | `components/Preview.tsx` |
-| [x] 1.5.3 | 链接点击导航 | ✅ 完成 | `App.tsx` |
-
----
-
-### Phase 2: 试题库强化 (6h) - 100% 完成 ✅
-
-| 进度 | 10 任务，全部完成 |
-|------|------------------|
-
-**参考实现**: `zhangnote/services/aiService.ts:641-824`
-
-#### 2.1 类型定义扩展
-
-| 任务 | 描述 | 状态 | 文件 |
-|------|------|------|------|
-| [x] 2.1.1 | 添加 QuestionBank 类型 | ✅ 完成 | `types.ts` |
-| [x] 2.1.2 | 添加 QuestionBankStats 类型 | ✅ 完成 | `types.ts` |
-| [x] 2.1.3 | 扩展 QuizQuestion 字段 | ✅ 完成 | `types.ts` |
-
-#### 2.2 题库服务
-
-**参考实现**: zhangnote 的试题生成逻辑
-
-| 任务 | 描述 | 状态 | 文件 |
-|------|------|------|------|
-| [x] 2.2.1 | 创建 questionBankService | ✅ 完成 | `src/services/quiz/questionBankService.ts` |
-| [x] 2.2.2 | 实现 createBank() | ✅ 完成 | `src/services/quiz/questionBankService.ts` |
-| [x] 2.2.3 | 实现 generateAndAddToBank() | ✅ 完成 | `src/services/quiz/questionBankService.ts` |
-| [x] 2.2.4 | 实现 getBankStats() | ✅ 完成 | `src/services/quiz/questionBankService.ts` |
-
-#### 2.3 题库管理 UI
-
-| 任务 | 描述 | 状态 | 文件 | 优先级 |
-|------|------|------|------|--------|
-| [x] 2.3.1 | 创建 QuestionBankModal | ✅ 完成 | `components/QuestionBankModal.tsx` |
-| [x] 2.3.2 | 题库列表展示 | ✅ 完成 | `components/QuestionBankModal.tsx` |
-| [x] 2.3.3 | 创建/编辑/删除题库 | ✅ 完成 | `components/QuestionBankModal.tsx` |
-| [x] 2.3.4 | 从笔记生成试题 | ✅ 完成 | `components/QuestionBankModal.tsx` | 🟠 中 |
-
----
-
-### Phase 3: 智能标签系统 (4h) - 100% 完成 ✅
-
-| 进度 | 5 任务，全部完成 |
-|------|-----------------|
-
-**参考实现**: `zhangnote/services/knowledgeService.ts:46-94`
-
-| 任务 | 描述 | 状态 | 文件 |
-|------|------|------|------|
-| [x] 3.1 | 增强 extractTags() 支持中文 | ✅ 完成 | `src/services/knowledgeService.ts` |
-| [x] 3.2 | 实现 suggestTags() AI 建议 | ✅ 完成 | `TagSuggestionModal.tsx` |
-| [x] 3.3 | 实现 buildKnowledgeIndex() 标签索引 | ✅ 完成 | TagsBrowser 集成搜索 |
-| [x] 3.4 | 添加标签浏览器组件 | ✅ 完成 | `components/TagsBrowser.tsx` |
-| [x] 3.5 | 标签管理系统 | ✅ 完成 | 搜索/编辑/删除/合并/批量操作 |
-
----
-
-### Phase 4: 知识图谱集成 (6h) - 100% 完成 ✅
-
-| 进度 | 3 任务，全部完成 |
-|------|-----------------|
-
-| 任务 | 描述 | 状态 | 文件 | 优先级 |
-|------|------|------|------|--------|
-| [x] 4.1 | 侧边栏添加工具栏 (文件/标签/题库) | ✅ 完成 | `components/Sidebar.tsx` |
-| [x] 4.2 | 知识图谱 File Links 模式 | ✅ 完成 | `components/KnowledgeGraph.tsx` |
-| ~~4.3~~ | ~~图谱导出功能 (PNG/SVG)~~ | 📋 低优先级 | 已移除 | 🟢 低 |
-
----
-
-### Phase 5: 测试验证 (4h) - 100% 完成 ✅
-
-| 进度 | 4 任务，全部完成 |
-|------|-----------------|
-
-| 任务 | 描述 | 状态 | 文件 | 优先级 |
-|------|------|------|------|--------|
-| [x] 5.1 | 链接提取单元测试 | ✅ 完成 (24 tests) | `test/wiki/wikiLink.test.ts` | 🔴 高 |
-| [x] 5.2 | 标签提取单元测试 | ✅ 完成 (15 tests) | `test/knowledge/tag.test.ts` | 🔴 高 |
-| [x] 5.3 | SRS 服务测试 | ✅ 完成 (21 tests) | `test/services/srsService.test.ts` | 🔴 高 |
-| [x] 5.4 | 构建验证 | ✅ 完成 | `npm run build` | 🟠 中 |
-
----
-
-### Phase 6: 间隔重复服务 (4h) - 100% 完成 ✅
-
-| 进度 | 4 任务，全部完成 |
-|------|-----------------|
-
-> **说明**: TashaStone 已有 `StudyPlan` 和 `ReviewTask` 类型定义，需实现完整服务
-> **参考实现**: `zhangnote/services/srsService.ts`
-
-| 任务 | 描述 | 状态 | 文件 | 优先级 |
-|------|------|------|------|--------|
-| [x] 6.1 | 实现 srsService 核心函数 | ✅ 完成 | `src/services/srs/srsService.ts` | 🔴 高 |
-| [x] 6.2 | 创建 StudyPlanPanel 组件 | ✅ 完成 | `components/StudyPlanPanel.tsx` | 🔴 高 |
-| [x] 6.3 | 错题自动加入复习计划 | ✅ 完成 | `components/QuizPanel.tsx` | 🔴 高 |
-| [x] 6.4 | 侧边栏集成复习入口 | ✅ 完成 | `components/Sidebar.tsx` | 🔴 高 |
-
-**核心实现**:
-```typescript
-// 艾宾浩斯遗忘曲线间隔
-const INTERVALS = [
-  { label: '5 mins', ms: 5 * 60 * 1000 },
-  { label: '30 mins', ms: 30 * 60 * 1000 },
-  { label: '12 hours', ms: 12 * 60 * 60 * 1000 },
-  { label: '1 day', ms: 24 * 60 * 60 * 1000 },
-  { label: '2 days', ms: 2 * 24 * 60 * 60 * 1000 },
-  { label: '4 days', ms: 4 * 24 * 60 * 60 * 1000 },
-  { label: '7 days', ms: 7 * 24 * 60 * 60 * 1000 },
-  { label: '15 days', ms: 15 * 24 * 60 * 60 * 1000 },
-];
-
-// 核心函数
-createStudyPlanForFile(file: MarkdownFile): StudyPlan
-createStudyPlanForMistake(mistake: MistakeRecord): StudyPlan
-markTaskComplete(planId: string, taskId: string)
-getTaskStatus(task: ReviewTask): 'pending' | 'completed' | 'overdue' | 'future'
-```
-
-**缺失功能说明**:
-- 6.3: QuizPanel 保存错题时未调用 srsService.createStudyPlanForMistake()
-- 6.4: Sidebar 中没有"学习计划"或"复习入口"菜单项
-
----
-
-### Phase 7: 智能搜索系统 (6h) - 100% 完成 ✅
-
-| 进度 | 5 任务，全部完成 |
-|------|-----------------|
-
-> **说明**: 扩展现有 RAG 搜索，添加双模式搜索和过滤语法
-> **参考实现**: `zhangnote/components/SearchModal.tsx`, `zhangnote/services/searchService.ts`
-
-| 任务 | 描述 | 状态 | 文件 |
-|------|------|------|------|
-| [x] 7.1 | 搜索过滤语法解析 | ✅ 完成 | `src/services/search/searchService.ts` |
-| [x] 7.2 | 创建 SearchModal 组件 | ✅ 完成 | `components/SearchModal.tsx` |
-| [x] 7.3 | 双模式搜索 (即时 + 语义) | ✅ 完成 | `components/SearchModal.tsx` |
-| [x] 7.4 | 结果预览面板 | ✅ 完成 | `components/SearchModal.tsx` |
-| [x] 7.5 | 键盘导航支持 | ✅ 完成 | `components/SearchModal.tsx` |
-
-**搜索过滤语法**:
-- `tag:标签名` - 按标签过滤
-- `type:file` - 按类型过滤 (file/exam)
-- `ext:md` - 按扩展名过滤
-- `after:2025-01` - 按日期过滤
-- `before:2025-12` - 按日期过滤
-
-**组件特性**:
-- 双模式搜索：即时搜索 (本地) + 语义搜索 (AI RAG)
-- 分屏视图：左侧结果列表 + 右侧预览面板
-- AI 摘要生成
-- 相关文件发现
-- 键盘导航 (↑↓ Enter Esc)
-
----
-
-### Phase 8: 智能整理 (4h) - 100% 完成 ✅
-
-| 进度 | 5 任务，全部完成 |
-|------|-----------------|
-
-> **参考实现**: `zhangnote/components/SmartOrganizeModal.tsx`
-
-| 任务 | 描述 | 状态 | 文件 |
-|------|------|------|------|
-| [x] 8.1 | 创建 SmartOrganizeModal | ✅ 完成 | `components/SmartOrganizeModal.tsx` |
-| [x] 8.2 | AI 重要性评分 (1-10) | ✅ 完成 | `components/SmartOrganizeModal.tsx` |
-| [x] 8.3 | AI 分类建议 | ✅ 完成 | `components/SmartOrganizeModal.tsx` |
-| [x] 8.4 | 右键菜单集成 | ✅ 完成 | `components/Sidebar.tsx` |
-| [x] 8.5 | 主题建议功能 | ✅ 完成 | `components/SmartOrganizeModal.tsx` |
-
-**组件特性**:
-- 四个标签页：分析、标签、分类、链接
-- 重要性评分 (1-10) 带可视化进度条
-- 关键概念提取
-- AI 建议标签、文件夹路径、主题
-- 一键应用建议
-- 关联文件发现
-
----
-
-## 📊 v1.75 任务统计（诚实版）
-
-| Phase | 任务数 | 预计时间 | 进度 | 状态 |
-|-------|--------|----------|------|------|
-| Phase 1: 双向链接系统 | 17 | 8h | 100% | ✅ 完成 |
-| Phase 2: 试题库强化 | 10 | 6h | 100% | ✅ 完成 |
-| Phase 3: 智能标签系统 | 5 | 4h | 100% | ✅ 完成 |
-| Phase 4: 知识图谱集成 | 3 | 4h | 100% | ✅ 完成 |
-| Phase 5: 测试验证 | 4 | 4h | **100%** | ✅ 完成 |
-| Phase 6: 间隔重复服务 | 4 | 4h | **100%** | ✅ 完成 |
-| Phase 7: 智能搜索系统 | 5 | 6h | 100% | ✅ 完成 |
-| Phase 8: 智能整理 | 5 | 4h | 100% | ✅ 完成 |
-| **总计** | **53** | **40h** | **100%** | |
-
-### 诚实完成统计
-
-| 分类 | 数量 | 说明 |
-|------|------|------|
-| 已完成任务 | **53** | 所有任务全部完成 |
-| 进行中任务 | **0** | 无进行中任务 |
-| 待开始任务 | **0** | 无待开始任务 |
-| **真实完成率** | **100%** | 108/108 tests passing |
-
-### 缺失任务清单
-
-| Phase | 任务 | 状态 | 估计工时 | 说明 |
-|-------|------|------|---------|------|
-| 5.3 | WikiLink 组件测试 | ⚠️ 跳过 | 1-2h | React Testing Library 未安装 |
-| ~ | SRS 服务单元测试 | 📋 待添加 | 2h | 创建 test/services/srsService.test.ts |
-
----
-
-## 🔴 下一步行动清单（v1.75 完成）
-
-| 顺序 | 任务 | 工时 | 优先级 | 状态 |
-|------|------|------|--------|------|
-| 1 | 创建测试目录结构 | 30min | 🔴 高 | ✅ 已完成 |
-| 2 | 编写链接提取测试 | 1-2h | 🔴 高 | ✅ 已完成 |
-| 3 | 编写标签提取测试 | 1h | 🔴 高 | ✅ 已完成 |
-| 4 | 编写 SRS 服务测试 | 2h | 🔴 高 | ✅ 已完成 |
-| 5 | 运行构建验证 | 30min | 🟠 中 | ✅ 已完成 |
-| 6 | 集成 QuizPanel 与 srsService | 1h | 🔴 高 | ✅ 已完成 |
-| 7 | 添加 Sidebar 复习入口 | 1h | 🔴 高 | ✅ 已完成 |
-
-**v1.75 完成状态**: 全部任务已完成 ✅
-
----
-
-## ✅ 已完成任务
-
-| 优先级 | 任务 | 工作量 | 状态 |
-|--------|------|--------|------|
-| 高 | 阶段一：核心上下文工程 | 5-7 天 | ✅ 完成 |
-| 高 | 阶段二：会话存储与检查点 | 3-4 天 | ✅ 完成 |
-| 高 | 阶段三：三层记忆系统 | 4-5 天 | ✅ 完成 |
-| 高 | 阶段四：UI 集成 | 3-4 天 | ✅ 完成 |
-| 高 | 阶段五：性能优化 | 3-4 天 | ✅ 完成 |
-| 高 | v1.7.2 记忆系统修复 | 5-7 天 | ✅ 完成 |
-| 高 | v1.7.3 性能与代码质量优化 | 3 天 | ✅ 完成 |
-| 高 | v1.7.4 优化审查修复 | 1 天 | ✅ 完成 |
-| 高 | **深度研究规划** | 1 天 | ✅ 完成 |
-| 高 | **v1.75 Phase 1 双向链接系统** | 8h | ✅ 100% |
-| 高 | **v1.75 Phase 2 试题库强化** | 6h | ✅ 100% |
-| 高 | **v1.75 Phase 3 智能标签系统** | 4h | ✅ 100% |
-| 高 | **v1.75 Phase 4 知识图谱集成** | 4h | ✅ 100% |
-| 高 | **v1.75 Phase 7 智能搜索系统** | 6h | ✅ 100% |
-| 高 | **v1.75 Phase 8 智能整理** | 4h | ✅ 100% |
-
----
-
-## 📁 相关文档
-
-- 项目概览：[PROJECT.md](./PROJECT.md)
-- 项目状态：[PROJECT_STATUS.md](./PROJECT_STATUS.md)
-- 优化指南：[V1.75_OPTIMIZATION_GUIDE.md](./V1.75_OPTIMIZATION_GUIDE.md)
-- v1.75 验证报告：[V1.75_VERIFICATION.md](./V1.75_VERIFICATION.md)
+| [x] 1.2.3 | 实现 extractTags() | ✅ 完成 | `src/services/wiki/wikiLinkService.

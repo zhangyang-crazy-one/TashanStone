@@ -29,10 +29,11 @@ export const DEFAULT_THEMES: AppTheme[] = [
       '--neutral-800': '30 41 59',
       '--neutral-900': '15 23 42',
 
-      '--font-primary': '"Inter", "Noto Sans SC", sans-serif',
-      '--font-header': '"Inter", "Noto Sans SC", sans-serif',
-    }
-  },
+      // Inter for UI, AlibabaHealthFont for Chinese with friendly rounded style
+        '--font-primary': '"Inter", "AlibabaHealthFont", "PingFang SC", "Microsoft YaHei", sans-serif',
+        '--font-header': '"Inter", "AlibabaHealthFont", "PingFang SC", "Microsoft YaHei", sans-serif',
+      }
+    },
   {
     id: 'clean-paper',
     name: 'Clean Paper',
@@ -59,10 +60,11 @@ export const DEFAULT_THEMES: AppTheme[] = [
       '--neutral-800': '30 41 59',
       '--neutral-900': '15 23 42',
 
-      '--font-primary': '"Inter", "Noto Sans SC", sans-serif',
-      '--font-header': '"Inter", "Noto Sans SC", sans-serif',
-    }
-  },
+        // DOUYINSANSBOLD for warm, modern Chinese typography; Inter for English UI
+        '--font-primary': '"Inter", "DOUYINSANSBOLD", "PingFang SC", "Microsoft YaHei", sans-serif',
+        '--font-header': '"Inter", "DOUYINSANSBOLD", "PingFang SC", "Microsoft YaHei", sans-serif',
+      }
+    },
   {
     id: 'sketch-notebook',
     name: 'Sketchbook',
@@ -89,10 +91,11 @@ export const DEFAULT_THEMES: AppTheme[] = [
       '--neutral-800': '43 43 43',
       '--neutral-900': '17 24 39',
 
-      '--font-primary': '"Ma Shan Zheng", "Noto Serif SC", cursive',
-      '--font-header': '"Ma Shan Zheng", "Noto Serif SC", cursive',
-    }
-  },
+       // Handwrighing for handwritten Chinese; Virgil for English (if available)
+        '--font-primary': '"Handwrighing", "Virgil", "PingFang SC", "Microsoft YaHei", cursive',
+        '--font-header': '"Handwrighing", "Virgil", "PingFang SC", "Microsoft YaHei", cursive',
+      }
+    },
   {
     id: 'midnight-dracula',
     name: 'Midnight Dracula',
@@ -119,10 +122,11 @@ export const DEFAULT_THEMES: AppTheme[] = [
       '--neutral-800': '40 42 54',
       '--neutral-900': '25 25 35',
 
-      '--font-primary': '"Inter", "Noto Sans SC", sans-serif',
-      '--font-header': '"Inter", "Noto Sans SC", sans-serif',
-    }
-  },
+       // Inter for UI, AlibabaHealthFont for Chinese with rounded, friendly style
+        '--font-primary': '"Inter", "AlibabaHealthFont", "PingFang SC", "Microsoft YaHei", sans-serif',
+        '--font-header': '"Inter", "AlibabaHealthFont", "PingFang SC", "Microsoft YaHei", sans-serif',
+      }
+    },
   {
     id: 'solarized-dawn',
     name: 'Solarized Dawn',
@@ -149,10 +153,11 @@ export const DEFAULT_THEMES: AppTheme[] = [
       '--neutral-800': '7 54 66',    // Text color main
       '--neutral-900': '0 43 54',
 
-      '--font-primary': '"Noto Serif SC", "Inter", serif',
-      '--font-header': '"Noto Serif SC", "Inter", serif',
-    }
-  },
+        // DOUYINSANSBOLD for warm, modern Chinese; Inter for precise English
+        '--font-primary': '"Inter", "DOUYINSANSBOLD", "PingFang SC", "Microsoft YaHei", sans-serif',
+        '--font-header': '"Inter", "DOUYINSANSBOLD", "PingFang SC", "Microsoft YaHei", sans-serif',
+      }
+    },
   // Pixel Retro Theme - Dark
   {
     id: 'pixel-dark',
@@ -180,10 +185,11 @@ export const DEFAULT_THEMES: AppTheme[] = [
       '--neutral-800': '22 33 62',
       '--neutral-900': '15 15 35',
 
-      '--font-primary': '"Press Start 2P", "VT323", "ZCOOL QingKe HuangYou", monospace',
-      '--font-header': '"Press Start 2P", "VT323", "ZCOOL QingKe HuangYou", monospace',
-    }
-  },
+       // Fusion Pixel for authentic pixel-style retro aesthetic
+        '--font-primary': '"Fusion Pixel", "PingFang SC", "Microsoft YaHei", monospace',
+        '--font-header': '"Fusion Pixel", "PingFang SC", "Microsoft YaHei", monospace',
+      }
+    },
   // Pixel Retro Theme - Light
   {
     id: 'pixel-light',
@@ -211,11 +217,12 @@ export const DEFAULT_THEMES: AppTheme[] = [
       '--neutral-800': '45 52 54',
       '--neutral-900': '45 52 54',
 
-      '--font-primary': '"Press Start 2P", "VT323", "ZCOOL QingKe HuangYou", monospace',
-      '--font-header': '"Press Start 2P", "VT323", "ZCOOL QingKe HuangYou", monospace',
+       // Fusion Pixel for authentic pixel-style retro aesthetic
+        '--font-primary': '"Fusion Pixel", "PingFang SC", "Microsoft YaHei", monospace',
+        '--font-header': '"Fusion Pixel", "PingFang SC", "Microsoft YaHei", monospace',
+      }
     }
-  }
-];
+  ];
 
 export const applyTheme = (theme: AppTheme) => {
   const root = document.documentElement;

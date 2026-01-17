@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron';
 import * as lancedbService from '../lancedb/index.js';
 import { getMainProcessMemoryService } from '../memory/persistentMemoryService.js';
+import { getDatabase } from '../database/index.js';
 import { logger } from '../utils/logger.js';
 import type { SaveMemoryRequest, SavePermanentMemoryRequest, UpdateMemoryRequest, MemoryFilters, Result } from '../types/ipc.js';
 import { success, failure } from '../types/ipc.js';
@@ -347,8 +348,8 @@ export function registerLanceDBHandlers(): void {
         content: session.summary,
         topics: session.key_topics || [],
         createdAt: session.created_at,
-        lastAccessedAt: session.created_at,
-        accessCount: 0,
+        lastAccessedAt: session.last_accessed_at || session.created_at,
+        accessCount: session.access_count || 0,
         isStarred: session.decisions?.length > 0,
       }));
 
@@ -357,6 +358,19 @@ export function registerLanceDBHandlers(): void {
     } catch (error) {
       logger.error('[LanceDBHandlers] Failed to get mid-term memories', error);
       return [];
+    }
+  });
+
+  // 🔧 新增: 更新记忆访问信息
+  ipcMain.handle('memory:updateAccess', async (_, sessionId: string) => {
+    try {
+      const { chatRepository } = await import('../database/repositories/chatRepository.js');
+      chatRepository.updateMemoryAccess(sessionId);
+      logger.debug('[LanceDBHandlers] Memory access updated', { sessionId });
+      return true;
+    } catch (error) {
+      logger.error('[LanceDBHandlers] Failed to update memory access', error);
+      return false;
     }
   });
 
@@ -376,7 +390,7 @@ export function registerLanceDBHandlers(): void {
           topics: m.topics,
           createdAt: m.created,
           lastAccessedAt: m.updated,
-          accessCount: 0,
+          accessCount: m.accessCount || 0,
           isStarred: true,
         }));
 
@@ -439,28 +453,225 @@ export function registerLanceDBHandlers(): void {
     }
   });
 
-  // 标记为已升级
+  // 🔧 修复: 标记中期记忆为已升级
+  // 正确的行为：更新 compacted_sessions 表中的记录，标记为已升级
   ipcMain.handle('memory:markAsPromoted', async (_, originalId: string) => {
     try {
-      const service = getMainProcessMemoryService();
+      const { chatRepository } = await import('../database/repositories/chatRepository.js');
+      const db = getDatabase();
       
-      const originalMemory = await service.getMemoryById(originalId);
-      
-      if (originalMemory) {
-        originalMemory.promotedFrom = originalId;
-        originalMemory.promotedAt = Date.now();
-        originalMemory.importance = 'high';
-        originalMemory.isStarred = true;
-        await service.saveMemory(originalMemory);
-        logger.info('[LanceDBHandlers] Memory marked as promoted', { originalId });
-      } else {
-        logger.warn('[LanceDBHandlers] Memory not found for promotion', { originalId });
+      // 1. 验证原始记录存在
+      const sessions = chatRepository.getCompactedSessions(originalId);
+      if (sessions.length === 0) {
+        logger.warn('[LanceDBHandlers] Compacted session not found', { originalId });
+        return failure('Compacted session not found');
       }
       
-      return success(true);
+      const originalSession = sessions[0];
+      const now = Date.now();
+      
+      // 2. 构建升级历史
+      const existingHistory = originalSession.promotion_history 
+        ? JSON.parse(originalSession.promotion_history) 
+        : [];
+      const newHistory = [...existingHistory, {
+        from: 'mid-term',
+        to: 'long-term',
+        at: now,
+        reason: 'Auto-upgrade by MemoryAutoUpgradeService'
+      }];
+      
+      // 3. 更新 compacted_sessions 表
+      db.prepare(`
+        UPDATE compacted_sessions
+        SET tier = 'long-term',
+            tier_updated_at = ?,
+            promotion_history = ?
+        WHERE id = ?
+      `).run(
+        now,
+        JSON.stringify(newHistory),
+        originalId
+      );
+      
+      // 4. 记录到 promotion log 表
+      const logId = `prom-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      db.prepare(`
+        INSERT INTO memory_promotion_log
+        (id, original_id, source_tier, target_tier, promoted_at, reason, success)
+        VALUES (?, ?, 'mid-term', 'long-term', ?, 'Auto-upgrade', true)
+      `).run(logId, originalId, now);
+      
+      logger.info('[LanceDBHandlers] Memory marked as promoted', { 
+        originalId, 
+        newTier: 'long-term',
+        historyCount: newHistory.length 
+      });
+      
+      return success({
+        success: true,
+        originalId,
+        newTier: 'long-term',
+        promotedAt: now
+      });
     } catch (error) {
       logger.error('[LanceDBHandlers] Mark as promoted failed', error);
       return failure((error as Error).message);
+    }
+  });
+
+  // 🔧 新增: 运行清理流程
+  ipcMain.handle('memory:runCleanup', async () => {
+    try {
+      const db = getDatabase();
+      const { chatRepository } = await import('../database/repositories/chatRepository.js');
+      const report = {
+        expiredMidTerm: 0,
+        orphanedVectors: 0,
+        danglingPromotions: 0,
+        errors: [] as string[],
+        freedSpace: 0,
+      };
+
+      // 1. 清理过期中期记忆
+      const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
+      const expiredRows = db.prepare(`
+        SELECT id FROM compacted_sessions
+        WHERE tier = 'mid-term'
+          AND created_at < ?
+          AND (last_accessed_at < ? OR last_accessed_at IS NULL)
+      `).all(thirtyDaysAgo, thirtyDaysAgo) as { id: string }[];
+
+      for (const row of expiredRows) {
+        try {
+          chatRepository.deleteCompactedSession(row.id);
+          report.expiredMidTerm++;
+        } catch (e) {
+          report.errors.push(`Failed to delete ${row.id}: ${e}`);
+        }
+      }
+
+      // 2. 修复悬挂的升级
+      const dangling = db.prepare(`
+        SELECT id, promotion_history FROM compacted_sessions
+        WHERE tier = 'promoted'
+      `).all() as { id: string; promotion_history: string }[];
+
+      for (const row of dangling) {
+        try {
+          const history = JSON.parse(row.promotion_history || '[]');
+          const lastPromotion = history[history.length - 1];
+          if (lastPromotion && lastPromotion.targetTier === 'long-term' && lastPromotion.promotedAt) {
+            db.prepare(`
+              UPDATE compacted_sessions
+              SET tier = 'long-term', tier_updated_at = ?
+              WHERE id = ?
+            `).run(lastPromotion.promotedAt, row.id);
+            report.danglingPromotions++;
+          }
+        } catch (e) {
+          // 忽略
+        }
+      }
+
+      // 3. 统计孤立向量
+      const sessionRows = db.prepare('SELECT id FROM compacted_sessions').all() as { id: string }[];
+      const sessionIds = new Set(sessionRows.map(r => r.id));
+      const vectorRows = db.prepare('SELECT DISTINCT file_id FROM vector_chunks').all() as { file_id: string }[];
+      report.orphanedVectors = vectorRows.filter(c => !sessionIds.has(c.file_id)).length;
+
+      logger.info('[LanceDBHandlers] Cleanup completed', report);
+      return report;
+    } catch (error) {
+      logger.error('[LanceDBHandlers] Cleanup failed', error);
+      return {
+        expiredMidTerm: 0,
+        orphanedVectors: 0,
+        danglingPromotions: 0,
+        errors: [(error as Error).message],
+        freedSpace: 0,
+      };
+    }
+  });
+
+  // 🔧 新增: 获取清理统计
+  ipcMain.handle('memory:getCleanupStats', async () => {
+    try {
+      const db = getDatabase();
+      const { app } = await import('electron');
+      const path = await import('path');
+      const fs = await import('fs');
+      
+      const midTermResult = db.prepare(
+        'SELECT COUNT(*) as count FROM compacted_sessions WHERE tier = ?'
+      ).get('mid-term') as { count: number };
+      const longTermResult = db.prepare(
+        'SELECT COUNT(*) as count FROM compacted_sessions WHERE tier = ?'
+      ).get('long-term') as { count: number };
+      const expiredResult = db.prepare(
+        'SELECT COUNT(*) as count FROM compacted_sessions WHERE tier = ? AND created_at < ?'
+      ).get('mid-term', Date.now() - (30 * 24 * 60 * 60 * 1000)) as { count: number };
+      const danglingResult = db.prepare(
+        'SELECT COUNT(*) as count FROM compacted_sessions WHERE tier = ?'
+      ).get('promoted') as { count: number };
+
+      // 🆕 计算 .memories 文件夹中的 .md 文件数量
+      let persistentFiles = 0;
+      const memoriesDir = path.join(app.getPath('userData'), '.memories');
+      if (fs.existsSync(memoriesDir)) {
+        const files = fs.readdirSync(memoriesDir);
+        persistentFiles = files.filter((f: string) => 
+          f.endsWith('.md') && !f.startsWith('_')
+        ).length;
+      }
+
+      return {
+        expiredCount: expiredResult?.count || 0,
+        orphanedCount: 0,
+        danglingCount: danglingResult?.count || 0,
+        totalMidTerm: midTermResult?.count || 0,
+        totalLongTerm: longTermResult?.count || 0,
+        persistentFiles,
+      };
+    } catch (error) {
+      logger.error('[LanceDBHandlers] Failed to get cleanup stats', error);
+      return {
+        expiredCount: 0,
+        orphanedCount: 0,
+        danglingCount: 0,
+        totalMidTerm: 0,
+        totalLongTerm: 0,
+        persistentFiles: 0,
+      };
+    }
+  });
+
+  // 🔧 新增: 清理孤立向量
+  ipcMain.handle('memory:cleanupOrphanedVectors', async () => {
+    try {
+      const db = getDatabase();
+      const result = { deleted: 0, errors: [] as string[] };
+
+      const sessionRows = db.prepare('SELECT id FROM compacted_sessions').all() as { id: string }[];
+      const sessionIds = new Set(sessionRows.map(r => r.id));
+      const vectorRows = db.prepare('SELECT DISTINCT file_id FROM vector_chunks').all() as { file_id: string }[];
+
+      for (const chunk of vectorRows) {
+        if (!sessionIds.has(chunk.file_id)) {
+          try {
+            db.prepare('DELETE FROM vector_chunks WHERE file_id = ?').run(chunk.file_id);
+            result.deleted++;
+          } catch (e) {
+            result.errors.push(`Failed to delete ${chunk.file_id}: ${e}`);
+          }
+        }
+      }
+
+      logger.info('[LanceDBHandlers] Cleaned orphaned vectors:', result);
+      return result;
+    } catch (error) {
+      logger.error('[LanceDBHandlers] Failed to cleanup orphaned vectors', error);
+      return { deleted: 0, errors: [(error as Error).message] };
     }
   });
 

@@ -197,7 +197,10 @@
       "Bash(npm run)",
       "Skill(platform-build)",
       "Bash(cmd:*)",
-      "Bash(C:/Users/74088/scoop/apps/gh/current/bin/gh.exe release view v1.7.0 --repo zhangyang-crazy-one/TashanStone)"
+      "Bash(C:/Users/74088/scoop/apps/gh/current/bin/gh.exe release view v1.7.0 --repo zhangyang-crazy-one/TashanStone)",
+      "Bash(pwsh -c \"Invoke-Expression \\(Get-Content:*)",
+      "Bash(python:*)",
+      "Bash(xxd:*)"
     ],
     "deny": [],
     "ask": []

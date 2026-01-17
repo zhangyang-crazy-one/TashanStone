@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Toolbar } from './components/Toolbar';
-import { Editor } from './components/Editor';
 import { Preview } from './components/Preview';
 import { Sidebar } from './components/Sidebar';
 import { ChatPanel } from './components/ChatPanel';
@@ -63,6 +62,18 @@ const DEFAULT_AI_CONFIG: AIConfig = {
   customPrompts: {
     polish: "You are an expert technical editor. Improve the provided Markdown content for clarity, grammar, and flow. Return only the polished Markdown.",
     expand: "You are a creative technical writer. Expand on the provided Markdown content, adding relevant details, examples, or explanations. Return only the expanded Markdown."
+  },
+  // 🔧 修复: 添加 contextEngine 默认值
+  contextEngine: {
+    enabled: true,
+    maxTokens: 1000000,
+    modelContextLimit: 200000,
+    modelOutputLimit: 16000,
+    compactThreshold: 0.85,
+    pruneThreshold: 0.70,
+    truncateThreshold: 0.90,
+    messagesToKeep: 3,
+    checkpointInterval: 20
   }
 };
 
@@ -201,7 +212,13 @@ const App: React.FC = () => {
         return {
           ...DEFAULT_AI_CONFIG,
           ...parsed,
-          customPrompts: { ...DEFAULT_AI_CONFIG.customPrompts, ...parsed.customPrompts }
+          // 🔧 修复: 深度合并 customPrompts
+          customPrompts: { ...DEFAULT_AI_CONFIG.customPrompts, ...parsed.customPrompts },
+          // 🔧 修复: 深度合并 contextEngine
+          contextEngine: {
+            ...(DEFAULT_AI_CONFIG.contextEngine || {}),
+            ...(parsed.contextEngine || {})
+          }
         };
       }
       return DEFAULT_AI_CONFIG;
@@ -337,7 +354,6 @@ const App: React.FC = () => {
   const [aiState, setAiState] = useState<AIState>({ isThinking: false, error: null, message: null });
   const [ragStats, setRagStats] = useState<RAGStats>({ totalFiles: 0, indexedFiles: 0, totalChunks: 0, isIndexing: false });
   const [ocrStats, setOcrStats] = useState<OCRStats>({ isProcessing: false, totalPages: 0, processedPages: 0 });
-  const [useCodeMirror, setUseCodeMirror] = useState(false);
 
   // Multi-File Editor State
   const [openPanes, setOpenPanes] = useState<EditorPane[]>(() => {
@@ -439,14 +455,11 @@ const App: React.FC = () => {
 
   // Get selected text from active editor
   const getSelectedText = useCallback(() => {
-    if (useCodeMirror && codeMirrorRef.current) {
+    if (codeMirrorRef.current) {
       return codeMirrorRef.current.getSelection() || '';
-    } else if (editorRef.current) {
-      const textarea = editorRef.current;
-      return textarea.value.slice(textarea.selectionStart, textarea.selectionEnd);
     }
     return '';
-  }, [useCodeMirror]);
+  }, []);
 
   // Update RAG stats whenever files change (only total count)
   useEffect(() => {
@@ -893,54 +906,19 @@ const App: React.FC = () => {
     ));
   };
 
-  // 切换编辑器模式前保存光标位置
-  const handleToggleCodeMirror = (enabled: boolean) => {
-    // 强制失去焦点以确保触发 blur 事件
-    if (editorRef.current) {
-      editorRef.current.blur();
-    }
-
-    // 等待一小段时间让 blur 事件完成
-    setTimeout(() => {
-      // 尝试从多个来源获取光标位置
-      let position: { start: number; end: number } | undefined;
-
-      // 1. 优先从 editorRef.current 获取（如果是 Plain 编辑器）
-      if (!position && activeFileId && editorRef.current) {
-        const textarea = editorRef.current;
-        if (textarea) {
-          position = {
-            start: textarea.selectionStart,
-            end: textarea.selectionEnd
-          };
-          console.log('[Toggle] 从 textarea 获取位置:', position);
-        }
-      }
-
-      // 2. 如果 editorRef 没有，尝试从 cursorPositionsRef 获取
-      if (!position && activeFileId) {
-        position = cursorPositionsRef.current.get(activeFileId);
-        console.log('[Toggle] 从 ref 获取位置:', position);
-      }
-
-      // 3. 如果都没有，尝试从 files state 获取
-      if (!position && activeFileId) {
-        const file = files.find(f => f.id === activeFileId);
-        position = file?.cursorPosition;
-        console.log('[Toggle] 从 files state 获取位置:', position);
-      }
-
-      // 4. 如果有有效位置，保存它
-      if (activeFileId && position) {
-        cursorPositionsRef.current.set(activeFileId, position);
-        setFiles(prev => prev.map(f =>
-          f.id === activeFileId ? { ...f, cursorPosition: position! } : f
-        ));
-      }
-
-      // 然后切换模式
-      setUseCodeMirror(enabled);
-    }, 50);
+  // 保存精确光标位置（包含 anchor 和 head，支持多选）
+  // 这是更精确的光标保存，用于文件切换时的恢复
+  const handleCursorSave = (fileId: string, position: { anchor: number; head: number }) => {
+    // 转换为 start/end 格式保存
+    const positionForState = { start: position.anchor, end: position.head };
+    
+    // 1. 同步更新 ref
+    cursorPositionsRef.current.set(fileId, positionForState);
+    
+    // 2. 异步更新 state（用于持久化）
+    setFiles(prev => prev.map(f =>
+      f.id === fileId ? { ...f, cursorPosition: positionForState } : f
+    ));
   };
 
   // 获取光标位置（优先从同步 ref 读取）
@@ -2642,8 +2620,6 @@ IMPORTANT:
           onSplitModeChange={setSplitMode}
           onVoiceTranscription={() => setIsVoiceTranscriptionOpen(true)}
           onOpenQuestionBank={() => setIsQuestionBankOpen(true)}
-          useCodeMirror={useCodeMirror}
-          onToggleCodeMirror={handleToggleCodeMirror}
         />
 
         {/* Editor Tabs */}
@@ -2725,14 +2701,13 @@ IMPORTANT:
               files={files}
               onContentChange={handlePaneContentChange}
               onCursorChange={handleCursorChange}
+              onCursorSave={handleCursorSave}
               getCursorPosition={getCursorPosition}
               onToggleMode={togglePaneMode}
               onSelectPane={selectPane}
               splitMode={splitMode}
               language={lang}
-              editorRef={editorRef}
               codeMirrorRef={codeMirrorRef}
-              useCodeMirror={useCodeMirror}
             />
           )}
 
