@@ -104,7 +104,6 @@ nsis:
     - zh_CN
   language: 2052
   useZip: false
-  compression: lzma2
   deleteAppDataOnUninstall: true
 
 mac:
