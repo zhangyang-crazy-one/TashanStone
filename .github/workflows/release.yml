@@ -142,8 +142,7 @@ jobs:
         if: matrix.arch == 'arm64'
         uses: docker/setup-qemu-action@v3
         with:
-          platform: arm64
-          images: ubuntu2204
+          platforms: arm64
 
       - name: Install system dependencies
         run: |
