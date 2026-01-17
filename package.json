@@ -39,7 +39,10 @@
     "bun:dist:linux-x64": "bun run bun:build:electron && bun run electron-builder --linux --x64",
     "bun:dist:linux-arm64": "bun run bun:build:electron && bun run electron-builder --linux --arm64",
     "bun:dist:all": "bun run bun:build:electron && bun run electron-builder --win --linux",
-    "bun:test": "bun run vitest run"
+    "bun:test": "bun run vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.1",
@@ -61,7 +64,7 @@
     "@types/papaparse": "^5.5.0",
     "@types/react-virtualized-auto-sizer": "^1.0.4",
     "@uiw/react-codemirror": "^4.25.4",
-    "better-sqlite3": "^11.6.0",
+    "better-sqlite3": "^12.6.0",
     "canvas": "^3.2.0",
     "clsx": "^2.1.0",
     "d3": "^7.9.0",
@@ -97,6 +100,8 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.1",
     "@testing-library/user-event": "^14.6.1",
+    "@playwright/test": "^1.52.0",
+    "playwright-core": "^1.52.0",
     "@types/better-sqlite3": "^7.6.12",
     "@types/d3": "^7.4.3",
     "@types/fluent-ffmpeg": "^2.1.28",
