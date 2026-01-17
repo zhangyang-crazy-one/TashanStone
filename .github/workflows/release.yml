@@ -64,7 +64,7 @@ jobs:
         run: npm ci
 
       - name: Build and Package
-        run: npm run dist:win -- --${{ matrix.arch }}
+        run: npm run dist:win:${{ matrix.arch }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -154,7 +154,7 @@ jobs:
         run: npm ci
 
       - name: Build and Package (${{ matrix.target }} ${{ matrix.arch }})
-        run: npm run dist:linux -- --${{ matrix.target }} --${{ matrix.arch }}
+        run: npm run dist:linux:${{ matrix.target }}:${{ matrix.arch }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
