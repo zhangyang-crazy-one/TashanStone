@@ -168,6 +168,23 @@ deb:
   fpm:
     - "--deb-no-default-config-files"
 
+# rpm 包配置 (适用于 RedHat/CentOS/Fedora)
+rpm:
+  depends:
+    - libgtk-3
+    - libnotify
+    - nss
+    - libxss
+    - libxtst
+    - xdg-utils
+    - at-spi2-atk
+    - libuuid
+    - libsecret
+  afterInstall: build/linux/after-install.sh
+  afterRemove: build/linux/after-remove.sh
+  fpm:
+    - "--rpm-no-default-config-files"
+
 publish:
   provider: generic
   url: https://example.com/releases
