@@ -74,8 +74,6 @@ interface ToolbarProps {
   splitMode?: 'none' | 'horizontal' | 'vertical';
   onSplitModeChange?: (mode: 'none' | 'horizontal' | 'vertical') => void;
   graphType?: 'concept' | 'filelink';
-  useCodeMirror?: boolean;
-  onToggleCodeMirror?: (enabled: boolean) => void;
 }
 
 export const Toolbar: React.FC<ToolbarProps> = ({
@@ -108,8 +106,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   splitMode = 'none',
   onSplitModeChange,
   graphType = 'concept',
-  useCodeMirror = false,
-  onToggleCodeMirror
 }) => {
   const t = translations[language];
 
@@ -153,7 +149,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   const handleClose = () => window.electronAPI?.window.close();
 
   return (
-    <div className="h-16 border-b border-paper-200 dark:border-cyber-700 bg-white/80 dark:bg-cyber-800/80 backdrop-blur-md flex items-center px-4 sticky top-0 z-30 transition-colors duration-300 app-drag-region justify-between gap-4">
+    <div data-testid="toolbar" className="h-16 border-b border-paper-200 dark:border-cyber-700 bg-white/80 dark:bg-cyber-800/80 backdrop-blur-md flex items-center px-4 sticky top-0 z-30 transition-colors duration-300 app-drag-region justify-between gap-4">
       {/* 左侧区域：文件信息 - 固定宽度 */}
       <div className="flex items-center gap-3 min-w-0 flex-shrink-0">
         <button
@@ -253,7 +249,11 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               </div>
               {/* Basic View Modes */}
               <button
-                onClick={() => { setViewMode(ViewMode.Editor); setShowViewMenu(false); }}
+                onClick={() => { 
+                  setViewMode(ViewMode.Editor); 
+                  onSplitModeChange?.('none');
+                  setShowViewMenu(false); 
+                }}
                 className={`w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 flex items-center gap-2 ${viewMode === ViewMode.Editor ? 'text-cyan-600 dark:text-cyan-400 font-medium' : 'text-slate-700 dark:text-slate-200'}`}
               >
                 <Edit3 size={14} className="text-cyan-500" /> {t.editor}
@@ -261,8 +261,12 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               <button
                 onClick={() => {
                   setViewMode(ViewMode.Split);
-                  // 确保分屏模式生效：如果当前是'none'则切换到'horizontal'
+                  // 确保分屏模式生效
                   if (splitMode === 'none') {
+                    onSplitModeChange?.('horizontal');
+                  }
+                  // 如果已经在分屏模式，确保 splitMode 为 horizontal
+                  else if (splitMode !== 'horizontal') {
                     onSplitModeChange?.('horizontal');
                   }
                   setShowViewMenu(false);
@@ -272,7 +276,11 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                 <Columns size={14} className="text-blue-500" /> {t.split}
               </button>
               <button
-                onClick={() => { setViewMode(ViewMode.Preview); setShowViewMenu(false); }}
+                onClick={() => { 
+                  setViewMode(ViewMode.Preview); 
+                  onSplitModeChange?.('none');
+                  setShowViewMenu(false); 
+                }}
                 className={`w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 flex items-center gap-2 ${viewMode === ViewMode.Preview ? 'text-cyan-600 dark:text-cyan-400 font-medium' : 'text-slate-700 dark:text-slate-200'}`}
               >
                 <Eye size={14} className="text-purple-500" /> {t.preview}
@@ -296,15 +304,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                 className={`w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 flex items-center gap-2 ${viewMode === ViewMode.Graph && graphType === 'filelink' ? 'text-cyan-600 dark:text-cyan-400 font-medium' : 'text-slate-700 dark:text-slate-200'}`}
               >
                 <GitBranch size={14} className="text-violet-500" /> {t.graph} - File Links
-              </button>
-              <div className="my-1 h-px bg-paper-200 dark:bg-cyber-700"></div>
-              {/* Editor Mode Toggle */}
-              <button
-                onClick={() => { onToggleCodeMirror?.(!useCodeMirror); setShowViewMenu(false); }}
-                className={`w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 flex items-center gap-2 ${useCodeMirror ? 'text-cyan-600 dark:text-cyan-400 font-medium' : 'text-slate-700 dark:text-slate-200'}`}
-              >
-                <Code2 size={14} className={useCodeMirror ? 'text-cyan-500' : 'text-slate-400'} /> 
-                {useCodeMirror ? t.codeMirrorEditor : t.plainTextEditor}
               </button>
               <div className="my-1 h-px bg-paper-200 dark:bg-cyber-700"></div>
               {/* Analytics & Tools Views */}
@@ -334,7 +333,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         {onSplitModeChange && (
           <div className="flex bg-paper-100 dark:bg-cyber-800 rounded-lg p-1 border border-paper-200 dark:border-cyber-700 transition-colors hidden lg:flex">
             <button
-              onClick={() => onSplitModeChange('none')}
+              onClick={() => {
+                onSplitModeChange('none');
+                setViewMode(ViewMode.Editor);
+              }}
               className={`p-2 rounded-md transition-all ${splitMode === 'none' ? 'bg-white dark:bg-cyber-500 text-cyan-600 dark:text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
               title="Single View"
               aria-label="Single view"
@@ -342,7 +344,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               <Square size={16} />
             </button>
             <button
-              onClick={() => onSplitModeChange('horizontal')}
+              onClick={() => {
+                onSplitModeChange('horizontal');
+                setViewMode(ViewMode.Split);
+              }}
               className={`p-2 rounded-md transition-all ${splitMode === 'horizontal' ? 'bg-white dark:bg-cyber-500 text-cyan-600 dark:text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
               title="Split Horizontal"
               aria-label="Split horizontally"
@@ -350,7 +355,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               <Columns size={16} />
             </button>
             <button
-              onClick={() => onSplitModeChange('vertical')}
+              onClick={() => {
+                onSplitModeChange('vertical');
+                setViewMode(ViewMode.Split);
+              }}
               className={`p-2 rounded-md transition-all ${splitMode === 'vertical' ? 'bg-white dark:bg-cyber-500 text-cyan-600 dark:text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
               title="Split Vertical"
               aria-label="Split vertically"

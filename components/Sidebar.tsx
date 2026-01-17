@@ -765,8 +765,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     <>
       {isOpen && <div className="fixed inset-0 bg-black/50 z-30 lg:hidden backdrop-blur-sm" onClick={onCloseMobile} />}
 
-      <div className={`
-        fixed lg:static inset-y-0 left-0 z-40 w-72 bg-paper-100 dark:bg-cyber-800 
+      <div data-testid="sidebar" className={`
+        fixed lg:static inset-y-0 left-0 z-40 w-72 bg-paper-100 dark:bg-cyber-800
         border-r border-paper-200 dark:border-cyber-700 transform transition-transform duration-300 ease-in-out
         flex flex-col relative
         ${isOpen ? 'translate-x-0' : '-translate-x-full lg:hidden'}

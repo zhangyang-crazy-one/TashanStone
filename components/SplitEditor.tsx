@@ -1,7 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { EditorPane, MarkdownFile, CodeMirrorEditorRef } from '../types';
-import { Editor } from './Editor';
 import { CodeMirrorEditor } from './CodeMirrorEditor';
 import { Preview } from './Preview';
 import { translations, Language } from '../utils/translations';
@@ -12,14 +11,13 @@ interface SplitEditorProps {
   files: MarkdownFile[];
   onContentChange: (fileId: string, content: string) => void;
   onCursorChange?: (fileId: string, position: { start: number; end: number }) => void;
+  onCursorSave?: (fileId: string, position: { anchor: number; head: number }) => void;  // 保存光标位置回调
   getCursorPosition?: (fileId: string) => { start: number; end: number } | undefined;
   onToggleMode?: (paneId: string) => void;
   onSelectPane?: (paneId: string) => void;
   splitMode: 'none' | 'horizontal' | 'vertical';
   language?: Language;
-  editorRef?: React.RefObject<HTMLTextAreaElement>;
   codeMirrorRef?: React.RefObject<CodeMirrorEditorRef>;
-  useCodeMirror?: boolean;
 }
 
 export const SplitEditor: React.FC<SplitEditorProps> = ({
@@ -28,14 +26,13 @@ export const SplitEditor: React.FC<SplitEditorProps> = ({
   files,
   onContentChange,
   onCursorChange,
+  onCursorSave,  // 保存光标位置回调
   getCursorPosition,
   onToggleMode,
   onSelectPane,
   splitMode,
   language = 'en',
-  editorRef,
   codeMirrorRef,
-  useCodeMirror = false
 }) => {
   const t = translations[language];
   const [splitRatio, setSplitRatio] = useState(50);
@@ -46,22 +43,23 @@ export const SplitEditor: React.FC<SplitEditorProps> = ({
   const activeEditorPane = panes.find(p => p.id === activePane);
 
   // 计算可见面板列表
-  // 单文件分屏: 当只有一个面板时，自动创建一个虚拟的第二面板（同一文件，不同模式）
+  // 修复问题：确保始终包含 activePane，修复选项卡显示错误文件的问题
   const getVisiblePanes = (): EditorPane[] => {
+    // 无分屏模式：只显示活动面板
     if (splitMode === 'none') {
       return activeEditorPane ? [activeEditorPane] : [];
     }
 
-    // 分屏模式下
-    if (panes.length >= 2) {
-      // 有两个以上面板时，使用前两个
-      return panes.slice(0, 2);
-    } else if (panes.length === 1 || activeEditorPane) {
-      // 只有一个面板时，创建虚拟的第二面板（用于单文件分屏）
+    // 分屏模式：始终包含 activePane，并找出第二个面板
+    if (panes.length === 0) {
+      return [];
+    }
+
+    if (panes.length === 1) {
+      // 只有一个面板时，创建虚拟的第二面板（单文件分屏）
       const mainPane = activeEditorPane || panes[0];
       if (!mainPane) return [];
 
-      // 虚拟面板：同一文件，但模式相反（编辑器<->预览）
       const virtualPane: EditorPane = {
         id: `${mainPane.id}-split-virtual`,
         fileId: mainPane.fileId,
@@ -69,6 +67,30 @@ export const SplitEditor: React.FC<SplitEditorProps> = ({
       };
 
       return [mainPane, virtualPane];
+    }
+
+    // 有多个面板时：优先包含 activePane
+    if (panes.length >= 2) {
+      // 找出 activePane 在 panes 中的索引
+      const activeIndex = activePane ? panes.findIndex(p => p.id === activePane) : -1;
+
+      if (activeIndex === -1) {
+        // activePane 不在列表中，使用前两个
+        return [panes[0], panes[1]];
+      }
+
+      if (activeIndex === 0) {
+        // activePane 是第一个，直接返回前两个
+        return [panes[0], panes[1]];
+      }
+
+      if (activeIndex === panes.length - 1) {
+        // activePane 是最后一个，返回 activePane 和它前面一个
+        return [panes[activeIndex - 1], panes[activeIndex]];
+      }
+
+      // activePane 在中间，返回 activePane 和它前面一个
+      return [panes[activeIndex - 1], panes[activeIndex]];
     }
 
     return [];
@@ -95,9 +117,6 @@ export const SplitEditor: React.FC<SplitEditorProps> = ({
 
     const modeLabel = pane.mode === 'editor' ? 'Editor' : 'Preview';
 
-    // 只有当这是活动编辑器面板且模式是 editor 时才传递 ref
-    const shouldPassRef = isActiveEditorPane && pane.mode === 'editor' && editorRef;
-
     return (
       <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
         {/* Panel Title Bar - 只在分屏模式下显示，避免与 EditorTabs 重复 */}
@@ -121,39 +140,22 @@ export const SplitEditor: React.FC<SplitEditorProps> = ({
         {/* Content */}
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
           {pane.mode === 'editor' ? (
-            useCodeMirror ? (
-              <CodeMirrorEditor
-                key={`cm-editor-${file.id}-${pane.id}`}
-                ref={codeMirrorRef}
-                content={file.content}
-                onChange={(content) => onContentChange(file.id, content)}
-                onCursorChange={(position) => onCursorChange?.(file.id, position)}
-                initialCursor={getCursorPosition?.(file.id) || file.cursorPosition}
-                files={files}
-                onNavigate={(fileId) => {
-                  const targetPane = panes.find(p => p.fileId === fileId);
-                  if (targetPane && onSelectPane) {
-                    onSelectPane(targetPane.id);
-                  }
-                }}
-              />
-            ) : (
-              <Editor
-                key={`editor-${file.id}-${pane.id}`}
-                ref={shouldPassRef ? editorRef : undefined}
-                content={file.content}
-                onChange={(content) => onContentChange(file.id, content)}
-                onCursorChange={(position) => onCursorChange?.(file.id, position)}
-                initialCursor={getCursorPosition?.(file.id) || file.cursorPosition}
-                files={files}
-                onNavigate={(fileId) => {
-                  const targetPane = panes.find(p => p.fileId === fileId);
-                  if (targetPane && onSelectPane) {
-                    onSelectPane(targetPane.id);
-                  }
-                }}
-              />
-            )
+            <CodeMirrorEditor
+              key={`cm-editor-${file.id}-${pane.id}`}
+              ref={codeMirrorRef}
+              content={file.content}
+              onChange={(content) => onContentChange(file.id, content)}
+              onCursorChange={(position) => onCursorChange?.(file.id, position)}
+              onCursorSave={(position) => onCursorSave?.(file.id, position)}
+              initialCursor={getCursorPosition?.(file.id) || file.cursorPosition}
+              files={files}
+              onNavigate={(fileId) => {
+                const targetPane = panes.find(p => p.fileId === fileId);
+                if (targetPane && onSelectPane) {
+                  onSelectPane(targetPane.id);
+                }
+              }}
+            />
           ) : (
             <Preview
               key={`preview-${file.id}-${pane.id}`}
@@ -240,12 +242,8 @@ export const SplitEditor: React.FC<SplitEditorProps> = ({
     );
   }
 
-  // 单窗格显示
-  if (visiblePanes.length === 1 || splitMode === 'none') {
-    return <div className="flex-1 min-h-0 flex flex-col overflow-hidden">{renderPane(visiblePanes[0], true)}</div>;
-  }
-
-  // 分屏模式
+  // 统一渲染结构：避免切换模式时 DOM 结构变化导致组件重挂载
+  const isSplit = splitMode !== 'none' && visiblePanes.length >= 2;
   const flexDirection = splitMode === 'horizontal' ? 'flex-row' : 'flex-col';
   const cursorClass = splitMode === 'horizontal' ? 'cursor-col-resize' : 'cursor-row-resize';
   const dividerClass = splitMode === 'horizontal' ? 'w-1' : 'h-1';
@@ -253,58 +251,64 @@ export const SplitEditor: React.FC<SplitEditorProps> = ({
   return (
     <div
       ref={containerRef}
-      className={`flex-1 min-h-0 flex ${flexDirection} overflow-hidden`}
+      data-testid="editor"
+      className={`flex-1 min-h-0 flex ${isSplit ? flexDirection : 'flex-col'} overflow-hidden`}
     >
-      {/* 第一个面板 */}
+      {/* 第一个面板 - 始终显示 */}
       <div
-        style={{
+        style={isSplit ? {
           flex: `0 0 ${splitRatio}%`,
           [splitMode === 'horizontal' ? 'width' : 'height']: `${splitRatio}%`
-        }}
+        } : {}}
         className="min-h-0 min-w-0 overflow-hidden flex flex-col"
       >
         {renderPane(visiblePanes[0], true)}
       </div>
 
-      {/* 可拖动分割线 */}
-      <div
-        className={`
-          ${dividerClass}
-          ${cursorClass}
-          bg-paper-200 dark:bg-cyber-700
-          hover:bg-cyan-500 dark:hover:bg-cyan-500
-          transition-colors duration-200
-          ${isDragging ? 'bg-cyan-500' : ''}
-          relative
-          group
-        `}
-        onMouseDown={handleMouseDown}
-      >
-        {/* 拖动提示 */}
-        <div className={`
-          absolute ${splitMode === 'horizontal' ? 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2' : 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2'}
-          w-8 h-8 rounded-full bg-cyan-500 dark:bg-cyan-400 shadow-lg
-          flex items-center justify-center
-          opacity-0 group-hover:opacity-100 transition-opacity duration-200
-          ${isDragging ? 'opacity-100' : ''}
-        `}>
-          <div className={`flex ${splitMode === 'horizontal' ? 'flex-col' : 'flex-row'} gap-0.5`}>
-            <div className="w-0.5 h-3 bg-white rounded"></div>
-            <div className="w-0.5 h-3 bg-white rounded"></div>
+      {/* 分割线和第二个面板 - 只在分屏模式下显示 */}
+      {isSplit && (
+        <>
+          {/* 可拖动分割线 */}
+          <div
+            className={`
+              ${dividerClass}
+              ${cursorClass}
+              bg-paper-200 dark:bg-cyber-700
+              hover:bg-cyan-500 dark:hover:bg-cyan-500
+              transition-colors duration-200
+              ${isDragging ? 'bg-cyan-500' : ''}
+              relative
+              group
+            `}
+            onMouseDown={handleMouseDown}
+          >
+            {/* 拖动提示 */}
+            <div className={`
+              absolute ${splitMode === 'horizontal' ? 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2' : 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2'}
+              w-8 h-8 rounded-full bg-cyan-500 dark:bg-cyan-400 shadow-lg
+              flex items-center justify-center
+              opacity-0 group-hover:opacity-100 transition-opacity duration-200
+              ${isDragging ? 'opacity-100' : ''}
+            `}>
+              <div className={`flex ${splitMode === 'horizontal' ? 'flex-col' : 'flex-row'} gap-0.5`}>
+                <div className="w-0.5 h-3 bg-white rounded"></div>
+                <div className="w-0.5 h-3 bg-white rounded"></div>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
 
-      {/* 第二个面板 */}
-      <div
-        style={{
-          flex: `0 0 ${100 - splitRatio}%`,
-          [splitMode === 'horizontal' ? 'width' : 'height']: `${100 - splitRatio}%`
-        }}
-        className="min-h-0 min-w-0 overflow-hidden flex flex-col"
-      >
-        {visiblePanes[1] && renderPane(visiblePanes[1], false)}
-      </div>
+          {/* 第二个面板 */}
+          <div
+            style={{
+              flex: `0 0 ${100 - splitRatio}%`,
+              [splitMode === 'horizontal' ? 'width' : 'height']: `${100 - splitRatio}%`
+            }}
+            className="min-h-0 min-w-0 overflow-hidden flex flex-col"
+          >
+            {visiblePanes[1] && renderPane(visiblePanes[1], false)}
+          </div>
+        </>
+      )}
     </div>
   );
 };

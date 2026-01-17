@@ -1,11 +1,14 @@
 
 
-import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { X, Save, Server, Cpu, Key, Globe, Palette, Upload, Trash2, Check, Download, Plus, Languages, MessageSquare, ChevronDown, Wrench, AlertTriangle, Play, Terminal, Code2, Box, Keyboard, Command, Shield, Eye, EyeOff, FolderOpen, Tag } from 'lucide-react';
+import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
+import { X, Save, Server, Cpu, Key, Globe, Palette, Upload, Trash2, Check, Download, Plus, Languages, MessageSquare, ChevronDown, Wrench, AlertTriangle, Play, Terminal, Code2, Box, Keyboard, Command, Shield, Eye, EyeOff, FolderOpen, Tag, RefreshCw, Database, Trash, Zap } from 'lucide-react';
 import { AIConfig, AppTheme, AppShortcut } from '../types';
 import { translations, Language } from '../utils/translations';
 import { generateAIResponse, VirtualMCPClient } from '../services/aiService';
 import { mcpService } from '../src/services/mcpService';
+import { DEFAULT_CONTEXT_CONFIG } from '../src/services/context/types';
+import { memoryCleanupService, type CleanupStats, type CleanupReport } from '../src/services/context/memoryCleanupService';
+import { memoryAutoUpgradeService, type MemoryAutoUpgradeConfig } from '../src/services/context/memoryAutoUpgrade';
 
 interface AISettingsModalProps {
   isOpen: boolean;
@@ -98,6 +101,17 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<Tab>('ai');
   const [tempConfig, setTempConfig] = useState<AIConfig>(config);
+
+  // 🔧 修复: 辅助函数，安全更新 contextEngine
+  const updateContextEngine = (updates: any) => {
+    setTempConfig({
+      ...tempConfig,
+      contextEngine: {
+        ...(tempConfig.contextEngine || {}),
+        ...updates
+      }
+    });
+  };
 
   // Test State
   const [testTool, setTestTool] = useState<string | null>(null); // Name of tool being tested
@@ -372,7 +386,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="w-full max-w-4xl bg-white dark:bg-cyber-900 rounded-xl shadow-2xl border border-paper-200 dark:border-cyber-700 overflow-hidden transform transition-all scale-100 flex flex-col h-[85vh]">
+      <div role="dialog" aria-modal="true" className="w-full max-w-4xl bg-white dark:bg-cyber-900 rounded-xl shadow-2xl border border-paper-200 dark:border-cyber-700 overflow-hidden transform transition-all scale-100 flex flex-col h-[85vh]">
 
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-paper-200 dark:border-cyber-700 bg-paper-50 dark:bg-cyber-800/50 flex-shrink-0">
@@ -1216,20 +1230,14 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                         ? '自动管理对话上下文，防止 Token 超限'
                         : 'Automatically manage conversation context to prevent token limits'}
                     </p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={!!tempConfig.contextEngine?.enabled}
-                      onChange={(e) => setTempConfig({
-                        ...tempConfig,
-                        contextEngine: {
-                          ...tempConfig.contextEngine,
-                          enabled: e.target.checked
-                        }
-                      })}
-                      className="sr-only peer"
-                    />
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!!tempConfig.contextEngine?.enabled}
+                        onChange={(e) => updateContextEngine({ enabled: e.target.checked })}
+                        className="sr-only peer"
+                      />
                     <div className="w-11 h-6 bg-[rgb(var(--neutral-300))] peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[rgba(var(--primary-500)/0.3)] rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-[rgb(var(--border-main))] after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[rgb(var(--primary-500))]"></div>
                   </label>
                 </div>
@@ -1248,25 +1256,65 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                         <input
                           type="range"
                           min="50000"
-                          max="500000"
+                          max="2000000"
                           step="10000"
-                          value={tempConfig.contextEngine?.maxTokens || 200000}
-                          onChange={(e) => setTempConfig({
-                            ...tempConfig,
-                            contextEngine: {
-                              ...tempConfig.contextEngine,
-                              maxTokens: parseInt(e.target.value)
-                            }
-                          })}
+                          value={tempConfig.contextEngine?.maxTokens || DEFAULT_CONTEXT_CONFIG.max_tokens}
+                          onChange={(e) => updateContextEngine({ maxTokens: parseInt(e.target.value) })}
                           className="w-full h-2 bg-[rgb(var(--bg-element))] rounded-lg appearance-none cursor-pointer accent-[rgb(var(--primary-500))]"
                         />
                         <div className="flex justify-between text-xs text-[rgb(var(--text-secondary))]">
                           <span>50K</span>
                           <span className="font-medium text-[rgb(var(--primary-500))]">
-                            {((tempConfig.contextEngine?.maxTokens || 200000) / 1000).toFixed(0)}K
+                            {((tempConfig.contextEngine?.maxTokens || DEFAULT_CONTEXT_CONFIG.max_tokens) / 1000).toFixed(0)}K
                           </span>
-                          <span>500K</span>
+                          <span>2000K</span>
                         </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Model Limits */}
+                  <div className="bg-[rgb(var(--bg-panel))] p-5 rounded-xl border border-[rgb(var(--border-main))] space-y-4">
+                    <h4 className="text-sm font-bold text-[rgb(var(--text-primary))] font-[var(--font-header)]">
+                      Model Limits
+                    </h4>
+                    <p className="text-xs text-[rgb(var(--text-secondary))]">
+                      Configure context window and output limits for specific models (e.g., MiniMax-M2.1: 200K input, 64K output)
+                    </p>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      {/* Model Context Limit */}
+                      <div>
+                        <label className="block text-xs text-[rgb(var(--text-secondary))] mb-2">
+                          Model Context Limit
+                        </label>
+                        <input
+                          type="number"
+                          min="1000"
+                          max="1000000"
+                          step="1000"
+                          value={tempConfig.contextEngine?.modelContextLimit || ''}
+                          onChange={(e) => updateContextEngine({ modelContextLimit: e.target.value ? parseInt(e.target.value) : undefined })}
+                          placeholder="200000"
+                          className="w-full px-3 py-2 bg-[rgb(var(--bg-element))] border border-[rgb(var(--border-main))] rounded-lg text-[rgb(var(--text-primary))] text-sm focus:outline-none focus:border-[rgb(var(--primary-500))]"
+                        />
+                      </div>
+
+                      {/* Model Output Limit */}
+                      <div>
+                        <label className="block text-xs text-[rgb(var(--text-secondary))] mb-2">
+                          Model Output Limit
+                        </label>
+                        <input
+                          type="number"
+                          min="1000"
+                          max="1000000"
+                          step="1000"
+                          value={tempConfig.contextEngine?.modelOutputLimit || ''}
+                          onChange={(e) => updateContextEngine({ modelOutputLimit: e.target.value ? parseInt(e.target.value) : undefined })}
+                          placeholder="64000"
+                          className="w-full px-3 py-2 bg-[rgb(var(--bg-element))] border border-[rgb(var(--border-main))] rounded-lg text-[rgb(var(--text-primary))] text-sm focus:outline-none focus:border-[rgb(var(--primary-500))]"
+                        />
                       </div>
                     </div>
                   </div>
@@ -1289,13 +1337,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                           max="0.8"
                           step="0.05"
                           value={tempConfig.contextEngine?.pruneThreshold || 0.70}
-                          onChange={(e) => setTempConfig({
-                            ...tempConfig,
-                            contextEngine: {
-                              ...tempConfig.contextEngine,
-                              pruneThreshold: parseFloat(e.target.value)
-                            }
-                          })}
+                          onChange={(e) => updateContextEngine({ pruneThreshold: parseFloat(e.target.value) })}
                           className="w-full h-2 bg-[rgb(var(--bg-element))] rounded-lg appearance-none cursor-pointer accent-blue-500"
                         />
                         <p className="text-xs text-[rgb(var(--text-secondary))] mt-1">
@@ -1314,13 +1356,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                           max="0.95"
                           step="0.05"
                           value={tempConfig.contextEngine?.compactThreshold || 0.85}
-                          onChange={(e) => setTempConfig({
-                            ...tempConfig,
-                            contextEngine: {
-                              ...tempConfig.contextEngine,
-                              compactThreshold: parseFloat(e.target.value)
-                            }
-                          })}
+                          onChange={(e) => updateContextEngine({ compactThreshold: parseFloat(e.target.value) })}
                           className="w-full h-2 bg-[rgb(var(--bg-element))] rounded-lg appearance-none cursor-pointer accent-purple-500"
                         />
                         <p className="text-xs text-[rgb(var(--text-secondary))] mt-1">
@@ -1339,13 +1375,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                           max="1.0"
                           step="0.02"
                           value={tempConfig.contextEngine?.truncateThreshold || 0.95}
-                          onChange={(e) => setTempConfig({
-                            ...tempConfig,
-                            contextEngine: {
-                              ...tempConfig.contextEngine,
-                              truncateThreshold: parseFloat(e.target.value)
-                            }
-                          })}
+                          onChange={(e) => updateContextEngine({ truncateThreshold: parseFloat(e.target.value) })}
                           className="w-full h-2 bg-[rgb(var(--bg-element))] rounded-lg appearance-none cursor-pointer accent-orange-500"
                         />
                         <p className="text-xs text-[rgb(var(--text-secondary))] mt-1">
@@ -1367,13 +1397,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                           min="5"
                           max="100"
                           value={tempConfig.contextEngine?.checkpointInterval || 20}
-                          onChange={(e) => setTempConfig({
-                            ...tempConfig,
-                            contextEngine: {
-                              ...tempConfig.contextEngine,
-                              checkpointInterval: parseInt(e.target.value) || 20
-                            }
-                          })}
+                          onChange={(e) => updateContextEngine({ checkpointInterval: parseInt(e.target.value) || 20 })}
                           className="w-20 px-3 py-2 bg-[rgb(var(--bg-element))] border border-[rgb(var(--border-main))] rounded-lg text-[rgb(var(--text-primary))] text-center focus:outline-none focus:border-[rgb(var(--primary-500))]"
                         />
                         <span className="text-sm text-[rgb(var(--text-secondary))]">
@@ -1395,13 +1419,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                           min="1"
                           max="20"
                           value={tempConfig.contextEngine?.messagesToKeep || 3}
-                          onChange={(e) => setTempConfig({
-                            ...tempConfig,
-                            contextEngine: {
-                              ...tempConfig.contextEngine,
-                              messagesToKeep: parseInt(e.target.value) || 3
-                            }
-                          })}
+                          onChange={(e) => updateContextEngine({ messagesToKeep: parseInt(e.target.value) || 3 })}
                           className="w-20 px-3 py-2 bg-[rgb(var(--bg-element))] border border-[rgb(var(--border-main))] rounded-lg text-[rgb(var(--text-primary))] text-center focus:outline-none focus:border-[rgb(var(--primary-500))]"
                         />
                         <span className="text-sm text-[rgb(var(--text-secondary))]">
@@ -1412,6 +1430,37 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                   </div>
                 </>
               )}
+
+              {/* Memory System Management */}
+              <div className="bg-[rgb(var(--bg-panel))] p-5 rounded-xl border border-[rgb(var(--border-main))] space-y-4">
+                <h4 className="text-sm font-bold text-[rgb(var(--text-primary))] flex items-center gap-2 font-[var(--font-header)]">
+                  <Database size={18} className="text-green-500" />
+                  {currentUiLang === 'zh' ? '记忆系统管理' : 'Memory System Management'}
+                </h4>
+                <p className="text-xs text-[rgb(var(--text-secondary))]">
+                  {currentUiLang === 'zh'
+                    ? '管理 AI 长期记忆、清理过期记忆和自动升级设置'
+                    : 'Manage AI long-term memory, cleanup expired memories, and auto-upgrade settings'}
+                </p>
+
+                {/* Memory Stats */}
+                <MemoryStatsSection currentUiLang={currentUiLang} showToast={showToast} />
+              </div>
+
+              {/* Auto Upgrade Settings */}
+              <div className="bg-[rgb(var(--bg-panel))] p-5 rounded-xl border border-[rgb(var(--border-main))] space-y-4">
+                <h4 className="text-sm font-bold text-[rgb(var(--text-primary))] flex items-center gap-2 font-[var(--font-header)]">
+                  <Zap size={18} className="text-yellow-500" />
+                  {currentUiLang === 'zh' ? '自动升级设置' : 'Auto Upgrade Settings'}
+                </h4>
+                <p className="text-xs text-[rgb(var(--text-secondary))]">
+                  {currentUiLang === 'zh'
+                    ? '配置中期记忆自动升级为长期记忆的规则'
+                    : 'Configure automatic upgrade rules for mid-term to long-term memory'}
+                </p>
+
+                <AutoUpgradeSettingsSection currentUiLang={currentUiLang} />
+              </div>
             </div>
           )}
 
@@ -1503,9 +1552,9 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
         </div>
 
         {/* Footer */}
-        {activeTab === 'ai' || activeTab === 'prompts' || activeTab === 'mcp' || activeTab === 'keyboard' || activeTab === 'security' ? (
+        {activeTab === 'ai' || activeTab === 'prompts' || activeTab === 'mcp' || activeTab === 'keyboard' || activeTab === 'security' || activeTab === 'context' ? (
           <div className="p-4 border-t border-paper-200 dark:border-cyber-700 flex justify-end gap-3 bg-paper-50 dark:bg-cyber-800/50 flex-shrink-0">
-            <button onClick={onClose} className="px-4 py-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-paper-200 dark:hover:bg-cyber-700">{t.cancel}</button>
+            <button onClick={onClose} className="px-4 py-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-paper-200 dark:hover:bg-cyber-700">{activeTab === 'context' ? t.close : t.cancel}</button>
             <button onClick={handleSubmit} className="flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-cyan-500 to-violet-500 text-white rounded-lg shadow-lg hover:shadow-cyan-500/25">
               <Save size={18} /> {t.save}
             </button>
@@ -1612,6 +1661,307 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
           </div>
         </div>
       )}
+    </div>
+  );
+};
+
+// Memory Statistics Section Component
+interface MemoryStatsSectionProps {
+  currentUiLang: 'zh' | 'en';
+  showToast?: (message: string, isError?: boolean) => void;
+}
+
+const MemoryStatsSection: React.FC<MemoryStatsSectionProps> = ({ currentUiLang, showToast }) => {
+  const [stats, setStats] = useState<CleanupStats | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [cleaning, setCleaning] = useState(false);
+  const [lastCleanup, setLastCleanup] = useState<string | null>(null);
+
+  const t = currentUiLang === 'zh' ? {
+    refresh: '刷新',
+    runCleanup: '运行清理',
+    cleaning: '清理中...',
+    midTermSessions: '会话摘要',
+    promotedSessions: '已升级会话',
+    persistentFiles: '持久记忆文件',
+    expiredCount: '过期数量',
+    danglingCount: '悬挂升级',
+    orphanedCount: '孤立向量',
+    totalMemories: '总记忆数',
+    cleanupSuccess: '清理完成：删除了 {count} 个过期记忆',
+    cleanupError: '清理失败：{error}',
+    noData: '暂无数据',
+    sqliteLabel: 'SQLite',
+    memoriesLabel: '.memories/',
+  } : {
+    refresh: 'Refresh',
+    runCleanup: 'Run Cleanup',
+    cleaning: 'Cleaning...',
+    midTermSessions: 'Session Summaries',
+    promotedSessions: 'Promoted Sessions',
+    persistentFiles: 'Persistent Files',
+    expiredCount: 'Expired',
+    danglingCount: 'Dangling Upgrades',
+    orphanedCount: 'Orphaned Vectors',
+    totalMemories: 'Total Memories',
+    cleanupSuccess: 'Cleanup completed: {count} expired memories removed',
+    cleanupError: 'Cleanup failed: {error}',
+    noData: 'No data',
+    sqliteLabel: 'SQLite',
+    memoriesLabel: '.memories/',
+  };
+
+  const fetchStats = useCallback(async () => {
+    setLoading(true);
+    try {
+      const result = await memoryCleanupService.getCleanupStats();
+      setStats(result);
+    } catch (error) {
+      console.error('[MemoryStatsSection] Failed to fetch stats:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const handleCleanup = useCallback(async () => {
+    setCleaning(true);
+    try {
+      const result = await memoryCleanupService.runCleanup();
+      if (result.errors.length === 0) {
+        setLastCleanup(new Date().toLocaleString());
+        showToast?.(t.cleanupSuccess.replace('{count}', String(result.expiredMidTerm)), false);
+        await fetchStats();
+      } else {
+        showToast?.(t.cleanupError.replace('{error}', result.errors.join(', ')), true);
+      }
+    } catch (error) {
+      showToast?.(t.cleanupError.replace('{error}', String(error)), true);
+    } finally {
+      setCleaning(false);
+    }
+  }, [fetchStats, showToast, t]);
+
+  useEffect(() => {
+    fetchStats();
+  }, [fetchStats]);
+
+  return (
+    <div className="space-y-4">
+      {/* Stats Grid - 3+2 布局 */}
+      <div className="space-y-3">
+        {/* 第一行：主要统计 (3列) */}
+        <div className="grid grid-cols-3 gap-3">
+          {/* 会话摘要 (原中期记忆) */}
+          <div className="bg-[rgb(var(--bg-element))] p-3 rounded-lg">
+            <div className="text-xs text-[rgb(var(--text-secondary))]">{t.midTermSessions}</div>
+            <div className="text-lg font-bold text-[rgb(var(--text-primary))]">
+              {loading ? '...' : stats?.totalMidTerm || 0}
+            </div>
+            <div className="text-[10px] text-[rgb(var(--text-secondary))] opacity-60">
+              {t.sqliteLabel}
+            </div>
+          </div>
+          
+          {/* 已升级会话 (原长期记忆) */}
+          <div className="bg-[rgb(var(--bg-element))] p-3 rounded-lg">
+            <div className="text-xs text-[rgb(var(--text-secondary))]">{t.promotedSessions}</div>
+            <div className="text-lg font-bold text-[rgb(var(--text-primary))]">
+              {loading ? '...' : stats?.totalLongTerm || 0}
+            </div>
+            <div className="text-[10px] text-[rgb(var(--text-secondary))] opacity-60">
+              {t.sqliteLabel}
+            </div>
+          </div>
+          
+          {/* 🆕 持久记忆文件 */}
+          <div className="bg-[rgb(var(--bg-element))] p-3 rounded-lg border-l-2 border-green-500">
+            <div className="text-xs text-[rgb(var(--text-secondary))]">{t.persistentFiles}</div>
+            <div className="text-lg font-bold text-green-500">
+              {loading ? '...' : stats?.persistentFiles || 0}
+            </div>
+            <div className="text-[10px] text-[rgb(var(--text-secondary))] opacity-60">
+              {t.memoriesLabel}
+            </div>
+          </div>
+        </div>
+        
+        {/* 第二行：清理相关 (2列) */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-[rgb(var(--bg-element))] p-3 rounded-lg">
+            <div className="text-xs text-[rgb(var(--text-secondary))]">{t.expiredCount}</div>
+            <div className="text-lg font-bold text-orange-500">
+              {loading ? '...' : stats?.expiredCount || 0}
+            </div>
+          </div>
+          <div className="bg-[rgb(var(--bg-element))] p-3 rounded-lg">
+            <div className="text-xs text-[rgb(var(--text-secondary))]">{t.danglingCount}</div>
+            <div className="text-lg font-bold text-yellow-500">
+              {loading ? '...' : stats?.danglingCount || 0}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-2">
+        <button
+          onClick={fetchStats}
+          disabled={loading}
+          className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-[rgb(var(--bg-element))] border border-[rgb(var(--border-main))] rounded-lg text-[rgb(var(--text-primary))] hover:bg-[rgb(var(--border-main))] disabled:opacity-50 transition-colors text-sm"
+        >
+          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+          {t.refresh}
+        </button>
+        <button
+          onClick={handleCleanup}
+          disabled={cleaning}
+          className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg disabled:opacity-50 transition-colors text-sm"
+        >
+          {cleaning ? (
+            <span className="flex items-center gap-2">
+              <span className="animate-spin">⏳</span>
+              {t.cleaning}
+            </span>
+          ) : (
+            <>
+              <Trash size={14} />
+              {t.runCleanup}
+            </>
+          )}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// Auto Upgrade Settings Section Component
+interface AutoUpgradeSettingsSectionProps {
+  currentUiLang: 'zh' | 'en';
+}
+
+const AutoUpgradeSettingsSection: React.FC<AutoUpgradeSettingsSectionProps> = ({ currentUiLang }) => {
+  const [config, setConfig] = useState<MemoryAutoUpgradeConfig | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const t = currentUiLang === 'zh' ? {
+    upgradeThreshold: '升级阈值（天数）',
+    upgradeThresholdDesc: '中期记忆多少天未访问后升级为长期记忆',
+    minAccessCount: '最小访问次数',
+    minAccessCountDesc: '至少被访问多少次才会考虑升级',
+    enableAutoUpgrade: '启用自动升级',
+    enableAutoUpgradeDesc: '自动将符合条件的中期记忆升级为长期记忆',
+    days: '天',
+    times: '次',
+    loading: '加载中...',
+  } : {
+    upgradeThreshold: 'Upgrade Threshold (Days)',
+    upgradeThresholdDesc: 'Days of no access before upgrading mid-term to long-term memory',
+    minAccessCount: 'Min Access Count',
+    minAccessCountDesc: 'Minimum access count before considering upgrade',
+    enableAutoUpgrade: 'Enable Auto Upgrade',
+    enableAutoUpgradeDesc: 'Automatically upgrade eligible mid-term memories to long-term',
+    days: 'days',
+    times: 'times',
+    loading: 'Loading...',
+  };
+
+  useEffect(() => {
+    const loadConfig = async () => {
+      try {
+        const cfg = await memoryAutoUpgradeService.getConfig();
+        setConfig(cfg);
+      } catch (error) {
+        console.error('[AutoUpgradeSettingsSection] Failed to load config:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadConfig();
+  }, []);
+
+  const updateConfig = useCallback(async (updates: Partial<MemoryAutoUpgradeConfig>) => {
+    if (!config) return;
+    const newConfig = { ...config, ...updates };
+    setConfig(newConfig);
+    try {
+      await memoryAutoUpgradeService.updateConfig(newConfig);
+    } catch (error) {
+      console.error('[AutoUpgradeSettingsSection] Failed to update config:', error);
+    }
+  }, [config]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-4 text-[rgb(var(--text-secondary))]">
+        {t.loading}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Enable Toggle */}
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-sm font-medium text-[rgb(var(--text-primary))]">{t.enableAutoUpgrade}</div>
+          <div className="text-xs text-[rgb(var(--text-secondary))]">{t.enableAutoUpgradeDesc}</div>
+        </div>
+        <label className="relative inline-flex items-center cursor-pointer">
+          <input
+            type="checkbox"
+            checked={config?.enabled ?? false}
+            onChange={(e) => updateConfig({ enabled: e.target.checked })}
+            className="sr-only peer"
+          />
+          <div className="w-11 h-6 bg-[rgb(var(--neutral-300))] peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[rgba(var(--primary-500)/0.3)] rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-[rgb(var(--border-main))] after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[rgb(var(--primary-500))]"></div>
+        </label>
+      </div>
+
+      {/* Upgrade Threshold */}
+      <div>
+        <label className="block text-sm font-medium text-[rgb(var(--text-primary))] mb-2">
+          {t.upgradeThreshold}
+        </label>
+        <div className="flex items-center gap-4">
+          <input
+            type="range"
+            min="7"
+            max="90"
+            step="1"
+            value={config?.daysThreshold || 30}
+            onChange={(e) => updateConfig({ daysThreshold: parseInt(e.target.value) })}
+            className="flex-1 h-2 bg-[rgb(var(--bg-element))] rounded-lg appearance-none cursor-pointer accent-[rgb(var(--primary-500))]"
+          />
+          <span className="text-sm font-medium text-[rgb(var(--primary-500))] min-w-[3ch]">
+            {config?.daysThreshold || 30}
+          </span>
+          <span className="text-xs text-[rgb(var(--text-secondary))]">{t.days}</span>
+        </div>
+        <p className="text-xs text-[rgb(var(--text-secondary))] mt-1">{t.upgradeThresholdDesc}</p>
+      </div>
+
+      {/* Min Access Count */}
+      <div>
+        <label className="block text-sm font-medium text-[rgb(var(--text-primary))] mb-2">
+          {t.minAccessCount}
+        </label>
+        <div className="flex items-center gap-4">
+          <input
+            type="range"
+            min="1"
+            max="10"
+            step="1"
+            value={config?.minAccessCount || 3}
+            onChange={(e) => updateConfig({ minAccessCount: parseInt(e.target.value) })}
+            className="flex-1 h-2 bg-[rgb(var(--bg-element))] rounded-lg appearance-none cursor-pointer accent-[rgb(var(--primary-500))]"
+          />
+          <span className="text-sm font-medium text-[rgb(var(--primary-500))] min-w-[2ch]">
+            {config?.minAccessCount || 3}
+          </span>
+          <span className="text-xs text-[rgb(var(--text-secondary))]">{t.times}</span>
+        </div>
+        <p className="text-xs text-[rgb(var(--text-secondary))] mt-1">{t.minAccessCountDesc}</p>
+      </div>
     </div>
   );
 };
