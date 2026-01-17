@@ -86,6 +86,7 @@ win:
     - target: nsis
       arch:
         - x64
+        - arm64
   icon: build/icon.ico
   artifactName: "${productName}-Setup-${version}-${arch}.${ext}"
 
@@ -102,6 +103,9 @@ nsis:
     - en_US
     - zh_CN
   language: 2052
+  useZip: false
+  compression: lzma2
+  deleteAppDataOnUninstall: true
 
 mac:
   target:
