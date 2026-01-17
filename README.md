@@ -65,6 +65,31 @@ TashanStone 是一款现代化的 AI 驱动 Markdown 编辑器，专为知识工
 - **自定义工具扩展** - 支持接入各类 Node.js MCP 服务
 - **灵活扩展架构** - 轻松扩展 AI 能力边界
 
+### 📦 模型文件 (手动下载)
+
+部分功能需要下载模型文件，安装后请将模型文件复制到指定文件夹：
+
+#### 1️⃣ 语音识别 (Sherpa-ONNX)
+
+| 项目 | 说明 |
+|------|------|
+| **模型名称** | `sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20` |
+| **下载地址** | [GitHub](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20.tar.bz2) 或 [HuggingFace镜像](https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/resolve/main/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20.tar.bz2) |
+| **目标文件夹** | `resources/sherpa-models/` |
+| **包含文件** | `encoder-epoch-99-avg-1.onnx`, `decoder-epoch-99-avg-1.onnx`, `joiner-epoch-99-avg-1.onnx`, `tokens.txt` |
+| **自动下载** | 运行 `npm run download:sherpa-model` |
+
+#### 2️⃣ OCR 文字识别 (PaddleOCR)
+
+| 项目 | 说明 |
+|------|------|
+| **模型名称** | `ppocr_det.onnx`, `ppocr_rec.onnx`, `ppocr_keys_v1.txt` |
+| **下载地址** | [eSearch ch.zip](https://github.com/xushengfeng/eSearch/releases/download/15.2.1/ch.zip) |
+| **目标文件夹** | `resources/ocr-models/` |
+| **自动下载** | 运行 `npm run download:ocr-model` |
+
+> 💡 **提示**: 模型文件较大，GitHub安装包不包含这些文件。如需使用语音识别或OCR功能，请手动下载并复制到对应目录。
+
 ### 支持的 AI 提供商
 
 | 提供商 | 推荐模型 | 特点 |
@@ -156,6 +181,31 @@ TashanStone is a modern AI-powered Markdown editor designed for knowledge worker
 - **Chrome DevTools Integration** - Browser automation control
 - **Custom Tool Extensions** - Connect various Node.js MCP services
 - **Extensible Architecture** - Easily expand AI capabilities
+
+### 📦 Model Files (Manual Download)
+
+Some features require downloading model files manually. After installation, copy model files to the specified folders:
+
+#### 1️⃣ Speech Recognition (Sherpa-ONNX)
+
+| Item | Description |
+|------|-------------|
+| **Model Name** | `sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20` |
+| **Download** | [GitHub](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20.tar.bz2) or [HuggingFace Mirror](https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/resolve/main/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20.tar.bz2) |
+| **Target Folder** | `resources/sherpa-models/` |
+| **Contains** | `encoder-epoch-99-avg-1.onnx`, `decoder-epoch-99-avg-1.onnx`, `joiner-epoch-99-avg-1.onnx`, `tokens.txt` |
+| **Auto Download** | Run `npm run download:sherpa-model` |
+
+#### 2️⃣ OCR Text Recognition (PaddleOCR)
+
+| Item | Description |
+|------|-------------|
+| **Model Files** | `ppocr_det.onnx`, `ppocr_rec.onnx`, `ppocr_keys_v1.txt` |
+| **Download** | [eSearch ch.zip](https://github.com/xushengfeng/eSearch/releases/download/15.2.1/ch.zip) |
+| **Target Folder** | `resources/ocr-models/` |
+| **Auto Download** | Run `npm run download:ocr-model` |
+
+> 💡 **Note**: Model files are large and not included in the GitHub release package. To use speech recognition or OCR features, please download and copy to the specified directories.
 
 ### Supported AI Providers
 
