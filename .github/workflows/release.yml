@@ -60,6 +60,10 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
+      - name: Install Windows Build Tools
+        run: |
+          npm install --global windows-build-tools@5.2.2 --global-style
+
       - name: Install dependencies
         run: npm ci
 

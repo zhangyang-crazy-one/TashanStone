@@ -182,8 +182,6 @@ rpm:
     - libsecret
   afterInstall: build/linux/after-install.sh
   afterRemove: build/linux/after-remove.sh
-  fpm:
-    - "--rpm-no-default-config-files"
 
 publish:
   provider: generic
