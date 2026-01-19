@@ -1,27 +1,27 @@
 {
   "hooks": {
-    "UserPromptSubmit": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/hooks/skill-forced-eval.ps1"
-          },
-          {
-            "type": "command",
-            "command": "python C:\\Users\\Mr.zhang\\.claude\\ccnotify\\ccnotify.py UserPromptSubmit"
-          }
-        ]
-      }
-    ],
     "SessionStart": [
       {
         "matcher": "",
         "hooks": [
           {
             "type": "command",
-            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/hooks/session-start.ps1"
+            "command": "bash .claude/hooks/session-init.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/skill-forced-eval.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/ccnotify-wrapper.sh UserPromptSubmit"
           }
         ]
       }
@@ -32,7 +32,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/hooks/pre-tool-use.ps1"
+            "command": "bash .claude/hooks/pre-tool-guard.sh"
           }
         ]
       }
@@ -43,11 +43,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/hooks/stop.ps1"
+            "command": "bash .claude/hooks/session-complete.sh"
           },
           {
             "type": "command",
-            "command": "python C:\\Users\\Mr.zhang\\.claude\\ccnotify\\ccnotify.py Stop"
+            "command": "bash .claude/hooks/ccnotify-wrapper.sh Stop"
           }
         ]
       }
@@ -57,12 +57,13 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python C:\\Users\\Mr.zhang\\.claude\\ccnotify\\ccnotify.py Notification"
+            "command": "bash .claude/hooks/ccnotify-wrapper.sh Notification"
           }
         ]
       }
     ]
   },
+  "language": "chinese",
   "mcpServers": {
     "context7": {
       "command": "npx",

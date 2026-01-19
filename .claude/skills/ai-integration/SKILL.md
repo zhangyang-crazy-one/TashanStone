@@ -18,7 +18,7 @@ description: |
 
 | 提供商 | 模型 | 说明 |
 |--------|------|------|
-| Gemini | gemini-2.5-flash | 默认 |
+| Gemini | gemini-3-pro | 默认 |
 | Ollama | 本地模型 | 离线运行 |
 | OpenAI 兼容 | GPT-4/DeepSeek | API 兼容 |
 | Anthropic 兼容 | Claude | API 兼容 |
@@ -154,6 +154,7 @@ try {
 - ❌ 禁止在代码中硬编码 API Key
 - ❌ 禁止忽略流式响应的错误处理
 - ❌ 禁止发送超过上下文限制的内容
+- ❌ 禁止在有原生SDK和结构性格式消息的情况下，自己编辑函数或使用Agent框架实现相关功能
 
 ## 参考代码
 

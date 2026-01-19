@@ -161,6 +161,7 @@ function createWindow(): void {
         minWidth: 800,
         minHeight: 600,
         icon: iconPath,
+        center: true,  // 强制窗口居中
         webPreferences: {
             preload: preloadPath,
             nodeIntegration: false,

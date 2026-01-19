@@ -1,269 +1,336 @@
-# TashaStone 项目规则
+# Universal Project Architecture Framework
 
-> AI 驱动的 Markdown 编辑器 - OpenCode 配置
+> Reusable AI-driven project architecture for Claude Code / OpenCode
 
-## 项目概述
+## Framework Overview
 
-TashaStone 是一个跨平台 Markdown 编辑器 + AI 知识管理工具，集成了先进的上下文工程技术来优化 AI 对话体验。
+This framework provides a universal architecture design system for AI-assisted development. It includes commands, skills, hooks, and rules that enforce best practices across all projects.
 
-## 技术栈
+## Quick Start Commands
 
-| 层级 | 技术 |
-|------|------|
-| 前端框架 | React 19 + TypeScript + Vite |
-| 样式方案 | Tailwind CSS v4 |
-| 桌面运行时 | Electron 33 |
-| 本地数据库 | better-sqlite3 |
-| 向量数据库 | LanceDB |
-| AI 集成 | Gemini / Ollama / OpenAI 兼容 |
+| Command | Description |
+|---------|-------------|
+| `/bootstrap` | Initialize new project with architecture templates |
+| `/commit` | Complete task with documentation update and git commit |
+| `/start` | Show current project status |
+| `/progress` | View detailed project progress |
+| `/next` | Get next development suggestions |
+| `/update-status` | Update project status documentation |
 
-## 核心架构
+---
 
-```
-┌─────────────────────────────────────────────────┐
-│                 React 19 渲染进程                │
-│  ┌──────────┐ ┌──────────┐ ┌────────────────┐   │
-│  │  编辑器  │ │ AI 对话  │ │ 上下文工程 UI   │   │
-│  └────┬─────┘ └────┬─────┘ └───────┬────────┘   │
-│       │            │               │             │
-│  ┌────┴────────────┴───────────────┴─────────┐  │
-│  │              服务层 (Services)              │  │
-│  │  ┌────────┐ ┌────────┐ ┌────────────────┐  │  │
-│  │  │ AI     │ │ RAG    │ │ ContextMemory  │  │  │
-│  │  │ Service│ │ Service │ │ Service        │  │  │
-│  │  └────────┘ └────────┘ └────────────────┘  │  │
-│  └────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────┘
-                        │
-                        ▼
-┌─────────────────────────────────────────────────┐
-│              Electron 33 主进程                  │
-│  ┌──────────┐ ┌──────────┐ ┌────────────────┐   │
-│  │ SQLite   │ │ LanceDB  │ │ MCP Client     │   │
-│  │ (消息)   │ │ (RAG)    │ │ (工具协议)      │   │
-│  └──────────┘ └──────────┘ └────────────────┘   │
-└─────────────────────────────────────────────────┘
-```
+## Skills (Organized by Category)
 
-## 开发规范
+### Core Skills
 
-### 前后端通信
+| Skill | Location | Trigger Keywords |
+|-------|----------|------------------|
+| `planning-with-files` | `.claude/skills/core/` | plan, planning, task, project, scope, requirements, manus |
+| `spec-interview` | `.claude/skills/core/` | spec, specification, interview, requirements, clarify |
+| `bug-debug` | `.claude/skills/core/` | bug, error, exception, debug, troubleshoot, problem |
+| `context7` | `.claude/skills/core/` | docs, documentation, library, API reference |
 
-**前端禁止直接使用 Node.js API**，必须通过 `window.electronAPI` 通信：
+### Frontend Skills
 
-```typescript
-// ✅ 正确：使用 preload 暴露的 API
-window.electronAPI.ipcInvoke('chat/send', { message: '...' })
-window.electronAPI.mcpCallTool('server-name', 'tool-name', args)
+| Skill | Location | Trigger Keywords |
+|-------|----------|------------------|
+| `react-frontend` | `.claude/skills/frontend/` | react, frontend, component, hooks, typescript, jsx, tsx |
+| `ui-ux-pro-max` | `.claude/skills/frontend/` | ui, ux, design, style, color, typography, landing, dashboard |
 
-// ❌ 错误：直接使用 Node.js
-import { ipcRenderer } from 'electron'
-```
+### Backend Skills
 
-### 数据库操作
+| Skill | Location | Trigger Keywords |
+|-------|----------|------------------|
+| `electron-main` | `.claude/skills/backend/` | electron, main process, ipc, database, sqlite, native module |
 
-- 使用 `better-sqlite3` 进行本地数据存储
-- 所有数据库操作通过 `repositories/` 目录封装
-- 遵循 `electron/database/schema.sql` 表结构
+### Data Skills
 
-### IPC 处理器
+| Skill | Location | Trigger Keywords |
+|-------|----------|------------------|
+| `rag-vectordb` | `.claude/skills/data/` | rag, vector, retrieval, knowledge, embedding, lancedb |
 
-- IPC 处理器定义在 `electron/ipc/*.ts`
-- 使用 `ipcMain.handle()` 注册处理器
-- 渲染进程通过 `window.electronAPI.*` 调用
+### AI Skills
 
-### 模块规范
+| Skill | Location | Trigger Keywords |
+|-------|----------|------------------|
+| `ai-integration` | `.claude/skills/ai/` | ai, llm, gemini, ollama, openai, api, chat, generate |
 
-- 所有文件使用 ESM 模块 (`import/export`)
-- 遵循 TypeScript strict 模式
-- 组件使用 React 19 hooks 规范
+### DevOps Skills
 
-## 子代理系统
+| Skill | Location | Trigger Keywords |
+|-------|----------|------------------|
+| `mcp-tools` | `.claude/skills/devops/` | mcp, tool, protocol, server, browser |
+| `platform-build` | `.claude/skills/devops/` | package, build, electron-builder, installer, dmg, exe |
 
-### 子代理调用方式
+---
 
-1. **自动调用**：根据描述自动匹配
-2. **手动调用**：`@agent-name` 提及
+## Hooks System
 
-### 子代理列表
-
-| 代理 | 调用 | 功能 | 权限 |
-|------|------|------|------|
-| `@enhanced-plan` | 代理 | 增强规划、调研、方案评估 | 只读 + docs编辑 |
-| `@bug-fixer` | 子代理 | Bug 修复和问题排查 | 全部 |
-| `@code-reviewer` | 子代理 | 代码审查和最佳实践检查 | 全部 |
-| `@frontend-dev` | 子代理 | React 前端开发 | 全部 |
-| `@backend-dev` | 子代理 | Electron 后端开发 | 全部 |
-| `@project-manager` | 子代理 | 项目进度管理和状态更新 | 只读 |
-
-### 子代理工作流
-
-所有子代理遵循统一的工作流模式：
+### Hook Execution Flow
 
 ```
-开始任务
+┌─────────────────────────────────────────────────────────────┐
+│                    Session Start                             │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │ session-start.ps1 → rules-loader.ps1                 │    │
+│  │ (Load project context and mandatory rules)           │    │
+│  └─────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    User Prompt Submit                        │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │ skill-forced-eval.ps1                                │    │
+│  │ (Force evaluate and activate relevant skills)        │    │
+│  └─────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Pre Tool Use                              │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │ pre-tool-use.ps1 → plan-reread.ps1                   │    │
+│  │ (Remind to check planning files before changes)      │    │
+│  └─────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Stop                                      │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │ completion-check.ps1 → stop.ps1                      │    │
+│  │ (Verify task completion and documentation)           │    │
+│  └─────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Hook Files
+
+| Hook | Trigger | Purpose |
+|------|---------|---------|
+| `session-start.ps1` | SessionStart | Initialize session context |
+| `rules-loader.ps1` | SessionStart | Force load project rules (CLAUDE.md, AGENTS.md, rules/*.md) |
+| `skill-forced-eval.ps1` | UserPromptSubmit | Evaluate and activate relevant skills |
+| `pre-tool-use.ps1` | PreToolUse | Pre-execution checks |
+| `plan-reread.ps1` | PreToolUse (Write/Edit/Bash) | Remind to check planning files |
+| `completion-check.ps1` | Stop | Verify task completion checklist |
+| `stop.ps1` | Stop | Session cleanup |
+
+---
+
+## Rules System
+
+### Rule Files
+
+| File | Purpose |
+|------|---------|
+| `.claude/rules/architecture-rules.md` | Code architecture patterns and conventions |
+| `.claude/rules/ui-ux-rules.md` | UI/UX design standards and checklist |
+
+### Rule Loading
+
+Rules are automatically loaded at session start by `rules-loader.ps1`. The AI is instructed to:
+
+1. **Read** all rule files
+2. **Follow** all conventions defined
+3. **Reference** rules when making implementation decisions
+
+---
+
+## Planning System (Manus-Style)
+
+### Planning Files
+
+Located at `planning/` or `.claude/planning/`:
+
+| File | Purpose |
+|------|---------|
+| `task_plan.md` | Current task phases and status |
+| `progress.md` | Detailed progress tracking |
+| `findings.md` | Research findings and discoveries |
+
+### Planning Workflow
+
+```
+1. /bootstrap → Creates planning templates
+2. Update task_plan.md with task details
+3. Work through phases (Discovery → Planning → Implementation → Testing → Delivery)
+4. Update progress.md as work progresses
+5. Document findings in findings.md
+6. /commit → Complete with documentation update
+```
+
+---
+
+## Directory Structure
+
+```
+project/
+├── .claude/
+│   ├── commands/
+│   │   ├── bootstrap.md       # Project initialization
+│   │   ├── commit.md          # Task completion
+│   │   ├── start.md           # Show project status
+│   │   ├── progress.md        # View progress
+│   │   ├── next.md            # Get suggestions
+│   │   └── update-status.md   # Update docs
+│   ├── skills/
+│   │   ├── core/
+│   │   │   ├── planning-with-files/
+│   │   │   ├── spec-interview/
+│   │   │   ├── bug-debug/
+│   │   │   └── context7/
+│   │   ├── frontend/
+│   │   │   ├── react-frontend/
+│   │   │   └── ui-ux-pro-max/
+│   │   ├── backend/
+│   │   │   └── electron-main/
+│   │   ├── data/
+│   │   │   └── rag-vectordb/
+│   │   ├── ai/
+│   │   │   └── ai-integration/
+│   │   └── devops/
+│   │       ├── mcp-tools/
+│   │       └── platform-build/
+│   ├── hooks/
+│   │   ├── session-start.ps1
+│   │   ├── rules-loader.ps1
+│   │   ├── skill-forced-eval.ps1
+│   │   ├── pre-tool-use.ps1
+│   │   ├── plan-reread.ps1
+│   │   ├── completion-check.ps1
+│   │   └── stop.ps1
+│   ├── rules/
+│   │   ├── architecture-rules.md
+│   │   └── ui-ux-rules.md
+│   ├── agents/
+│   │   ├── code-reviewer.md
+│   │   ├── feature-developer.md
+│   │   └── project-manager.md
+│   └── settings.json
+├── .opencode/
+│   └── AGENTS.md              # This file
+├── docs/
+│   └── ARCHITECTURE.md        # Project architecture
+├── planning/
+│   ├── task_plan.md
+│   ├── progress.md
+│   └── findings.md
+└── CLAUDE.md                   # Project configuration
+```
+
+---
+
+## Agent System
+
+### Available Agents
+
+| Agent | Purpose | Permissions |
+|-------|---------|-------------|
+| `code-reviewer` | Code review and best practices | Read-only |
+| `feature-developer` | Feature implementation | Full |
+| `project-manager` | Progress tracking and status updates | Read + docs edit |
+
+### Agent Workflow
+
+```
+Start Task
     │
     ▼
-1. 读取项目文档
-   - docs/PROJECT_STATUS.md
-   - docs/TODO.md
-   - AGENTS.md
+1. Read Project Docs
+   - docs/ARCHITECTURE.md
+   - planning/task_plan.md
+   - .opencode/AGENTS.md
     │
     ▼
-2. 使用可用技能
-   - 根据任务类型选择 Skill
-   - 如：react-frontend, electron-main
+2. Use Available Skills
+   - Based on task type
+   - Skill auto-activation via hooks
     │
     ▼
-3. LSP 辅助开发
-   - 类型检查、定义跳转
-   - 引用查找、错误定位
+3. LSP-Assisted Development
+   - Type checking
+   - Definition lookup
+   - Reference finding
     │
     ▼
-4. 完成任务
-   - 通知 @project-manager 更新进度
-   - 调用 /update-status 更新文档
+4. Complete Task
+   - Run /commit
+   - Update documentation
+   - Notify project-manager
 ```
 
-### 子代理与项目管理集成
+---
 
-#### 启动时集成
-```
-子代理启动时：
-1. 调用 /start 获取项目状态
-2. 读取 docs/PROJECT_STATUS.md
-3. 读取 docs/TODO.md
-4. 使用 @project-manager 确认开发阶段
-```
+## Configuration
 
-#### 任务中集成
-```
-任务进行时：
-- 使用 @project-manager 记录子任务进度
-- 根据 TODO 优先级排序任务
-- 更新 docs/TODO.md 进度
-```
+### settings.json
 
-#### 完成后集成
-```
-任务完成后：
-1. 调用 /update-status 更新文档
-2. 通知 @project-manager 任务完成
-3. 更新 docs/PROJECT_STATUS.md
-4. 生成任务完成报告
-```
+The `.claude/settings.json` file configures:
 
-## Enhanced-Plan 代理
+- **Hooks**: Automation scripts for different events
+- **MCP Servers**: External tool integrations (e.g., context7)
 
-### 概述
+### Key Settings
 
-`@enhanced-plan` 是一个专门的规划代理，专注于：
-
-1. **需求分析**：整合用户头脑风暴结果和调研文档
-2. **代码调研**：使用 LSP/GREP/GLOB/Chrome-DevTools 分析代码库
-3. **方案评估**：调用 `@code-reviewer` 评估技术可行性
-4. **计划制定**：制定详细的实施计划和验收标准
-
-### 调用方式
-
-```
-用户: @enhanced-plan 设计一个 X 功能
-用户: @enhanced-plan 评估使用 X 技术
-用户: @enhanced-plan 制定 Y 功能实施计划
+```json
+{
+  "hooks": {
+    "SessionStart": ["session-start.ps1", "rules-loader.ps1"],
+    "UserPromptSubmit": ["skill-forced-eval.ps1"],
+    "PreToolUse": ["pre-tool-use.ps1", "plan-reread.ps1"],
+    "Stop": ["completion-check.ps1", "stop.ps1"]
+  },
+  "mcpServers": {
+    "context7": { "command": "npx", "args": ["-y", "@upstash/context7-mcp"] }
+  }
+}
 ```
 
-### 工作流程
+---
 
-```
-1. 需求分析 → 2. 代码调研 → 3. 方案评估 → 4. 计划制定 → 5. 文档更新
-```
+## Usage for New Projects
 
-### 权限限制
+### Option 1: Copy Configuration
 
-- **只读权限**：读取所有代码文件
-- **docs编辑权限**：仅允许编辑 `docs/` 目录下的文档
-- **禁止操作**：不允许修改源代码、配置文件、测试文件
+1. Copy `.claude/` directory to new project
+2. Copy `planning/` directory (or create fresh)
+3. Create `docs/ARCHITECTURE.md` from template
+4. Create `CLAUDE.md` with project-specific rules
 
-### 输出格式
+### Option 2: Use /bootstrap Command
 
-生成的计划文档包含：
-- 概述（目标、范围、预期效果）
-- 技术分析（相关代码、依赖项、技术风险）
-- 实施步骤（详细步骤列表）
-- 时间估算（总工时、关键路径）
-- 风险识别（潜在风险及应对策略）
-- 验收标准（可衡量的完成标准）
+1. Run `/bootstrap` in new project
+2. Follow the spec-interview prompts
+3. Templates are automatically created
 
-## 引用文档
+---
 
-| 文档 | 说明 |
-|------|------|
-| @docs/PROJECT.md | 项目概览和技术栈 |
-| @docs/PROJECT_STATUS.md | 当前开发进度 |
-| @docs/TODO.md | 待办任务列表 |
-| @docs/CONTEXT_ENGINEERING.md | 上下文工程详情 |
+## Best Practices
 
-## OpenCode 配置
+### Before Starting Any Task
 
-### LSP 服务器
+1. ✅ Run `/start` to see project status
+2. ✅ Check `planning/task_plan.md` for current phase
+3. ✅ Read relevant skill documentation
 
-项目已配置以下语言服务器：
+### During Development
 
-| 语言 | LSP 服务器 | 功能 |
-|------|-----------|------|
-| TypeScript | typescript-language-server | 定义跳转、引用查找、类型提示 |
-| Python | pyright | 类型检查、代码补全 |
-| Go | gopls | 符号跳转、重构 |
-| Rust | rust-analyzer | 错误检查、重构 |
+1. ✅ Update `progress.md` as you work
+2. ✅ Document findings in `findings.md`
+3. ✅ Use `lsp_diagnostics` before completing tasks
 
-### MCP 服务器
+### After Completing Task
 
-- **chrome-devtools**: 浏览器自动化
-- **mcp_everything**: 文件系统/Git 操作
+1. ✅ Run `/commit` to finalize
+2. ✅ Verify all checklists pass
+3. ✅ Update documentation
 
-### 主代理
+---
 
-| 代理 | 功能 | 温度 |
-|------|------|------|
-| `@enhanced-plan` | 增强规划、调研、方案评估 | 0.1 |
+## References
 
-### 工具权限
-
-所有子代理（除 project-manager 外）拥有全部权限：
-- `write`: 允许创建和修改文件
-- `bash`: 允许执行 shell 命令
-- `read`: 允许读取文件内容
-- `edit`: 允许精确编辑文件
-- `grep`: 允许搜索文件内容
-- `glob`: 允许模式匹配文件
-
-## 快捷命令
-
-| 命令 | 功能 |
-|------|------|
-| `/start` | 显示项目当前状态 |
-| `/progress` | 查看详细项目进度 |
-| `/next` | 获取下一步开发建议 |
-| `/update-status` | 更新项目状态文档 |
-
-## 可用技能
-
-所有子代理可以根据任务类型动态选择技能：
-
-| 技能 | 触发词 | 说明 |
-|------|--------|------|
-| `electron-main` | Electron、主进程、IPC、数据库 | Electron 主进程开发 |
-| `react-frontend` | React、前端、组件、hooks | React 前端开发 |
-| `rag-vectordb` | RAG、向量、检索、Embedding | 向量数据库操作 |
-| `ai-integration` | AI、大模型、Gemini | AI 服务集成 |
-| `mcp-tools` | MCP、工具、协议 | MCP 工具协议 |
-| `platform-build` | 打包、构建、electron-builder | 平台构建打包 |
-| `bug-debug` | Bug、报错、异常、Debug | 问题排查调试 |
-
-## 相关文档
-
-- 项目概览：@docs/PROJECT.md
-- 项目状态：@docs/PROJECT_STATUS.md
-- 待办事项：@docs/TODO.md
-- 上下文工程：@docs/CONTEXT_ENGINEERING.md
-- Claude Code 配置：.claude/settings.json
+- [Claude Code Documentation](https://docs.anthropic.com/claude/docs)
+- [OpenCode Documentation](https://opencode.ai/docs)
+- [Planning-with-Files Pattern](https://github.com/anthropic/claude-code-samples)

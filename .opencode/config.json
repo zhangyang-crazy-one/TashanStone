@@ -1,0 +1,56 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "lsp": {
+    "typescript": {
+      "disabled": false,
+      "command": ["typescript-language-server", "--stdio"],
+      "extensions": [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"],
+      "initialization": {
+        "diagnostics": true,
+        "completions": true,
+        "hover": true,
+        "definition": true,
+        "references": true,
+        "documentSymbol": true
+      }
+    },
+    "rust": {
+      "disabled": false,
+      "command": ["rust-analyzer", "--stdio"],
+      "extensions": [".rs"],
+      "initialization": {
+        "diagnostics": {
+          "enable": true,
+          "warnings": true,
+          "info": true,
+          "hint": true
+        },
+        "completion": {
+          "addCallParentheses": true,
+          "addArgumentSnippets": true
+        },
+        "hover": {
+          "enable": true
+        },
+        "cargo": {
+          "buildScripts": {
+            "enable": true
+          }
+        },
+        "procMacro": {
+          "enable": true
+        }
+      }
+    },
+    "eslint": {
+      "disabled": false,
+      "command": ["eslint", "--stdio", "--ext", ".ts,.tsx,.js,.jsx"],
+      "extensions": [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"],
+      "initialization": {
+        "validate": ["typescript", "typescriptreact", "javascript", "javascriptreact"],
+        "run": "onType",
+        "rulesCustomizations": []
+      }
+    }
+  }
+}

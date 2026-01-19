@@ -33,7 +33,7 @@ export default defineConfig(({ mode }) => {
           allow: ['..', 'node_modules/onnxruntime-web']
         }
       },
-      base: isElectron ? './' : '/',
+      base: '/',
       build: {
         outDir: 'dist',
         emptyOutDir: true,

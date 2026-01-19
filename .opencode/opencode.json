@@ -5,19 +5,29 @@
     "docs/PROJECT.md",
     "docs/PROJECT_STATUS.md",
     "./CLAUDE.md",
-    "C:/Users/Mr.zhang/CLAUDE.md"
+    ".claude/rules/*.md"
   ],
   "plugin": [
     "opencode-antigravity-auth@beta",
     "oh-my-opencode"
   ],
+  "lsp": {
+    "typescript": {
+      "disabled": false,
+      "command": ["typescript-language-server", "--stdio"]
+    },
+    "rust": {
+      "disabled": false,
+      "command": ["rust-analyzer", "--stdio"]
+    }
+  },
   "provider": {
     "opencode": {
       "options": {}
     },
     "google": {
       "models": {
-         "antigravity-gemini-3-pro": {
+        "antigravity-gemini-3-pro": {
           "name": "Gemini 3 Pro (Antigravity)",
           "limit": { "context": 1048576, "output": 65535 },
           "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
@@ -52,10 +62,15 @@
           "limit": { "context": 200000, "output": 64000 },
           "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
         }
+      }
     }
-  }
   },
   "mcp": {
+    "context7": {
+      "type": "local",
+      "enabled": true,
+      "command": ["npx", "-y", "@upstash/context7-mcp"]
+    },
     "chrome-devtools": {
       "type": "local",
       "enabled": true,
@@ -69,19 +84,12 @@
       "type": "local",
       "command": ["npx", "-y", "@modelcontextprotocol/server-sequential-thinking@latest"]
     },
-    "zread": {
-            "type": "remote",
-            "url": "https://open.bigmodel.cn/api/mcp/zread/mcp",
-            "headers": {
-                "Authorization": "Bearer e247e649f1534651a3f12bfe47d2c42f.qlrVZegtSW0nFdMI"
-            }
-    },
     "web-reader": {
-            "type": "remote",
-            "url": "https://open.bigmodel.cn/api/mcp/web_reader/mcp",
-            "headers": {
-                "Authorization": "Bearer e247e649f1534651a3f12bfe47d2c42f.qlrVZegtSW0nFdMI"
-            }
+      "type": "remote",
+      "url": "https://open.bigmodel.cn/api/mcp/web_reader/mcp",
+      "headers": {
+        "Authorization": "Bearer e247e649f1534651a3f12bfe47d2c42f.qlrVZegtSW0nFdMI"
+      }
     }
   },
   "agent": {
@@ -93,7 +101,50 @@
         "edit": false,
         "bash": false
       }
+    },
+    "bug-fixer": {
+      "description": "专业 Bug 修复代理，快速定位和修复代码问题",
+      "mode": "subagent",
+      "temperature": 0.1,
+      "maxSteps": 20
+    },
+    "code-reviewer": {
+      "description": "代码审查代理，检查代码质量、安全性和最佳实践",
+      "mode": "subagent",
+      "temperature": 0.1,
+      "maxSteps": 15
+    },
+    "frontend-dev": {
+      "description": "React 前端开发专家，构建 UI 组件和交互功能",
+      "mode": "subagent",
+      "temperature": 0.3,
+      "maxSteps": 30
+    },
+    "backend-dev": {
+      "description": "Electron 后端开发专家，IPC 通信和数据库操作",
+      "mode": "subagent",
+      "temperature": 0.3,
+      "maxSteps": 30
+    },
+    "project-manager": {
+      "description": "项目管理代理，维护项目进度和状态文档",
+      "mode": "subagent"
     }
-
+  },
+  "tui": {
+    "scroll_speed": 3,
+    "diff_style": "stacked"
+  },
+  "compaction": {
+    "auto": true,
+    "prune": true
+  },
+  "watcher": {
+    "ignore": ["node_modules/**", "dist/**", ".git/**", "*.log"]
+  },
+  "permission": {
+    "*": "allow",
+    "external_directory": "ask",
+    "doom_loop": "ask"
   }
 }
