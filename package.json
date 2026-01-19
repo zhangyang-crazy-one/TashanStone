@@ -117,7 +117,7 @@
     "@vitest/coverage-v8": "^4.0.17",
     "autoprefixer": "^10.4.22",
     "concurrently": "^9.1.2",
-    "cross-env": "^7.0.3",
+    "cross-env": "^10.1.0",
     "electron": "33.4.11",
     "electron-builder": "^25.1.8",
     "electron-icon-builder": "^2.0.1",
