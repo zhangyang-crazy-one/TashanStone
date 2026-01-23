@@ -39,16 +39,13 @@ jobs:
         run: bun install
 
       - name: Install Playwright browsers
-        run: bun exec playwright install --with-deps
+        run: npx playwright install --with-deps
 
-      - name: Build and preview
-        run: |
-          bun run bun:build
-          bun run preview &
-          sleep 10
+      - name: Build application
+        run: bun run bun:build
 
       - name: Run E2E tests
-        run: bun exec playwright test
+        run: npx playwright test
         env:
           CI: true
 
