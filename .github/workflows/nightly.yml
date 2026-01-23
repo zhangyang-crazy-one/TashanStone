@@ -60,7 +60,7 @@ jobs:
           shell: ${{ matrix.os.shell }}
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: nightly-${{ matrix.os.name }}-${{ matrix.arch }}
           path: upload/*.*
