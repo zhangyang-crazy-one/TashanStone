@@ -1,0 +1,66 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "components/**"
+      - "services/**"
+      - "e2e/**"
+      - "playwright.config.ts"
+      - "package.json"
+  pull_request:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  NODE_VERSION: "20"
+
+jobs:
+  e2e-tests:
+    name: E2E Tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - name: ubuntu-latest
+            arch: x64
+          - name: ubuntu-latest
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'bun'
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Install Playwright browsers
+        run: bun exec playwright install --with-deps
+
+      - name: Build and preview
+        run: |
+          bun run bun:build
+          bun run preview &
+          sleep 10
+
+      - name: Run E2E tests
+        run: bun exec playwright test
+        env:
+          CI: true
+
+      - name: Upload test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-test-report-${{ matrix.os }}-${{ matrix.arch }}
+          path: playwright-report/

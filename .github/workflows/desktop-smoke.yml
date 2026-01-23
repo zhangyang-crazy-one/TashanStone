@@ -1,0 +1,77 @@
+name: Desktop Smoke Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "electron/**"
+      - "src/**"
+      - "components/**"
+  pull_request:
+    paths:
+      - "electron/**"
+      - "src/**"
+      - "components/**"
+
+permissions:
+  contents: read
+
+jobs:
+  smoke-test:
+    name: Smoke Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - name: ubuntu-latest
+            arch: x64
+          - name: windows-latest
+            arch: x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: 'bun'
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Install Playwright
+        run: bun exec playwright install --with-deps
+
+      - name: Build Desktop
+        run: bun run bun:build:electron
+
+      - name: Package Desktop
+        if: runner.os == 'Linux'
+        run: bun run bun:dist:linux-x64
+
+      - name: Package Desktop
+        if: runner.os == 'Windows'
+        run: bun run bun:dist:win:x64
+
+      - name: Install virtual display (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+
+      - name: Run Smoke Tests (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum bun exec playwright test e2e/smoke.spec.ts
+
+      - name: Run Smoke Tests (Windows)
+        if: runner.os == 'Windows'
+        run: bun exec playwright test e2e/smoke.spec.ts
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-results-${{ matrix.os }}
+          path: test-results/

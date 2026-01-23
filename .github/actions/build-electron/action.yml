@@ -1,0 +1,114 @@
+name: "Build Electron App"
+description: "Builds and packages TashanStone Electron app for different platforms"
+
+inputs:
+  os:
+    description: "Platform: macos, linux, windows"
+    required: true
+  arch:
+    description: "Architecture: x64, arm64"
+    required: true
+  shell:
+    description: "Shell to use: bash, cmd"
+    required: true
+  upload_artifact:
+    description: "Whether to upload build artifacts"
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    # macOS Certificate Setup
+    - name: Import Apple certificates
+      if: inputs.os == 'macos' && env.APPLE_APP_CERTIFICATE_BASE64 != '' && env.APPLE_APP_CERTIFICATE_PASSWORD != ''
+      uses: apple-actions/import-codesign-certs@v3
+      with:
+        p12-file-base64: ${{ env.APPLE_APP_CERTIFICATE_BASE64 }}
+        p12-password: ${{ env.APPLE_APP_CERTIFICATE_PASSWORD }}
+        keychain: build-app-${{ github.run_id }}
+        keychain-password: ${{ github.run_id }}
+
+    # macOS Dependencies
+    - name: Set up macOS dependencies
+      if: inputs.os == 'macos'
+      shell: ${{ inputs.shell }}
+      run: |
+        brew install python-setuptools
+
+    # Linux Dependencies
+    - name: Install Linux build dependencies
+      if: inputs.os == 'linux'
+      shell: ${{ inputs.shell }}
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y rpm
+
+    # Build Electron App
+    - name: Build Electron for ${{ inputs.os }} ${{ inputs.arch }}
+      shell: ${{ inputs.shell }}
+      env:
+        TARGET_ARCH: ${{ inputs.arch }}
+        APPLE_TEAM_ID: ${{ env.APPLE_TEAM_ID }}
+        APPLE_ID: ${{ env.APPLE_ID }}
+        APPLE_ID_PASSWORD: ${{ env.APPLE_ID_PASSWORD }}
+      run: |
+        npm run build:electron
+
+    # Package with electron-builder
+    - name: Package for Linux x64
+      if: inputs.os == 'linux' && inputs.arch == 'x64'
+      shell: ${{ inputs.shell }}
+      run: npm run dist:linux:x64
+
+    - name: Package for Linux arm64
+      if: inputs.os == 'linux' && inputs.arch == 'arm64'
+      shell: ${{ inputs.shell }}
+      run: npm run dist:linux:arm64
+
+    - name: Package for Windows x64
+      if: inputs.os == 'windows' && inputs.arch == 'x64'
+      shell: ${{ inputs.shell }}
+      run: npm run dist:win:x64
+
+    - name: Package for Windows arm64
+      if: inputs.os == 'windows' && inputs.arch == 'arm64'
+      shell: ${{ inputs.shell }}
+      run: npm run dist:win:arm64
+
+    - name: Package for macOS
+      if: inputs.os == 'macos'
+      shell: ${{ inputs.shell }}
+      run: npm run dist:mac
+
+    # Prepare upload directory
+    - name: Prepare upload artifacts
+      shell: bash
+      run: |
+        mkdir -p upload
+        # Copy relevant files to upload directory
+        if [ -d "dist" ]; then
+          # Windows installers
+          find dist -name "*.exe" -exec cp {} upload/ \; 2>/dev/null || true
+          # macOS installers  
+          find dist -name "*.dmg" -exec cp {} upload/ \; 2>/dev/null || true
+          find dist -name "*.zip" -exec cp {} upload/ \; 2>/dev/null || true
+          # Linux packages
+          find dist -name "*.deb" -exec cp {} upload/ \; 2>/dev/null || true
+          find dist -name "*.rpm" -exec cp {} upload/ \; 2>/dev/null || true
+          find dist -name "*.AppImage" -exec cp {} upload/ \; 2>/dev/null || true
+        fi
+        echo "Upload directory contents:"
+        ls -la upload/ || echo "Upload directory is empty"
+
+    # macOS Code Signing Verification
+    - name: Verify macOS code signing
+      if: inputs.os == 'macos' && env.APPLE_APP_CERTIFICATE_BASE64 != ''
+      shell: ${{ inputs.shell }}
+      run: |
+        echo "Verifying code signing for macOS artifacts..."
+        dmg_file=$(find upload -name "*.dmg" -print -quit)
+        if [ -n "$dmg_file" ]; then
+          echo "Found DMG: $dmg_file"
+          codesign --verify --deep --strict --verbose=2 "$dmg_file" || echo "DMG verification skipped"
+        fi

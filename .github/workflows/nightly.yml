@@ -1,0 +1,90 @@
+name: Nightly Build
+
+on:
+  schedule:
+    - cron: "0 2 * * *" # Run at 2 AM UTC daily
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  NODE_VERSION: "20"
+
+jobs:
+  nightly-build:
+    if: github.repository == 'zhangyang-crazy-one/TashanStone'
+    name: Nightly Build (${{ matrix.os }} ${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - name: linux
+            image: ubuntu-latest
+            shell: bash
+          - name: windows
+            image: windows-latest
+            shell: cmd
+          - name: macos
+            image: macos-latest
+            shell: bash
+        arch:
+          - x64
+        include:
+          - os:
+              name: linux
+            arch: arm64
+          - os:
+              name: macos
+            arch: arm64
+        exclude:
+          - os:
+              name: linux
+            arch: arm64
+    runs-on: ${{ matrix.os.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'bun'
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build Electron
+        uses: ./.github/actions/build-electron
+        with:
+          os: ${{ matrix.os.name }}
+          arch: ${{ matrix.arch }}
+          shell: ${{ matrix.os.shell }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-${{ matrix.os.name }}-${{ matrix.arch }}
+          path: upload/*.*
+
+      - name: Publish nightly release
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          make_latest: false
+          prerelease: true
+          draft: false
+          fail_on_unmatched_files: true
+          files: upload/*.*
+          tag_name: nightly
+          name: Nightly Build
