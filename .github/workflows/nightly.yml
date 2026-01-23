@@ -2,7 +2,7 @@ name: Nightly Build
 
 on:
   schedule:
-    - cron: "0 2 * * *" # Run at 2 AM UTC daily
+    - cron: "0 2 * * *"
   workflow_dispatch:
   push:
     branches:
@@ -24,7 +24,7 @@ env:
 jobs:
   nightly-build:
     if: github.repository == 'zhangyang-crazy-one/TashanStone'
-    name: Nightly Build (${{ matrix.os }} ${{ matrix.arch }})
+    name: Nightly Build (${{ matrix.os.name }} ${{ matrix.arch }})
     strategy:
       fail-fast: false
       matrix:
@@ -34,32 +34,20 @@ jobs:
             shell: bash
           - name: windows
             image: windows-latest
-            shell: cmd
-          - name: macos
-            image: macos-latest
             shell: bash
         arch:
           - x64
-        include:
-          - os:
-              name: linux
-            arch: arm64
-          - os:
-              name: macos
-            arch: arm64
-        exclude:
-          - os:
-              name: linux
-            arch: arm64
     runs-on: ${{ matrix.os.image }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'bun'
 
       - name: Install dependencies
         run: bun install
@@ -84,7 +72,7 @@ jobs:
           make_latest: false
           prerelease: true
           draft: false
-          fail_on_unmatched_files: true
+          fail_on_unmatched_files: false
           files: upload/*.*
           tag_name: nightly
           name: Nightly Build

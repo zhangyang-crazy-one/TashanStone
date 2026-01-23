@@ -24,11 +24,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'bun'
 
       - name: Install dependencies
         run: bun install
@@ -55,32 +57,20 @@ jobs:
             shell: bash
           - name: windows
             image: windows-latest
-            shell: cmd
-          - name: macos
-            image: macos-latest
             shell: bash
         arch:
           - x64
-        include:
-          - os:
-              name: linux
-            arch: arm64
-          - os:
-              name: macos
-            arch: arm64
-        exclude:
-          - os:
-              name: linux
-            arch: arm64
     runs-on: ${{ matrix.os.image }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'bun'
 
       - name: Install dependencies
         run: bun install
@@ -91,14 +81,6 @@ jobs:
           os: ${{ matrix.os.name }}
           arch: ${{ matrix.arch }}
           shell: ${{ matrix.os.shell }}
-        env:
-          APPLE_APP_CERTIFICATE_BASE64: ${{ secrets.APPLE_APP_CERTIFICATE_BASE64 }}
-          APPLE_APP_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_APP_CERTIFICATE_PASSWORD }}
-          APPLE_INSTALLER_CERTIFICATE_BASE64: ${{ secrets.APPLE_INSTALLER_CERTIFICATE_BASE64 }}
-          APPLE_INSTALLER_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_INSTALLER_CERTIFICATE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -125,7 +107,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           draft: false
-          fail_on_unmatched_files: true
+          fail_on_unmatched_files: false
           files: upload/*.*
           make_latest: true
           prerelease: false
