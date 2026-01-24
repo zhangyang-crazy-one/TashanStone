@@ -87,17 +87,20 @@ runs:
       run: |
         mkdir -p upload
         # Copy relevant files to upload directory
-        if [ -d "dist" ]; then
-          # Windows installers
-          find dist -name "*.exe" -exec cp {} upload/ \; 2>/dev/null || true
-          # macOS installers  
-          find dist -name "*.dmg" -exec cp {} upload/ \; 2>/dev/null || true
-          find dist -name "*.zip" -exec cp {} upload/ \; 2>/dev/null || true
-          # Linux packages
-          find dist -name "*.deb" -exec cp {} upload/ \; 2>/dev/null || true
-          find dist -name "*.rpm" -exec cp {} upload/ \; 2>/dev/null || true
-          find dist -name "*.AppImage" -exec cp {} upload/ \; 2>/dev/null || true
-        fi
+        for dir in release dist; do
+          if [ -d "$dir" ]; then
+            # Windows installers
+            find "$dir" -name "*.exe" -exec cp {} upload/ \; 2>/dev/null || true
+            # macOS installers
+            find "$dir" -name "*.dmg" -exec cp {} upload/ \; 2>/dev/null || true
+            find "$dir" -name "*.zip" -exec cp {} upload/ \; 2>/dev/null || true
+            # Linux packages
+            find "$dir" -name "*.deb" -exec cp {} upload/ \; 2>/dev/null || true
+            find "$dir" -name "*.rpm" -exec cp {} upload/ \; 2>/dev/null || true
+            find "$dir" -name "*.AppImage" -exec cp {} upload/ \; 2>/dev/null || true
+            find "$dir" -name "*.tar.gz" -exec cp {} upload/ \; 2>/dev/null || true
+          fi
+        done
         echo "Upload directory contents:"
         ls -la upload/ || echo "Upload directory is empty"
 

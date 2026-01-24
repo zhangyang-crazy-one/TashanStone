@@ -58,6 +58,9 @@ jobs:
           - name: windows
             image: windows-latest
             shell: bash
+          - name: macos
+            image: macos-latest
+            shell: bash
         arch:
           - x64
     runs-on: ${{ matrix.os.image }}
