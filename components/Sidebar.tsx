@@ -8,8 +8,9 @@ import {
   Lock, Upload, Database, Loader2, RefreshCw, Code2, Edit3, Brain, Sparkles, Tag, ChevronDown, BookOpen
 } from 'lucide-react';
 import { MarkdownFile, RAGStats, OCRStats, Snippet } from '../types';
-import { translations, Language } from '../utils/translations';
 import { TagsBrowser } from './TagsBrowser';
+import Tooltip from './Tooltip';
+import { translations, Language } from '../utils/translations';
 
 interface SidebarProps {
   files: MarkdownFile[];
@@ -140,6 +141,13 @@ const getIconForFile = (name: string) => {
 };
 
 // Memoized Row Component
+interface FileTreeRowTooltips {
+  newFileInside?: string;
+  newFolderInside?: string;
+  readOnlySource?: string;
+  deleteFile?: string;
+}
+
 const FileTreeRow = React.memo<{
   node: FlatNode;
   activeFileId: string;
@@ -151,8 +159,9 @@ const FileTreeRow = React.memo<{
   onDragOver: (e: React.DragEvent, nodeId: string) => void;
   onDrop: (e: React.DragEvent, targetPath: string) => void;
   isDropTarget: boolean;
+  tooltips?: FileTreeRowTooltips;
   onShowContextMenu?: (fileId: string, fileName: string, x: number, y: number) => void;
-}>(({ node, activeFileId, onSelect, onToggle, onDelete, onRequestCreate, onDragStart, onDragOver, onDrop, isDropTarget, onShowContextMenu }) => {
+}>(({ node, activeFileId, onSelect, onToggle, onDelete, onRequestCreate, onDragStart, onDragOver, onDrop, isDropTarget, tooltips, onShowContextMenu }) => {
   const indentStyle = { paddingLeft: `${node.level * 12 + 12}px` };
 
   if (node.type === 'folder') {
@@ -188,20 +197,24 @@ const FileTreeRow = React.memo<{
         {/* Quick Add Buttons (Visible on Hover) - Hide for memory folder */}
         {!isMemoryFolder && (
           <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button
-              onClick={(e) => { e.stopPropagation(); onRequestCreate('file', node.path); }}
-              className="p-1 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 rounded text-slate-500 hover:text-cyan-600"
-              title="New File inside"
-            >
-              <Plus size={12} />
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); onRequestCreate('folder', node.path); }}
-              className="p-1 hover:bg-amber-100 dark:hover:bg-amber-900/50 rounded text-slate-500 hover:text-amber-600"
-              title="New Folder inside"
-            >
-              <FolderInput size={12} />
-            </button>
+            <Tooltip content={tooltips?.newFileInside || "New File inside"}>
+              <button
+                onClick={(e) => { e.stopPropagation(); onRequestCreate('file', node.path); }}
+                className="p-1 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 rounded text-slate-500 hover:text-cyan-600"
+                aria-label={tooltips?.newFileInside || "New File inside"}
+              >
+                <Plus size={12} />
+              </button>
+            </Tooltip>
+            <Tooltip content={tooltips?.newFolderInside || "New Folder inside"}>
+              <button
+                onClick={(e) => { e.stopPropagation(); onRequestCreate('folder', node.path); }}
+                className="p-1 hover:bg-amber-100 dark:hover:bg-amber-900/50 rounded text-slate-500 hover:text-amber-600"
+                aria-label={tooltips?.newFolderInside || "New Folder inside"}
+              >
+                <FolderInput size={12} />
+              </button>
+            </Tooltip>
           </div>
         )}
       </div>
@@ -241,7 +254,6 @@ const FileTreeRow = React.memo<{
           onShowContextMenu(node.fileId, node.name, e.clientX, e.clientY);
         }
       }}
-      title={!isOperable ? "Read Only / Extraction Source" : node.name}
       draggable={isOperable}
       onDragStart={(e) => isOperable && onDragStart(e, node.fileId!)}
     >
@@ -259,9 +271,14 @@ const FileTreeRow = React.memo<{
           getIconForFile(node.name)
         )}
       </span>
-      <span className={`text-sm truncate flex-1 leading-none pt-0.5 ${isMemoryFile ? 'text-violet-700 dark:text-violet-300' : ''}`}>
-        {node.name}
-      </span>
+      <Tooltip
+        content={!isOperable ? (tooltips?.readOnlySource || "Read Only / Extraction Source") : node.name}
+        className="flex-1 min-w-0"
+      >
+        <span className={`text-sm truncate flex-1 leading-none pt-0.5 ${isMemoryFile ? 'text-violet-700 dark:text-violet-300' : ''}`}>
+          {node.name}
+        </span>
+      </Tooltip>
 
       {/* Memory importance badge */}
       {isMemoryFile && memoryImportance && (
@@ -275,13 +292,15 @@ const FileTreeRow = React.memo<{
 
       {/* Delete button - only for operable files */}
       {isOperable && (
-        <button
-          onClick={(e) => { e.stopPropagation(); onDelete(node.fileId!, node.name); }}
-          className="p-1 opacity-0 group-hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-500 rounded transition-all shrink-0"
-          title="Delete File"
-        >
-          <Trash2 size={12} />
-        </button>
+        <Tooltip content={tooltips?.deleteFile || "Delete File"}>
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(node.fileId!, node.name); }}
+            className="p-1 opacity-0 group-hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-500 rounded transition-all shrink-0"
+            aria-label={tooltips?.deleteFile || "Delete File"}
+          >
+            <Trash2 size={12} />
+          </button>
+        </Tooltip>
       )}
     </div>
   );
@@ -370,6 +389,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   // Memory files state (loaded asynchronously)
   const [memoryNodes, setMemoryNodes] = useState<FileTreeNode[]>([]);
+  const memoryNodesHashRef = useRef('');
 
   useEffect(() => {
     try {
@@ -516,7 +536,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           const files = await (window as any).electronAPI.file.listFiles(memoriesFolder);
 
           if (!files || files.length === 0) {
-            setMemoryNodes([]);
+            if (memoryNodesHashRef.current !== '') {
+              memoryNodesHashRef.current = '';
+              setMemoryNodes([]);
+            }
             return;
           }
 
@@ -556,16 +579,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
             return bTime - aTime;
           });
 
-          setMemoryNodes(nodes);
+          const nextHash = nodes.map(node => `${node.id}|${node.path}|${node.memoryImportance || ''}`).join(';');
+          if (nextHash !== memoryNodesHashRef.current) {
+            memoryNodesHashRef.current = nextHash;
+            setMemoryNodes(nodes);
+          }
         }
       } catch (error) {
         console.error('Failed to load memory files:', error);
-        setMemoryNodes([]);
+        if (memoryNodesHashRef.current !== '') {
+          memoryNodesHashRef.current = '';
+          setMemoryNodes([]);
+        }
       }
     };
 
     loadMemoryFiles();
-  }, [files]); // Re-load when files change
+  }, [filesStructureHash]); // Re-load when file structure changes
 
   // Auto-expand to active file
   useEffect(() => {
@@ -887,13 +917,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {activeTab === 'files' && (
             <>
               <div className="grid grid-cols-2 gap-2 mb-3">
-                <button onClick={() => handleOpenCreation('file')} className="flex items-center justify-center gap-1.5 px-3 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg transition-colors shadow-lg shadow-cyan-500/20 text-xs font-medium" title="New File">
-                  <Plus size={14} /> {t.newFile}
-                </button>
+                <Tooltip content={t.tooltips?.newFile || "New File"} className="w-full">
+                  <button
+                    onClick={() => handleOpenCreation('file')}
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg transition-colors shadow-lg shadow-cyan-500/20 text-xs font-medium"
+                    aria-label={t.tooltips?.newFile || "New File"}
+                  >
+                    <Plus size={14} /> {t.newFile}
+                  </button>
+                </Tooltip>
 
-                <button onClick={() => handleOpenCreation('folder')} className="flex items-center justify-center gap-1.5 px-3 py-2 bg-white dark:bg-cyber-900 border border-paper-200 dark:border-cyber-700 rounded-lg text-slate-600 dark:text-slate-300 hover:border-amber-400 transition-colors text-xs font-medium" title="New Folder">
-                  <FolderInput size={14} className="text-amber-500" /> Folder
-                </button>
+                <Tooltip content={t.tooltips?.newFolder || "New Folder"} className="w-full">
+                  <button
+                    onClick={() => handleOpenCreation('folder')}
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 bg-white dark:bg-cyber-900 border border-paper-200 dark:border-cyber-700 rounded-lg text-slate-600 dark:text-slate-300 hover:border-amber-400 transition-colors text-xs font-medium"
+                    aria-label={t.tooltips?.newFolder || "New Folder"}
+                  >
+                    <FolderInput size={14} className="text-amber-500" /> Folder
+                  </button>
+                </Tooltip>
 
                 <button onClick={() => filesInputRef.current?.click()} className="flex items-center justify-center gap-1.5 px-3 py-2 bg-white dark:bg-cyber-900 border border-paper-200 dark:border-cyber-700 rounded-lg text-slate-600 dark:text-slate-300 hover:border-cyan-400 transition-colors text-xs font-medium">
                   <Upload size={14} /> {t.importFiles}
@@ -935,6 +977,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       key={node.id}
                       node={node}
                       activeFileId={activeFileId}
+                      tooltips={{
+                        newFileInside: t.tooltips?.newFileInside,
+                        newFolderInside: t.tooltips?.newFolderInside,
+                        readOnlySource: t.tooltips?.readOnlySource,
+                        deleteFile: t.tooltips?.deleteFile
+                      }}
                       onSelect={onSelectFile}
                       onDelete={handleDeleteRequest}
                       onToggle={toggleFolder}
@@ -977,7 +1025,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </button>
                 {tagsExpanded && (
                   <div className="mt-2 px-2">
-                    <TagsBrowser files={files} onSelectFile={onSelectFile} setFiles={setFiles} />
+                    <TagsBrowser files={files} onSelectFile={onSelectFile} setFiles={setFiles} language={language} />
                     {onOpenTagSuggestion && (
                       <button
                         onClick={onOpenTagSuggestion}
@@ -1125,14 +1173,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </span>
               <div className="flex items-center gap-2">
                 {ragStats.isIndexing && <Loader2 size={12} className="animate-spin text-cyan-500" />}
-                <button
-                  onClick={(e) => { e.stopPropagation(); onRefreshIndex?.(); }}
-                  className="p-1 hover:bg-paper-100 dark:hover:bg-cyber-800 rounded-md text-slate-400 hover:text-cyan-500 transition-colors"
-                  title={t.refreshIndex}
-                  disabled={ragStats.isIndexing}
-                >
-                  <RefreshCw size={12} className={ragStats.isIndexing ? 'animate-spin' : ''} />
-                </button>
+                <Tooltip content={t.refreshIndex}>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onRefreshIndex?.(); }}
+                    className="p-1 hover:bg-paper-100 dark:hover:bg-cyber-800 rounded-md text-slate-400 hover:text-cyan-500 transition-colors"
+                    aria-label={t.refreshIndex}
+                    disabled={ragStats.isIndexing}
+                  >
+                    <RefreshCw size={12} className={ragStats.isIndexing ? 'animate-spin' : ''} />
+                  </button>
+                </Tooltip>
               </div>
             </div>
 

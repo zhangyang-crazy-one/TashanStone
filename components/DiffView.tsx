@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { diffWords, diffLines, Change } from 'diff';
 import { Check, X, SplitSquareHorizontal, AlignLeft, Copy, Download, ArrowLeft } from 'lucide-react';
+import Tooltip from './Tooltip';
 
 interface DiffViewProps {
   originalText: string;
@@ -88,24 +89,28 @@ export const DiffView = ({ originalText, modifiedText, onApply, onCancel, langua
         {changes.map((part, idx) => {
           if (part.added) {
             return (
-              <span
-                key={idx}
-                className="bg-green-500/20 text-green-400 px-1 rounded border border-green-500/30"
-                title={t.added}
-              >
-                {part.value}
-              </span>
+              <Tooltip content={t.added}>
+                <span
+                  key={idx}
+                  className="bg-green-500/20 text-green-400 px-1 rounded border border-green-500/30"
+                  aria-label={t.added}
+                >
+                  {part.value}
+                </span>
+              </Tooltip>
             );
           }
           if (part.removed) {
             return (
-              <span
-                key={idx}
-                className="bg-red-500/20 text-red-400 px-1 rounded border border-red-500/30 line-through"
-                title={t.removed}
-              >
-                {part.value}
-              </span>
+              <Tooltip content={t.removed}>
+                <span
+                  key={idx}
+                  className="bg-red-500/20 text-red-400 px-1 rounded border border-red-500/30 line-through"
+                  aria-label={t.removed}
+                >
+                  {part.value}
+                </span>
+              </Tooltip>
             );
           }
           return <span key={idx} className="text-[rgb(var(--text-secondary))]">{part.value}</span>;
@@ -205,13 +210,15 @@ export const DiffView = ({ originalText, modifiedText, onApply, onCancel, langua
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-[rgb(var(--border-main))] bg-[rgb(var(--bg-panel))]">
         <div className="flex items-center gap-3">
-          <button
-            onClick={onCancel}
-            className="p-2 hover:bg-[rgb(var(--bg-element))] rounded transition-colors"
-            title={t.cancel}
-          >
-            <ArrowLeft size={20} />
-          </button>
+          <Tooltip content={t.cancel}>
+            <button
+              onClick={onCancel}
+              className="p-2 hover:bg-[rgb(var(--bg-element))] rounded transition-colors"
+              aria-label={t.cancel}
+            >
+              <ArrowLeft size={20} />
+            </button>
+          </Tooltip>
           <h2 className="text-xl font-bold text-[rgb(var(--primary-500))]">{t.title}</h2>
         </div>
 
@@ -243,21 +250,25 @@ export const DiffView = ({ originalText, modifiedText, onApply, onCancel, langua
           </div>
 
           {/* Actions */}
-          <button
-            onClick={handleCopy}
-            className="px-3 py-1.5 bg-[rgb(var(--bg-element))] hover:bg-[rgb(var(--primary-500))] text-[rgb(var(--text-primary))] rounded flex items-center gap-2 text-sm transition-colors"
-            title={t.copy}
-          >
-            <Copy size={16} />
-            {copied ? t.copied : t.copy}
-          </button>
-          <button
-            onClick={handleDownload}
-            className="px-3 py-1.5 bg-[rgb(var(--bg-element))] hover:bg-[rgb(var(--secondary-500))] text-[rgb(var(--text-primary))] rounded flex items-center gap-2 text-sm transition-colors"
-            title={t.download}
-          >
-            <Download size={16} />
-          </button>
+          <Tooltip content={t.copy}>
+            <button
+              onClick={handleCopy}
+              className="px-3 py-1.5 bg-[rgb(var(--bg-element))] hover:bg-[rgb(var(--primary-500))] text-[rgb(var(--text-primary))] rounded flex items-center gap-2 text-sm transition-colors"
+              aria-label={t.copy}
+            >
+              <Copy size={16} />
+              {copied ? t.copied : t.copy}
+            </button>
+          </Tooltip>
+          <Tooltip content={t.download}>
+            <button
+              onClick={handleDownload}
+              className="px-3 py-1.5 bg-[rgb(var(--bg-element))] hover:bg-[rgb(var(--secondary-500))] text-[rgb(var(--text-primary))] rounded flex items-center gap-2 text-sm transition-colors"
+              aria-label={t.download}
+            >
+              <Download size={16} />
+            </button>
+          </Tooltip>
         </div>
       </div>
 

@@ -1,10 +1,11 @@
 
 
 import { GoogleGenAI, FunctionDeclaration, Type } from "@google/genai";
-import { AIConfig, MarkdownFile, GraphData, Quiz, QuizQuestion, ChatMessage } from "../types";
+import { AIConfig, MarkdownFile, GraphData, Quiz, QuizQuestion, ChatMessage, JsonValue, ToolCall, ToolEventCallback } from "../types";
 import { mcpService } from "../src/services/mcpService";
 import { platformFetch, platformStreamFetch } from "../src/services/ai/platformFetch";
 import { ToolAnalyzer, createToolAnalyzer } from "./toolSelector";
+import { getToolCallAdapter } from "./toolCallAdapters";
 import {
   ContextManager,
   createContextManager,
@@ -42,6 +43,8 @@ export interface MCPTool {
   inputSchema: any;
   parameters?: any; // For MCP tools, the parameters structure
 }
+
+type ToolCallback = (toolName: string, args: Record<string, JsonValue>) => Promise<JsonValue>;
 
 // --- Dynamic MCP Tool Guide Generator ---
 /**
@@ -1448,10 +1451,11 @@ export const generateAIResponse = async (
   systemInstruction?: string,
   jsonMode: boolean = false,
   contextFiles: MarkdownFile[] = [],
-  toolsCallback?: (toolName: string, args: any) => Promise<any>,
+  toolsCallback?: ToolCallback,
   retrievedContext?: string, // New: Accept pre-retrieved RAG context string
   conversationHistory?: ChatMessage[], // NEW: Historical conversation context
-  disableTools: boolean = false // NEW: Disable tool calling for content processing tasks
+  disableTools: boolean = false, // NEW: Disable tool calling for content processing tasks
+  toolEventCallback?: ToolEventCallback
 ): Promise<string> => {
   
   // RAG: Inject context
@@ -1507,7 +1511,7 @@ export const generateAIResponse = async (
 
   // Create Unified Tool Callback
   // IMPORTANT: 所有工具调用都必须经过 toolsCallback 以便 UI 能显示实时反馈
-  const unifiedToolCallback = async (name: string, args: any) => {
+  const unifiedToolCallback: ToolCallback = async (name, args) => {
       // 始终通过 toolsCallback 执行，让 App.tsx 能够捕获所有工具调用并显示 UI
       // toolsCallback 内部（App.tsx 的 executeToolUnified）会判断是内置工具还是 MCP 工具
       if (toolsCallback) {
@@ -1524,13 +1528,13 @@ export const generateAIResponse = async (
   const callbackToPass = shouldEnableTools ? unifiedToolCallback : undefined;
 
   if (config.provider === 'gemini') {
-    return callGemini(fullPrompt, config, finalSystemInstruction, jsonMode, callbackToPass, mcpClient, conversationHistory);
+    return callGemini(fullPrompt, config, finalSystemInstruction, jsonMode, callbackToPass, mcpClient, conversationHistory, toolEventCallback);
   } else if (config.provider === 'ollama') {
-    return callOllama(fullPrompt, config, finalSystemInstruction, jsonMode, callbackToPass, mcpClient, conversationHistory);
+    return callOllama(fullPrompt, config, finalSystemInstruction, jsonMode, callbackToPass, mcpClient, conversationHistory, toolEventCallback);
   } else if (config.provider === 'openai') {
-    return callOpenAICompatible(fullPrompt, config, finalSystemInstruction, jsonMode, callbackToPass, mcpClient, conversationHistory);
+    return callOpenAICompatible(fullPrompt, config, finalSystemInstruction, jsonMode, callbackToPass, mcpClient, conversationHistory, toolEventCallback);
   } else if (config.provider === 'anthropic') {
-    return callAnthropic(fullPrompt, config, finalSystemInstruction, jsonMode, callbackToPass, mcpClient, conversationHistory);
+    return callAnthropic(fullPrompt, config, finalSystemInstruction, jsonMode, callbackToPass, mcpClient, conversationHistory, toolEventCallback);
   }
   throw new Error(`Unsupported provider: ${config.provider}`);
 };
@@ -1540,9 +1544,10 @@ const callGemini = async (
     config: AIConfig,
     systemInstruction?: string,
     jsonMode: boolean = false,
-    toolsCallback?: (toolName: string, args: any) => Promise<any>,
+    toolsCallback?: ToolCallback,
     mcpClient?: IMCPClient,
     conversationHistory?: ChatMessage[],
+    toolEventCallback?: ToolEventCallback,
     retries = 3
   ): Promise<string> => {
     try {
@@ -1655,7 +1660,10 @@ const callGemini = async (
         }];
     }
 
+    const toolAdapter = getToolCallAdapter('gemini');
+
     // Multi-turn tool calling loop
+
     let iterations = 0;
     const MAX_ITERATIONS = 10;
     let finalResponse = '';
@@ -1689,9 +1697,10 @@ const callGemini = async (
         }
       }
 
+      const toolCalls = toolAdapter.parseResponse(response);
+
       // Handle Function Calls (multi-turn loop)
-      if (response.functionCalls && toolsCallback && !config.enableWebSearch && !jsonMode) {
-        const calls = response.functionCalls;
+      if (toolCalls.length > 0 && toolsCallback && !config.enableWebSearch && !jsonMode) {
 
         // Add model's response (with function calls) to contents
         contents.push({
@@ -1700,19 +1709,36 @@ const callGemini = async (
         });
 
         // Execute all function calls and add results
-        for (const call of calls) {
-          const result = await toolsCallback(call.name, call.args);
+        for (const toolCall of toolCalls) {
+          const runningCall: ToolCall = {
+            ...toolCall,
+            status: 'running',
+            startTime: Date.now()
+          };
+          toolEventCallback?.(runningCall);
 
-          // Add function response to contents
-          contents.push({
-            role: 'user',  // Gemini uses 'user' role for functionResponse
-            parts: [{
-              functionResponse: {
-                name: call.name,
-                response: result
-              }
-            }]
-          });
+          try {
+            const result = await toolsCallback(toolCall.name, toolCall.args);
+            const completedCall: ToolCall = {
+              ...runningCall,
+              status: 'success',
+              result,
+              endTime: Date.now()
+            };
+            toolEventCallback?.(completedCall);
+
+            const toolResultMessage = toolAdapter.formatResult(toolCall, result);
+            contents.push(toolResultMessage as { role: string; parts?: unknown[] });
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            toolEventCallback?.({
+              ...runningCall,
+              status: 'error',
+              error: errorMessage,
+              endTime: Date.now()
+            });
+            throw error;
+          }
         }
 
         iterations++;
@@ -1740,7 +1766,7 @@ const callGemini = async (
 
     if (isNetworkError && retries > 0) {
         await delay(2000);
-        return callGemini(prompt, config, systemInstruction, jsonMode, toolsCallback, mcpClient, conversationHistory, retries - 1);
+        return callGemini(prompt, config, systemInstruction, jsonMode, toolsCallback, mcpClient, conversationHistory, toolEventCallback, retries - 1);
     }
     throw new Error(`Gemini Error: ${error.message || "Unknown error"}`);
   }
@@ -1751,9 +1777,10 @@ const callOllama = async (
     config: AIConfig,
     systemInstruction?: string,
     jsonMode: boolean = false,
-    toolsCallback?: (toolName: string, args: any) => Promise<any>,
+    toolsCallback?: ToolCallback,
     mcpClient?: IMCPClient,
-    conversationHistory?: ChatMessage[]
+    conversationHistory?: ChatMessage[],
+    toolEventCallback?: ToolEventCallback
   ): Promise<string> => {
     const baseUrl = config.baseUrl || 'http://localhost:11434';
     const model = config.model || 'llama3';
@@ -1854,6 +1881,7 @@ const callOllama = async (
         }));
         tools = [...OPENAI_TOOLS, SEARCH_KNOWLEDGE_BASE_TOOL, ...mappedDynamic];
     }
+    const toolAdapter = getToolCallAdapter('ollama');
 
     let iterations = 0;
     const TOTAL_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes total timeout
@@ -1894,7 +1922,7 @@ const callOllama = async (
           if (!response.ok) throw new Error(`Ollama Error: ${response.statusText}`);
           const data = await response.json();
           const message = data.message;
-          const toolCalls = message.tool_calls;
+          const toolCalls = toolAdapter.parseResponse(data);
 
           messages.push(message);
 
@@ -1904,17 +1932,40 @@ const callOllama = async (
             return message.content.replace(/\[TASK_COMPLETE\]/g, '').trim();
           }
 
-          if (toolCalls && toolCalls.length > 0 && toolsCallback) {
-              for (const tool of toolCalls) {
-                  const functionName = tool.function.name;
-                  const args = tool.function.arguments;
-                  const parsedArgs = typeof args === 'string' ? JSON.parse(args) : args;
-                  const result = await toolsCallback(functionName, parsedArgs);
-                  messages.push({ role: 'tool', content: JSON.stringify(result) });
+          if (toolCalls.length > 0 && toolsCallback) {
+            for (const toolCall of toolCalls) {
+              const runningCall: ToolCall = {
+                ...toolCall,
+                status: 'running',
+                startTime: Date.now()
+              };
+              toolEventCallback?.(runningCall);
+
+              try {
+                const result = await toolsCallback(toolCall.name, toolCall.args);
+                const completedCall: ToolCall = {
+                  ...runningCall,
+                  status: 'success',
+                  result,
+                  endTime: Date.now()
+                };
+                toolEventCallback?.(completedCall);
+                const toolResultMessage = toolAdapter.formatResult(toolCall, result);
+                messages.push(toolResultMessage as { role: string; content?: string });
+              } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                toolEventCallback?.({
+                  ...runningCall,
+                  status: 'error',
+                  error: errorMessage,
+                  endTime: Date.now()
+                });
+                throw error;
               }
-              iterations++;
+            }
+            iterations++;
           } else {
-              return message.content || '';
+            return message.content || '';
           }
         } catch (fetchError: any) {
           clearTimeout(timeoutId);
@@ -1933,9 +1984,10 @@ const callOpenAICompatible = async (
     config: AIConfig,
     systemInstruction?: string,
     jsonMode: boolean = false,
-    toolsCallback?: (toolName: string, args: any) => Promise<any>,
+    toolsCallback?: ToolCallback,
     mcpClient?: IMCPClient,
-    conversationHistory?: ChatMessage[]
+    conversationHistory?: ChatMessage[],
+    toolEventCallback?: ToolEventCallback
   ): Promise<string> => {
     const baseUrl = config.baseUrl || 'https://api.openai.com/v1';
     const endpoint = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
@@ -2034,6 +2086,7 @@ const callOpenAICompatible = async (
         }));
         tools = [...OPENAI_TOOLS, SEARCH_KNOWLEDGE_BASE_TOOL, ...mappedDynamic];
     }
+    const toolAdapter = getToolCallAdapter('openai');
 
     let iterations = 0;
     const TOTAL_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes total timeout
@@ -2090,22 +2143,43 @@ const callOpenAICompatible = async (
             return message.content.replace(/\[TASK_COMPLETE\]/g, '').trim();
           }
 
-          if (message.tool_calls && message.tool_calls.length > 0 && toolsCallback) {
-              for (const toolCall of message.tool_calls) {
-                  const fnName = toolCall.function.name;
-                  const argsStr = toolCall.function.arguments;
-                  const args = typeof argsStr === 'string' ? JSON.parse(argsStr) : argsStr;
-                  const result = await toolsCallback(fnName, args);
+          const toolCalls = toolAdapter.parseResponse(data);
 
-                  messages.push({
-                      role: 'tool',
-                      tool_call_id: toolCall.id,
-                      content: JSON.stringify(result)
-                  });
+          if (toolCalls.length > 0 && toolsCallback) {
+            for (const toolCall of toolCalls) {
+              const runningCall: ToolCall = {
+                ...toolCall,
+                status: 'running',
+                startTime: Date.now()
+              };
+              toolEventCallback?.(runningCall);
+
+              try {
+                const result = await toolsCallback(toolCall.name, toolCall.args);
+                const completedCall: ToolCall = {
+                  ...runningCall,
+                  status: 'success',
+                  result,
+                  endTime: Date.now()
+                };
+                toolEventCallback?.(completedCall);
+
+                const toolResultMessage = toolAdapter.formatResult(toolCall, result);
+                messages.push(toolResultMessage as { role: string; content?: string; tool_call_id?: string });
+              } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                toolEventCallback?.({
+                  ...runningCall,
+                  status: 'error',
+                  error: errorMessage,
+                  endTime: Date.now()
+                });
+                throw error;
               }
-              iterations++;
+            }
+            iterations++;
           } else {
-              return message.content || '';
+            return message.content || '';
           }
         } catch (fetchError: any) {
           clearTimeout(timeoutId);
@@ -2124,9 +2198,10 @@ const callAnthropic = async (
     config: AIConfig,
     systemInstruction?: string,
     jsonMode: boolean = false,
-    toolsCallback?: (toolName: string, args: any) => Promise<any>,
+    toolsCallback?: ToolCallback,
     mcpClient?: IMCPClient,
-    conversationHistory?: ChatMessage[]
+    conversationHistory?: ChatMessage[],
+    toolEventCallback?: ToolEventCallback
   ): Promise<string> => {
     const baseUrl = config.baseUrl || 'https://api.anthropic.com';
     const endpoint = `${baseUrl.replace(/\/$/, '')}/v1/messages`;
@@ -2396,6 +2471,7 @@ const callAnthropic = async (
 
         tools = [...baseToolsAnthropic, ...mappedDynamic];
     }
+    const toolAdapter = getToolCallAdapter('anthropic');
 
     // 发送前验证消息格式
     const validateMessages = (msgs: any[]): { valid: boolean; error?: string } => {
@@ -2621,9 +2697,7 @@ const callAnthropic = async (
           }
 
           const data = await response.json();
-
-          // Check for tool use
-          const toolUseBlocks = data.content?.filter((block: any) => block.type === 'tool_use') || [];
+          const toolCalls = toolAdapter.parseResponse(data);
           const textBlocks = data.content?.filter((block: any) => block.type === 'text') || [];
 
           // Check for [TASK_COMPLETE] signal in text response
@@ -2633,7 +2707,7 @@ const callAnthropic = async (
             return responseText.replace(/\[TASK_COMPLETE\]/g, '').trim();
           }
 
-          if (toolUseBlocks.length > 0 && toolsCallback) {
+          if (toolCalls.length > 0 && toolsCallback) {
             // Add assistant message with tool use to history
             messagesToSend.push({
               role: 'assistant',
@@ -2641,14 +2715,45 @@ const callAnthropic = async (
             });
 
             // Execute tools and build tool results
-            const toolResults: any[] = [];
-            for (const toolUse of toolUseBlocks) {
-              const result = await toolsCallback(toolUse.name, toolUse.input);
-              toolResults.push({
-                type: 'tool_result',
-                tool_use_id: toolUse.id,
-                content: JSON.stringify(result)
-              });
+            const toolResults: unknown[] = [];
+            for (const toolCall of toolCalls) {
+              const runningCall: ToolCall = {
+                ...toolCall,
+                status: 'running',
+                startTime: Date.now()
+              };
+              toolEventCallback?.(runningCall);
+
+              try {
+                const result = await toolsCallback(toolCall.name, toolCall.args);
+                const completedCall: ToolCall = {
+                  ...runningCall,
+                  status: 'success',
+                  result,
+                  endTime: Date.now()
+                };
+                toolEventCallback?.(completedCall);
+
+                const toolResultMessage = toolAdapter.formatResult(toolCall, result);
+                if (typeof toolResultMessage === 'object' && toolResultMessage !== null) {
+                  const messageRecord = toolResultMessage as Record<string, unknown>;
+                  const contentBlocks = messageRecord.content;
+                  if (Array.isArray(contentBlocks)) {
+                    toolResults.push(...contentBlocks);
+                  } else {
+                    toolResults.push(toolResultMessage);
+                  }
+                }
+              } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                toolEventCallback?.({
+                  ...runningCall,
+                  status: 'error',
+                  error: errorMessage,
+                  endTime: Date.now()
+                });
+                throw error;
+              }
             }
 
             // Add tool results as user message

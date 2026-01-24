@@ -93,7 +93,7 @@ describe('EditorTabs', () => {
       render(<EditorTabs {...defaultProps} onClosePane={onClosePane} />);
       
       // Find all close buttons (X icons)
-      const closeButtons = screen.getAllByTitle('Close Tab');
+      const closeButtons = screen.getAllByLabelText('Close Tab');
       fireEvent.click(closeButtons[0]);
       
       expect(onClosePane).toHaveBeenCalledWith('pane1');
@@ -110,7 +110,7 @@ describe('EditorTabs', () => {
         />
       );
       
-      const closeButtons = screen.getAllByTitle('Close Tab');
+      const closeButtons = screen.getAllByLabelText('Close Tab');
       fireEvent.click(closeButtons[0]);
       
       expect(onClosePane).toHaveBeenCalled();
@@ -123,19 +123,9 @@ describe('EditorTabs', () => {
       const onToggleMode = vi.fn();
       render(<EditorTabs {...defaultProps} onToggleMode={onToggleMode} />);
       
-      // Find all mode toggle buttons (Eye or Edit3 icons)
-      // They should have title attributes based on current mode
-      const buttons = screen.getAllByRole('button');
-      // Filter to find mode toggle buttons (not close buttons)
-      const modeButton = buttons.find(b => 
-        b.getAttribute('title')?.includes('Preview') || 
-        b.getAttribute('title')?.includes('Editor')
-      );
-      
-      if (modeButton) {
-        fireEvent.click(modeButton);
-        expect(onToggleMode).toHaveBeenCalled();
-      }
+      const modeButton = screen.getByLabelText('Preview');
+      fireEvent.click(modeButton);
+      expect(onToggleMode).toHaveBeenCalled();
     });
 
     it('should not trigger onSelectPane when mode button is clicked', () => {

@@ -1,8 +1,9 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import mermaid from 'mermaid';
-import { Theme } from '../types';
 import { ZoomIn, ZoomOut, Maximize, AlertTriangle, Download } from 'lucide-react';
+import { Theme } from '../types';
+import Tooltip from './Tooltip';
 import { translations, Language } from '../utils/translations';
 
 interface MindMapProps {
@@ -259,13 +260,21 @@ export const MindMap: React.FC<MindMapProps> = ({ content, theme, language = 'en
 
       {/* Controls */}
       <div className="absolute bottom-6 right-6 z-20 flex flex-col gap-2 opacity-50 group-hover:opacity-100 transition-opacity">
-        <button onClick={handleDownload} className="p-2 bg-slate-800 rounded-lg shadow-lg border border-slate-700 hover:bg-slate-700 text-slate-200 transition-colors" title="Download SVG">
-            <Download size={20} />
-        </button>
+        <Tooltip content={t.tooltips?.downloadSvg || "Download SVG"}>
+          <button onClick={handleDownload} className="p-2 bg-slate-800 rounded-lg shadow-lg border border-slate-700 hover:bg-slate-700 text-slate-200 transition-colors" aria-label={t.tooltips?.downloadSvg || "Download SVG"}>
+              <Download size={20} />
+          </button>
+        </Tooltip>
         <div className="h-px bg-slate-700 my-1"></div>
-        <button onClick={() => setScale(s => Math.min(8, s + 0.2))} className="p-2 bg-slate-800 rounded-lg shadow-lg border border-slate-700 hover:bg-slate-700 text-slate-200"><ZoomIn size={20} /></button>
-        <button onClick={() => { setScale(1.0); setPosition({x:0, y:0}); }} className="p-2 bg-slate-800 rounded-lg shadow-lg border border-slate-700 hover:bg-slate-700 text-slate-200"><Maximize size={20} /></button>
-        <button onClick={() => setScale(s => Math.max(0.1, s - 0.2))} className="p-2 bg-slate-800 rounded-lg shadow-lg border border-slate-700 hover:bg-slate-700 text-slate-200"><ZoomOut size={20} /></button>
+        <Tooltip content={t.tooltips?.zoomIn || "Zoom In"}>
+          <button onClick={() => setScale(s => Math.min(8, s + 0.2))} className="p-2 bg-slate-800 rounded-lg shadow-lg border border-slate-700 hover:bg-slate-700 text-slate-200" aria-label={t.tooltips?.zoomIn || "Zoom In"}><ZoomIn size={20} /></button>
+        </Tooltip>
+        <Tooltip content={t.tooltips?.resetView || "Reset View"}>
+          <button onClick={() => { setScale(1.0); setPosition({x:0, y:0}); }} className="p-2 bg-slate-800 rounded-lg shadow-lg border border-slate-700 hover:bg-slate-700 text-slate-200" aria-label={t.tooltips?.resetView || "Reset View"}><Maximize size={20} /></button>
+        </Tooltip>
+        <Tooltip content={t.tooltips?.zoomOut || "Zoom Out"}>
+          <button onClick={() => setScale(s => Math.max(0.1, s - 0.2))} className="p-2 bg-slate-800 rounded-lg shadow-lg border border-slate-700 hover:bg-slate-700 text-slate-200" aria-label={t.tooltips?.zoomOut || "Zoom Out"}><ZoomOut size={20} /></button>
+        </Tooltip>
       </div>
 
       <div className="absolute top-4 left-4 z-20 px-3 py-1 bg-black/50 backdrop-blur rounded text-xs font-mono text-slate-400 pointer-events-none border border-white/5">

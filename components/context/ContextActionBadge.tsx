@@ -1,5 +1,7 @@
 import React from 'react';
 import { Check, Scissors, Archive, Trash2, RotateCcw } from 'lucide-react';
+import Tooltip from '../Tooltip';
+import { translations, Language } from '../../utils/translations';
 
 interface ContextActionBadgeProps {
   action: 'none' | 'pruned' | 'compacted' | 'truncated' | 'checkpoint';
@@ -8,6 +10,7 @@ interface ContextActionBadgeProps {
   messageCount?: number;
   onRestore?: () => void;
   onDismiss?: () => void;
+  language?: Language;
 }
 
 export const ContextActionBadge: React.FC<ContextActionBadgeProps> = ({
@@ -17,8 +20,10 @@ export const ContextActionBadge: React.FC<ContextActionBadgeProps> = ({
   messageCount,
   onRestore,
   onDismiss,
+  language = 'en',
 }) => {
   if (action === 'none') return null;
+  const t = translations[language];
 
   const getActionConfig = () => {
     switch (action) {
@@ -99,24 +104,28 @@ export const ContextActionBadge: React.FC<ContextActionBadgeProps> = ({
 
       <div className="flex items-center gap-1 ml-2">
         {onRestore && action !== 'checkpoint' && (
-          <button
-            onClick={onRestore}
-            className="p-1 hover:bg-white/10 rounded transition-colors"
-            title="Restore previous state"
-          >
-            <RotateCcw className="w-3 h-3 text-neutral-400" />
-          </button>
+          <Tooltip content={t.tooltips?.restorePrevious || "Restore previous state"}>
+            <button
+              onClick={onRestore}
+              className="p-1 hover:bg-white/10 rounded transition-colors"
+              aria-label={t.tooltips?.restorePrevious || "Restore previous state"}
+            >
+              <RotateCcw className="w-3 h-3 text-neutral-400" />
+            </button>
+          </Tooltip>
         )}
         {onDismiss && (
-          <button
-            onClick={onDismiss}
-            className="p-1 hover:bg-white/10 rounded transition-colors"
-            title="Dismiss"
-          >
-            <svg className="w-3 h-3 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          <Tooltip content={t.tooltips?.dismiss || "Dismiss"}>
+            <button
+              onClick={onDismiss}
+              className="p-1 hover:bg-white/10 rounded transition-colors"
+              aria-label={t.tooltips?.dismiss || "Dismiss"}
+            >
+              <svg className="w-3 h-3 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </Tooltip>
         )}
       </div>
     </div>
@@ -130,6 +139,7 @@ interface ContextStatusIndicatorProps {
   lastAction?: ContextActionBadgeProps['action'];
   lastActionTime?: number;
   isCheckpointing?: boolean;
+  language?: Language;
 }
 
 export const ContextStatusIndicator: React.FC<ContextStatusIndicatorProps> = ({
@@ -139,6 +149,7 @@ export const ContextStatusIndicator: React.FC<ContextStatusIndicatorProps> = ({
   lastAction,
   lastActionTime,
   isCheckpointing = false,
+  language = 'en',
 }) => {
   const percentage = tokenUsage / maxTokens;
 
@@ -192,6 +203,7 @@ export const ContextStatusIndicator: React.FC<ContextStatusIndicatorProps> = ({
         <ContextActionBadge
           action={lastAction}
           timestamp={lastActionTime}
+          language={language}
         />
       )}
     </div>

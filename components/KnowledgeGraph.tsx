@@ -1,13 +1,16 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as d3 from 'd3';
-import { GraphData, Theme } from '../types';
 import { ZoomIn, ZoomOut, RotateCcw, Download, X, FileJson, Image, ChevronDown } from 'lucide-react';
+import { GraphData, Theme } from '../types';
+import Tooltip from './Tooltip';
+import { translations, Language } from '../utils/translations';
 
 interface KnowledgeGraphProps {
   data: GraphData;
   theme: Theme;
   onNodeClick?: (nodeId: string) => void;
+  language?: Language;
 }
 
 interface SelectedNode {
@@ -18,12 +21,13 @@ interface SelectedNode {
   connections: { label: string; type: 'source' | 'target' }[];
 }
 
-export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = React.memo(({ data, theme, onNodeClick }) => {
+export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = React.memo(({ data, theme, onNodeClick, language = 'en' }) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [selectedNode, setSelectedNode] = useState<SelectedNode | null>(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [focusedNodeIndex, setFocusedNodeIndex] = useState<number>(-1);
+  const t = translations[language];
 
   // CRITICAL FIX: Use ref for callback to avoid restarting simulation when parent re-renders (e.g. toast notification)
   const onNodeClickRef = useRef(onNodeClick);
@@ -631,14 +635,16 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = React.memo(({ data,
       <div className="absolute bottom-6 right-6 flex flex-col gap-2 z-10 opacity-60 group-hover:opacity-100 transition-opacity">
         {/* Export Menu */}
         <div className="relative">
-          <button 
-            onClick={() => setShowExportMenu(!showExportMenu)}
-            className="p-2 bg-white dark:bg-cyber-800 rounded-lg shadow-lg border border-paper-200 dark:border-cyber-700 hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200 transition-colors flex items-center gap-1"
-            title="Export Graph"
-          >
-            <Download size={20} />
-            <ChevronDown size={14} className={`transition-transform ${showExportMenu ? 'rotate-180' : ''}`} />
-          </button>
+          <Tooltip content={t.tooltips?.exportGraph || "Export Graph"}>
+            <button 
+              onClick={() => setShowExportMenu(!showExportMenu)}
+              className="p-2 bg-white dark:bg-cyber-800 rounded-lg shadow-lg border border-paper-200 dark:border-cyber-700 hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200 transition-colors flex items-center gap-1"
+              aria-label={t.tooltips?.exportGraph || "Export Graph"}
+            >
+              <Download size={20} />
+              <ChevronDown size={14} className={`transition-transform ${showExportMenu ? 'rotate-180' : ''}`} />
+            </button>
+          </Tooltip>
           
           {showExportMenu && (
             <div className="absolute bottom-full right-0 mb-2 bg-white dark:bg-cyber-800 rounded-lg shadow-lg border border-paper-200 dark:border-cyber-700 overflow-hidden min-w-40">
@@ -668,30 +674,33 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = React.memo(({ data,
         </div>
         
         <div className="h-px bg-paper-300 dark:bg-cyber-600 my-1"></div>
-        <button
-          onClick={() => handleZoom(1.3)}
-          className="p-2 bg-white dark:bg-cyber-800 rounded-lg shadow-lg border border-paper-200 dark:border-cyber-700 hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200 transition-colors"
-          title="Zoom In"
-          aria-label="Zoom in"
-        >
-          <ZoomIn size={20} />
-        </button>
-        <button
-          onClick={handleReset}
-          className="p-2 bg-white dark:bg-cyber-800 rounded-lg shadow-lg border border-paper-200 dark:border-cyber-700 hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200 transition-colors"
-          title="Reset View"
-          aria-label="Reset view"
-        >
-          <RotateCcw size={20} />
-        </button>
-        <button
-          onClick={() => handleZoom(0.7)}
-          className="p-2 bg-white dark:bg-cyber-800 rounded-lg shadow-lg border border-paper-200 dark:border-cyber-700 hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200 transition-colors"
-          title="Zoom Out"
-          aria-label="Zoom out"
-        >
-          <ZoomOut size={20} />
-        </button>
+        <Tooltip content={t.tooltips?.zoomIn || "Zoom In"}>
+          <button
+            onClick={() => handleZoom(1.3)}
+            className="p-2 bg-white dark:bg-cyber-800 rounded-lg shadow-lg border border-paper-200 dark:border-cyber-700 hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200 transition-colors"
+            aria-label={t.tooltips?.zoomIn || "Zoom In"}
+          >
+            <ZoomIn size={20} />
+          </button>
+        </Tooltip>
+        <Tooltip content={t.tooltips?.resetView || "Reset View"}>
+          <button
+            onClick={handleReset}
+            className="p-2 bg-white dark:bg-cyber-800 rounded-lg shadow-lg border border-paper-200 dark:border-cyber-700 hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200 transition-colors"
+            aria-label={t.tooltips?.resetView || "Reset View"}
+          >
+            <RotateCcw size={20} />
+          </button>
+        </Tooltip>
+        <Tooltip content={t.tooltips?.zoomOut || "Zoom Out"}>
+          <button
+            onClick={() => handleZoom(0.7)}
+            className="p-2 bg-white dark:bg-cyber-800 rounded-lg shadow-lg border border-paper-200 dark:border-cyber-700 hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200 transition-colors"
+            aria-label={t.tooltips?.zoomOut || "Zoom Out"}
+          >
+            <ZoomOut size={20} />
+          </button>
+        </Tooltip>
       </div>
     </div>
   );

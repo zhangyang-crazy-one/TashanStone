@@ -25,7 +25,7 @@ import { SearchModal } from './components/SearchModal';
 import { StudyPlanPanel } from './components/StudyPlanPanel';
 import { LinkInsertModal } from './components/LinkInsertModal';
 import { CompactMemoryPrompt } from './components/CompactMemoryPrompt';
-import { ViewMode, AIState, MarkdownFile, AIConfig, ChatMessage, GraphData, AppTheme, Quiz, RAGStats, OCRStats, AppShortcut, RAGResultData, EditorPane, Snippet, StudyPlan, ExamResult, KnowledgePointStat, QuestionBank, QuizQuestion, LinkInsertResult, CodeMirrorEditorRef, MemoryCandidate } from './types';
+import { ViewMode, AIState, MarkdownFile, AIConfig, ChatMessage, GraphData, AppTheme, Quiz, RAGStats, OCRStats, AppShortcut, RAGResultData, EditorPane, Snippet, StudyPlan, ExamResult, KnowledgePointStat, QuestionBank, QuizQuestion, LinkInsertResult, CodeMirrorEditorRef, MemoryCandidate, ToolCall, JsonValue } from './types';
 import { polishContent, expandContent, generateAIResponse, generateAIResponseStream, generateKnowledgeGraph, synthesizeKnowledgeBase, generateQuiz, generateMindMap, extractQuizFromRawContent, compactConversation, searchPermanentMemories, autoCreateMemoryFromSession, initPersistentMemory, getEmbedding, analyzeSessionForMemory, createMemoryFromCandidate } from './services/aiService';
 import { applyTheme, getAllThemes, getSavedThemeId, saveCustomTheme, deleteCustomTheme, DEFAULT_THEMES, getLastUsedThemeIdForMode } from './services/themeService';
 import { readDirectory, readDirectoryEnhanced, saveFileToDisk, processPdfFile, extractTextFromFile, parseCsvToQuiz, isExtensionSupported } from './services/fileService';
@@ -36,7 +36,9 @@ import { extractWikiLinks, extractTags } from './src/types/wiki';
 import { Backlink } from './src/types/wiki';
 import { buildKnowledgeIndexFromFiles, generateFileLinkGraph } from './src/services/wiki/wikiLinkService';
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
+import { undo as codeMirrorUndo, redo as codeMirrorRedo } from '@codemirror/commands';
 import { translations, Language } from './utils/translations';
+import { encodeBase64Utf8 } from './utils/base64';
 
 const generateId = () => Math.random().toString(36).substring(2, 11);
 
@@ -110,6 +112,16 @@ const App: React.FC = () => {
     return t.length > 0 ? t : DEFAULT_THEMES;
   });
   const [activeThemeId, setActiveThemeId] = useState<string>(() => getSavedThemeId());
+
+  const buildToolResultBlock = (toolName: string, toolResult: { success: boolean; formatted: string }) => {
+    const encoded = encodeBase64Utf8(toolResult.formatted);
+    if (encoded) {
+      const status = toolResult.success ? 'success' : 'error';
+      return `<tool_result name="${toolName}" status="${status}" encoding="base64">${encoded}</tool_result>`;
+    }
+
+    return `🔧 **Tool: ${toolName}**\n\`\`\`json\n${toolResult.formatted}\n\`\`\``;
+  };
 
   useEffect(() => {
     // Apply theme on mount and when activeThemeId changes
@@ -932,6 +944,9 @@ const App: React.FC = () => {
   };
 
   const handleUndo = () => {
+    const view = codeMirrorRef.current?.view;
+    if (view && codeMirrorUndo(view)) return;
+
     const fileHist = history[activeFileId];
     if (!fileHist || fileHist.past.length === 0) return;
 
@@ -951,6 +966,9 @@ const App: React.FC = () => {
   };
 
   const handleRedo = () => {
+    const view = codeMirrorRef.current?.view;
+    if (view && codeMirrorRedo(view)) return;
+
     const fileHist = history[activeFileId];
     if (!fileHist || fileHist.future.length === 0) return;
 
@@ -1467,6 +1485,23 @@ const App: React.FC = () => {
   };
 
   const handleTextFormat = (startTag: string, endTag: string) => {
+    const view = codeMirrorRef.current?.view;
+    if (view) {
+      const { from, to } = view.state.selection.main;
+      const selectedText = view.state.sliceDoc(from, to);
+      const insertText = `${startTag}${selectedText}${endTag}`;
+
+      view.dispatch({
+        changes: { from, to, insert: insertText },
+        selection: {
+          anchor: from + startTag.length,
+          head: from + startTag.length + selectedText.length
+        }
+      });
+      view.focus();
+      return;
+    }
+
     const textarea = editorRef.current;
     if (!textarea) return;
 
@@ -1787,8 +1822,12 @@ const App: React.FC = () => {
         .slice(-20);  // Limit to last 20 messages to control token usage
 
       // ===== 统一工具执行器 (内置优先, MCP 其次) =====
-      const executeToolUnified = async (toolName: string, args: any): Promise<{ success: boolean; result: any; formatted: string }> => {
+      const executeToolUnified = async (toolName: string, args: Record<string, JsonValue>): Promise<{ success: boolean; result: JsonValue; formatted: string }> => {
         console.log('[Tool] Executing:', toolName, args);
+        const getString = (value: JsonValue | undefined): string =>
+          typeof value === 'string' ? value : '';
+        const getNumber = (value: JsonValue | undefined): number | undefined =>
+          typeof value === 'number' ? value : undefined;
 
         // ===== 内置工具优先 =====
         // 1. search_knowledge_base - RAG 搜索
@@ -1798,17 +1837,18 @@ const App: React.FC = () => {
               await handleIndexKnowledgeBase();
             }
             // 限制默认结果数为5，避免上下文过大
-            const maxResults = Math.min(args.maxResults || 5, 8);
+            const maxResultsValue = getNumber(args.maxResults) ?? 5;
+            const maxResults = Math.min(maxResultsValue, 8);
             const ragResponse = await vectorStore.searchWithResults(
-              args.query,
+              getString(args.query),
               aiConfig,
               maxResults
             );
 
             // 精简返回结果，只保留必要信息
-            const result = {
+            const result: JsonValue = {
               success: true,
-              query: args.query,
+              query: getString(args.query),
               matchCount: ragResponse.results.length,
               // 只返回简洁的来源信息，不返回完整 context
               sources: ragResponse.results.map(r => ({
@@ -1831,35 +1871,42 @@ const App: React.FC = () => {
 
         // 2. create_file - 创建应用内文件
         if (toolName === 'create_file') {
+          const filename = getString(args.filename);
+          const content = getString(args.content);
+          if (!filename) {
+            return { success: false, result: { error: 'Missing filename' }, formatted: JSON.stringify({ success: false, error: 'Missing filename' }) };
+          }
           const newFile: MarkdownFile = {
             id: generateId(),
-            name: args.filename.replace('.md', ''),
-            content: args.content,
+            name: filename.replace('.md', ''),
+            content,
             lastModified: Date.now(),
-            path: args.filename
+            path: filename
           };
           setFiles(prev => [...prev, newFile]);
-          const result = { success: true, message: `Created file: ${args.filename}` };
+          const result: JsonValue = { success: true, message: `Created file: ${filename}` };
           return { success: true, result, formatted: JSON.stringify(result) };
         }
 
         // 3. update_file - 更新应用内文件
         if (toolName === 'update_file') {
           // 使用 filesRef 同步检查文件是否存在（避免 setFiles 异步问题）
+          const filename = getString(args.filename);
+          const content = getString(args.content);
           const targetFile = filesRef.current.find(f =>
-            f.name === args.filename.replace('.md', '') ||
-            f.name === args.filename ||
-            f.path === args.filename ||
-            f.path?.endsWith(args.filename)
+            f.name === filename.replace('.md', '') ||
+            f.name === filename ||
+            f.path === filename ||
+            f.path?.endsWith(filename)
           );
 
           if (targetFile) {
             setFiles(prev => prev.map(f =>
               f.id === targetFile.id
-                ? { ...f, content: args.content, lastModified: Date.now() }
+                ? { ...f, content, lastModified: Date.now() }
                 : f
             ));
-            const result = { success: true, message: `Updated file: ${args.filename}` };
+            const result: JsonValue = { success: true, message: `Updated file: ${filename}` };
             return { success: true, result, formatted: JSON.stringify(result) };
           }
           return { success: false, result: { error: 'File not found' }, formatted: JSON.stringify({ success: false, error: 'File not found' }) };
@@ -1868,16 +1915,17 @@ const App: React.FC = () => {
         // 4. delete_file - 删除应用内文件
         if (toolName === 'delete_file') {
           // 使用 filesRef 同步检查文件是否存在
+          const filename = getString(args.filename);
           const targetFile = filesRef.current.find(f =>
-            f.name === args.filename.replace('.md', '') ||
-            f.name === args.filename ||
-            f.path === args.filename ||
-            f.path?.endsWith(args.filename)
+            f.name === filename.replace('.md', '') ||
+            f.name === filename ||
+            f.path === filename ||
+            f.path?.endsWith(filename)
           );
 
           if (targetFile) {
             setFiles(prev => prev.filter(f => f.id !== targetFile.id));
-            const result = { success: true, message: `Deleted file: ${args.filename}` };
+            const result: JsonValue = { success: true, message: `Deleted file: ${filename}` };
             return { success: true, result, formatted: JSON.stringify(result) };
           }
           return { success: false, result: { error: 'File not found' }, formatted: JSON.stringify({ success: false, error: 'File not found' }) };
@@ -1885,11 +1933,12 @@ const App: React.FC = () => {
 
         // 5. read_file - 精确读取文件内容（支持行范围）
         if (toolName === 'read_file') {
+          const path = getString(args.path);
           const targetFile = filesRef.current.find(f =>
-            f.name === args.path?.replace('.md', '') ||
-            f.name === args.path ||
-            f.path === args.path ||
-            f.path?.endsWith(args.path)
+            f.name === path.replace('.md', '') ||
+            f.name === path ||
+            f.path === path ||
+            f.path?.endsWith(path)
           );
 
           if (!targetFile) {
@@ -1902,11 +1951,13 @@ const App: React.FC = () => {
           }
 
           const lines = targetFile.content.split('\n');
-          const startLine = Math.max(0, (args.startLine || 1) - 1);
-          const endLine = Math.min(lines.length, args.endLine || lines.length);
+          const startLineValue = getNumber(args.startLine) ?? 1;
+          const endLineValue = getNumber(args.endLine) ?? lines.length;
+          const startLine = Math.max(0, startLineValue - 1);
+          const endLine = Math.min(lines.length, endLineValue);
           const selectedContent = lines.slice(startLine, endLine).join('\n');
 
-          const result = {
+          const result: JsonValue = {
             success: true,
             fileName: targetFile.name || targetFile.path,
             content: selectedContent,
@@ -1918,7 +1969,8 @@ const App: React.FC = () => {
 
         // 6. search_files - 全文搜索（内存实现）
         if (toolName === 'search_files') {
-          const { keyword, filePattern } = args;
+          const keyword = getString(args.keyword);
+          const filePattern = getString(args.filePattern);
           if (!keyword) {
             return {
               success: false,
@@ -1954,7 +2006,7 @@ const App: React.FC = () => {
             }
           }
 
-          const result = {
+          const result: JsonValue = {
             success: true,
             keyword,
             filePattern: filePattern || null,
@@ -1969,7 +2021,7 @@ const App: React.FC = () => {
         try {
           const mcpResult = await window.electronAPI?.mcp?.callTool(toolName, args);
           if (mcpResult?.success) {
-            return { success: true, result: mcpResult.result, formatted: JSON.stringify(mcpResult.result, null, 2) };
+            return { success: true, result: mcpResult.result as JsonValue, formatted: JSON.stringify(mcpResult.result, null, 2) };
           } else {
             return { success: false, result: { error: mcpResult?.error || 'Unknown error' }, formatted: `Error: ${mcpResult?.error || 'Unknown error'}` };
           }
@@ -2122,7 +2174,7 @@ IMPORTANT:
 
                 const toolCall = JSON.parse(jsonStr);
                 const toolName = toolCall.tool || toolCall.name;
-                const toolArgs = toolCall.arguments || toolCall.args || {};
+                const toolArgs = (toolCall.arguments || toolCall.args || {}) as Record<string, JsonValue>;
 
                 if (!toolName) {
                   throw new Error('Missing tool name');
@@ -2140,8 +2192,8 @@ IMPORTANT:
                 const toolResult = await executeToolUnified(toolName, toolArgs);
 
                 // 更新内容
-                const afterToolContent = beforeTool +
-                  `\n\n🔧 **Tool: ${toolName}**\n\`\`\`json\n${toolResult.formatted}\n\`\`\`\n`;
+                const toolResultBlock = buildToolResultBlock(toolName, toolResult);
+                const afterToolContent = `${beforeTool}\n\n${toolResultBlock}\n`;
 
                 fullContent += afterToolContent;
 
@@ -2189,32 +2241,28 @@ IMPORTANT:
         // 注意：不再设置 aiState.isThinking，因为已经有占位消息
         // 这避免了双重 "思考中" 显示
 
-        // 累积工具调用内容用于显示
-        let toolCallsContent = '';
+        const upsertToolCall = (existing: ToolCall[] | undefined, toolCall: ToolCall): ToolCall[] => {
+          const current = existing ? [...existing] : [];
+          const index = current.findIndex(call => call.id === toolCall.id);
+          if (index >= 0) {
+            current[index] = { ...current[index], ...toolCall };
+            return current;
+          }
+          return [...current, toolCall];
+        };
+
+        const handleToolEvent = (toolCall: ToolCall) => {
+          setChatMessages(prev => prev.map(msg =>
+            msg.id === aiMessageId
+              ? { ...msg, toolCalls: upsertToolCall(msg.toolCalls, toolCall) }
+              : msg
+          ));
+        };
 
         // 带UI反馈的工具调用回调
-        const nativeToolCallback = async (name: string, args: any) => {
-          // 1. 显示正在执行的工具
-          toolCallsContent += `\n\n🔧 **Executing: ${name}**...\n`;
-          setChatMessages(prev => prev.map(msg =>
-            msg.id === aiMessageId
-              ? { ...msg, content: toolCallsContent }
-              : msg
-          ));
-
-          // 2. 执行工具
+        const nativeToolCallback = async (name: string, args: Record<string, JsonValue>) => {
+          // 执行工具
           const result = await executeToolUnified(name, args);
-
-          // 3. 更新显示工具结果
-          toolCallsContent = toolCallsContent.replace(
-            `🔧 **Executing: ${name}**...`,
-            `🔧 **Tool: ${name}**\n\`\`\`json\n${result.formatted}\n\`\`\``
-          );
-          setChatMessages(prev => prev.map(msg =>
-            msg.id === aiMessageId
-              ? { ...msg, content: toolCallsContent }
-              : msg
-          ));
 
           return result.result;
         };
@@ -2231,18 +2279,15 @@ IMPORTANT:
           [],
           nativeToolCallback,
           undefined,
-          historyForAI
+          historyForAI,
+          false,
+          handleToolEvent
         );
-
-        // 合并工具调用显示和最终回复
-        const finalContent = toolCallsContent
-          ? toolCallsContent + '\n\n---\n\n' + response
-          : response;
 
         // 更新消息
         setChatMessages(prev => prev.map(msg =>
           msg.id === aiMessageId
-            ? { ...msg, content: finalContent }
+            ? { ...msg, content: response }
             : msg
         ));
       }
@@ -2641,6 +2686,7 @@ IMPORTANT:
               data={graphData}
               theme={currentThemeObj?.type || 'dark'}
               onNodeClick={handleNodeClick}
+              language={lang}
             />
           )}
 

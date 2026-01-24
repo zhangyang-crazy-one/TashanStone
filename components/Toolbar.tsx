@@ -41,6 +41,7 @@ import {
   Code2
 } from 'lucide-react';
 import { ViewMode, Theme, AIProvider } from '../types';
+import Tooltip from './Tooltip';
 import { translations, Language } from '../utils/translations';
 
 interface ToolbarProps {
@@ -181,66 +182,71 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
         {/* Undo/Redo Controls */}
         <div className="flex bg-paper-100 dark:bg-cyber-800 rounded-lg p-1 border border-paper-200 dark:border-cyber-700 transition-colors hidden sm:flex">
-          <button
-          onClick={onUndo}
-          className="p-2 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all hover:bg-white dark:hover:bg-cyber-700"
-          title="Undo (Ctrl+Z)"
-          aria-label="Undo"
-        >
-          <Undo size={18} />
-        </button>
-        <button
-          onClick={onRedo}
-          className="p-2 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all hover:bg-white dark:hover:bg-cyber-700"
-          title="Redo (Ctrl+Y)"
-          aria-label="Redo"
-        >
-          <Redo size={18} />
-        </button>
+          <Tooltip content={t.tooltips?.undo || "Undo (Ctrl+Z)"} className="app-no-drag">
+            <button
+              onClick={onUndo}
+              className="p-2 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all hover:bg-white dark:hover:bg-cyber-700"
+              aria-label="Undo"
+            >
+              <Undo size={18} />
+            </button>
+          </Tooltip>
+          <Tooltip content={t.tooltips?.redo || "Redo (Ctrl+Y)"} className="app-no-drag">
+            <button
+              onClick={onRedo}
+              className="p-2 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all hover:bg-white dark:hover:bg-cyber-700"
+              aria-label="Redo"
+            >
+              <Redo size={18} />
+            </button>
+          </Tooltip>
         </div>
 
         {/* Formatting Controls */}
         <div className="flex bg-paper-100 dark:bg-cyber-800 rounded-lg p-1 border border-paper-200 dark:border-cyber-700 transition-colors hidden sm:flex">
-          <button
-            onClick={onFormatBold}
-            className="p-2 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all hover:bg-white dark:hover:bg-cyber-700"
-            title="Bold"
-            aria-label="Bold"
-          >
-            <Bold size={18} />
-          </button>
-          <button
-            onClick={onFormatItalic}
-            className="p-2 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all hover:bg-white dark:hover:bg-cyber-700"
-            title="Italic"
-            aria-label="Italic"
-          >
-            <Italic size={18} />
-          </button>
+          <Tooltip content={t.tooltips?.bold || "Bold"} className="app-no-drag">
+            <button
+              onClick={onFormatBold}
+              className="p-2 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all hover:bg-white dark:hover:bg-cyber-700"
+              aria-label="Bold"
+            >
+              <Bold size={18} />
+            </button>
+          </Tooltip>
+          <Tooltip content={t.tooltips?.italic || "Italic"} className="app-no-drag">
+            <button
+              onClick={onFormatItalic}
+              className="p-2 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all hover:bg-white dark:hover:bg-cyber-700"
+              aria-label="Italic"
+            >
+              <Italic size={18} />
+            </button>
+          </Tooltip>
         </div>
 
         <div className="h-6 w-px bg-paper-200 dark:bg-cyber-700 mx-1 hidden sm:block"></div>
 
         {/* View Mode Dropdown */}
         <div className="relative" ref={viewMenuRef}>
-          <button
-            data-testid="view-mode"
-            onClick={(e) => { e.stopPropagation(); setShowViewMenu(!showViewMenu); }}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-paper-100 dark:bg-cyber-800 border border-paper-200 dark:border-cyber-700 text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-cyber-700 transition-all whitespace-nowrap"
-            title={t.viewMode || 'View Mode'}
-          >
-            {viewMode === ViewMode.Editor && <Edit3 size={16} />}
-            {viewMode === ViewMode.Split && <Columns size={16} />}
-            {viewMode === ViewMode.Preview && <Eye size={16} />}
-            {viewMode === ViewMode.Graph && <Network size={16} />}
-            {viewMode === ViewMode.MindMap && <GitBranch size={16} />}
-            {viewMode === ViewMode.Quiz && <HelpCircle size={16} />}
-            {viewMode === ViewMode.Analytics && <BarChart2 size={16} />}
-            {viewMode === ViewMode.Diff && <GitCompare size={16} />}
-            {viewMode === ViewMode.Roadmap && <Map size={16} />}
-            <span className="hidden md:inline text-sm whitespace-nowrap">{t[viewMode.toLowerCase()] || viewMode}</span>
-            <ChevronDown size={14} />
-          </button>
+          <Tooltip content={t.viewMode || 'View Mode'} className="app-no-drag">
+            <button
+              data-testid="view-mode"
+              onClick={(e) => { e.stopPropagation(); setShowViewMenu(!showViewMenu); }}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-paper-100 dark:bg-cyber-800 border border-paper-200 dark:border-cyber-700 text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-cyber-700 transition-all whitespace-nowrap"
+            >
+              {viewMode === ViewMode.Editor && <Edit3 size={16} />}
+              {viewMode === ViewMode.Split && <Columns size={16} />}
+              {viewMode === ViewMode.Preview && <Eye size={16} />}
+              {viewMode === ViewMode.Graph && <Network size={16} />}
+              {viewMode === ViewMode.MindMap && <GitBranch size={16} />}
+              {viewMode === ViewMode.Quiz && <HelpCircle size={16} />}
+              {viewMode === ViewMode.Analytics && <BarChart2 size={16} />}
+              {viewMode === ViewMode.Diff && <GitCompare size={16} />}
+              {viewMode === ViewMode.Roadmap && <Map size={16} />}
+              <span className="hidden md:inline text-sm whitespace-nowrap">{t[viewMode.toLowerCase()] || viewMode}</span>
+              <ChevronDown size={14} />
+            </button>
+          </Tooltip>
           {showViewMenu && (
             <div className="absolute top-full left-0 mt-1 bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-700 rounded-lg shadow-xl z-50 min-w-[180px] py-1">
               {/* Header with icon */}
@@ -333,39 +339,42 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         {/* Split Mode Controls */}
         {onSplitModeChange && (
           <div className="flex bg-paper-100 dark:bg-cyber-800 rounded-lg p-1 border border-paper-200 dark:border-cyber-700 transition-colors hidden lg:flex">
-            <button
-              onClick={() => {
-                onSplitModeChange('none');
-                setViewMode(ViewMode.Editor);
-              }}
-              className={`p-2 rounded-md transition-all ${splitMode === 'none' ? 'bg-white dark:bg-cyber-500 text-cyan-600 dark:text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
-              title="Single View"
-              aria-label="Single view"
-            >
-              <Square size={16} />
-            </button>
-            <button
-              onClick={() => {
-                onSplitModeChange('horizontal');
-                setViewMode(ViewMode.Split);
-              }}
-              className={`p-2 rounded-md transition-all ${splitMode === 'horizontal' ? 'bg-white dark:bg-cyber-500 text-cyan-600 dark:text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
-              title="Split Horizontal"
-              aria-label="Split horizontally"
-            >
-              <Columns size={16} />
-            </button>
-            <button
-              onClick={() => {
-                onSplitModeChange('vertical');
-                setViewMode(ViewMode.Split);
-              }}
-              className={`p-2 rounded-md transition-all ${splitMode === 'vertical' ? 'bg-white dark:bg-cyber-500 text-cyan-600 dark:text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
-              title="Split Vertical"
-              aria-label="Split vertically"
-            >
-              <Rows size={16} />
-            </button>
+            <Tooltip content={t.tooltips?.singleView || "Single View"} className="app-no-drag">
+              <button
+                onClick={() => {
+                  onSplitModeChange('none');
+                  setViewMode(ViewMode.Editor);
+                }}
+                className={`p-2 rounded-md transition-all ${splitMode === 'none' ? 'bg-white dark:bg-cyber-500 text-cyan-600 dark:text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
+                aria-label="Single view"
+              >
+                <Square size={16} />
+              </button>
+            </Tooltip>
+            <Tooltip content={t.tooltips?.splitHorizontal || "Split Horizontal"} className="app-no-drag">
+              <button
+                onClick={() => {
+                  onSplitModeChange('horizontal');
+                  setViewMode(ViewMode.Split);
+                }}
+                className={`p-2 rounded-md transition-all ${splitMode === 'horizontal' ? 'bg-white dark:bg-cyber-500 text-cyan-600 dark:text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
+                aria-label="Split horizontally"
+              >
+                <Columns size={16} />
+              </button>
+            </Tooltip>
+            <Tooltip content={t.tooltips?.splitVertical || "Split Vertical"} className="app-no-drag">
+              <button
+                onClick={() => {
+                  onSplitModeChange('vertical');
+                  setViewMode(ViewMode.Split);
+                }}
+                className={`p-2 rounded-md transition-all ${splitMode === 'vertical' ? 'bg-white dark:bg-cyber-500 text-cyan-600 dark:text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
+                aria-label="Split vertically"
+              >
+                <Rows size={16} />
+              </button>
+            </Tooltip>
           </div>
         )}
 
@@ -374,16 +383,17 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         {/* AI Action Dropdown */}
         <div className="flex items-center gap-1">
           <div className="relative" ref={aiMenuRef}>
-            <button
-              onClick={(e) => { e.stopPropagation(); setShowAIMenu(!showAIMenu); }}
-              disabled={isAIThinking}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-paper-100 dark:bg-cyber-800 border border-paper-200 dark:border-cyber-700 text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-cyber-700 transition-all disabled:opacity-50 whitespace-nowrap"
-              title={t.aiOperations}
-            >
-              <Sparkles size={16} className={isAIThinking ? 'animate-spin text-cyan-500' : 'text-cyan-500'} />
-              <span className="hidden sm:inline text-sm font-medium whitespace-nowrap">{t.aiActions || 'AI'}</span>
-              <ChevronDown size={14} />
-            </button>
+            <Tooltip content={t.aiOperations} className="app-no-drag">
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowAIMenu(!showAIMenu); }}
+                disabled={isAIThinking}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-paper-100 dark:bg-cyber-800 border border-paper-200 dark:border-cyber-700 text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-cyber-700 transition-all disabled:opacity-50 whitespace-nowrap"
+              >
+                <Sparkles size={16} className={isAIThinking ? 'animate-spin text-cyan-500' : 'text-cyan-500'} />
+                <span className="hidden sm:inline text-sm font-medium whitespace-nowrap">{t.aiActions || 'AI'}</span>
+                <ChevronDown size={14} />
+              </button>
+            </Tooltip>
             {showAIMenu && (
               <div className="absolute top-full right-0 mt-1 bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-700 rounded-lg shadow-xl z-50 min-w-[180px] py-1">
                 {/* Header with icon */}
@@ -450,25 +460,27 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
       {/* 右侧功能区：聊天、设置、主题、下载 - 固定宽度 */}
       <div className="flex items-center gap-1 flex-shrink-0 app-no-drag">
-        <button
-          onClick={toggleChat}
-          className="p-2 text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-900/20 rounded-lg transition-colors relative"
-          title={t.chat}
-          aria-label={t.chat}
-        >
-          <MessageSquare size={20} />
-          <span className="absolute top-1 right-1 w-2 h-2 bg-violet-500 rounded-full"></span>
-        </button>
+        <Tooltip content={t.chat} className="app-no-drag">
+          <button
+            onClick={toggleChat}
+            className="p-2 text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-900/20 rounded-lg transition-colors relative"
+            aria-label={t.chat}
+          >
+            <MessageSquare size={20} />
+            <span className="absolute top-1 right-1 w-2 h-2 bg-violet-500 rounded-full"></span>
+          </button>
+        </Tooltip>
 
-        <button
-          data-testid="settings"
-          onClick={toggleSettings}
-          className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg transition-colors"
-          title={t.settings}
-          aria-label={t.settings}
-        >
-          <Settings size={20} />
-        </button>
+        <Tooltip content={t.settings} className="app-no-drag">
+          <button
+            data-testid="settings"
+            onClick={toggleSettings}
+            className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg transition-colors"
+            aria-label={t.settings}
+          >
+            <Settings size={20} />
+          </button>
+        </Tooltip>
 
         {/* Theme Toggle */}
         <button
@@ -480,14 +492,15 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         </button>
 
         {/* File Actions */}
-        <button
-          onClick={onExport}
-          className="p-2 text-slate-400 hover:text-cyan-600 dark:hover:text-cyber-400 transition-colors"
-          title={t.download}
-          aria-label={t.download}
-        >
-          <Download size={20} />
-        </button>
+        <Tooltip content={t.download} className="app-no-drag">
+          <button
+            onClick={onExport}
+            className="p-2 text-slate-400 hover:text-cyan-600 dark:hover:text-cyber-400 transition-colors"
+            aria-label={t.download}
+          >
+            <Download size={20} />
+          </button>
+        </Tooltip>
       </div>
 
       {/* 窗口控制区：最小化、最大化、关闭 - 最右边固定（仅Electron） */}
@@ -495,30 +508,33 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         <>
           <div className="h-6 w-px bg-paper-200 dark:bg-cyber-700 flex-shrink-0"></div>
           <div className="flex items-center gap-0.5 flex-shrink-0 app-no-drag">
-            <button
-              onClick={handleMinimize}
-              className="p-2 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-paper-100 dark:hover:bg-cyber-700 transition-all"
-              title="Minimize"
-              aria-label="Minimize window"
-            >
-              <Minus size={14} />
-            </button>
-            <button
-              onClick={handleMaximize}
-              className="p-2 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-paper-100 dark:hover:bg-cyber-700 transition-all"
-              title={isMaximized ? "Restore" : "Maximize"}
-              aria-label={isMaximized ? "Restore window" : "Maximize window"}
-            >
-              {isMaximized ? <Minimize2 size={14} /> : <Square size={14} />}
-            </button>
-            <button
-              onClick={handleClose}
-              className="p-2 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"
-              title="Close"
-              aria-label="Close window"
-            >
-              <X size={14} />
-            </button>
+            <Tooltip content={t.tooltips?.minimize || "Minimize"} className="app-no-drag">
+              <button
+                onClick={handleMinimize}
+                className="p-2 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-paper-100 dark:hover:bg-cyber-700 transition-all"
+                aria-label="Minimize window"
+              >
+                <Minus size={14} />
+              </button>
+            </Tooltip>
+            <Tooltip content={isMaximized ? (t.tooltips?.restore || "Restore") : (t.tooltips?.maximize || "Maximize")} className="app-no-drag">
+              <button
+                onClick={handleMaximize}
+                className="p-2 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-paper-100 dark:hover:bg-cyber-700 transition-all"
+                aria-label={isMaximized ? "Restore window" : "Maximize window"}
+              >
+                {isMaximized ? <Minimize2 size={14} /> : <Square size={14} />}
+              </button>
+            </Tooltip>
+            <Tooltip content={t.tooltips?.close || "Close"} className="app-no-drag">
+              <button
+                onClick={handleClose}
+                className="p-2 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"
+                aria-label="Close window"
+              >
+                <X size={14} />
+              </button>
+            </Tooltip>
           </div>
         </>
       )}

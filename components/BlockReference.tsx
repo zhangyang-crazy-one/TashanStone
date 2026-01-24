@@ -3,21 +3,26 @@ import { Link2, FileText, Copy, Check } from 'lucide-react';
 import { BlockReference } from '../src/types/wiki';
 import { MarkdownFile } from '../types';
 import { findFileByWikiLinkTarget } from '../src/services/wiki/wikiLinkService';
+import Tooltip from './Tooltip';
+import { translations, Language } from '../utils/translations';
 
 interface BlockReferenceProps {
   reference: BlockReference;
   files: MarkdownFile[];
   onNavigate: (fileId: string) => void;
+  language?: Language;
 }
 
 export const BlockReferenceComponent: React.FC<BlockReferenceProps> = ({
   reference,
   files,
-  onNavigate
+  onNavigate,
+  language = 'en'
 }) => {
   const [showPreview, setShowPreview] = useState(false);
   const [copied, setCopied] = useState(false);
   const [targetFile, setTargetFile] = useState<{ id: string; name: string; path?: string; content?: string; lastModified?: number } | null>(null);
+  const t = translations[language];
 
   useEffect(() => {
     const file = findFileByWikiLinkTarget(reference.target, files);
@@ -73,20 +78,24 @@ export const BlockReferenceComponent: React.FC<BlockReferenceProps> = ({
                 </span>
               </div>
               <div className="flex items-center gap-1">
-                <button
-                  onClick={handleCopy}
-                  className="p-1 hover:bg-orange-100 dark:hover:bg-orange-800 rounded transition-colors"
-                  title="Copy content"
-                >
-                  {copied ? <Check size={12} className="text-green-500" /> : <Copy size={12} className="text-orange-500" />}
-                </button>
-                <button
-                  onClick={handleNavigate}
-                  className="p-1 hover:bg-orange-100 dark:hover:bg-orange-800 rounded transition-colors"
-                  title="Navigate to file"
-                >
-                  <FileText size={12} className="text-orange-500" />
-                </button>
+                <Tooltip content={t.tooltips?.copyContent || "Copy content"}>
+                  <button
+                    onClick={handleCopy}
+                    className="p-1 hover:bg-orange-100 dark:hover:bg-orange-800 rounded transition-colors"
+                    aria-label={t.tooltips?.copyContent || "Copy content"}
+                  >
+                    {copied ? <Check size={12} className="text-green-500" /> : <Copy size={12} className="text-orange-500" />}
+                  </button>
+                </Tooltip>
+                <Tooltip content={t.tooltips?.navigateToFile || "Navigate to file"}>
+                  <button
+                    onClick={handleNavigate}
+                    className="p-1 hover:bg-orange-100 dark:hover:bg-orange-800 rounded transition-colors"
+                    aria-label={t.tooltips?.navigateToFile || "Navigate to file"}
+                  >
+                    <FileText size={12} className="text-orange-500" />
+                  </button>
+                </Tooltip>
               </div>
             </div>
             <div className="p-3 max-h-48 overflow-y-auto">
@@ -111,7 +120,8 @@ export const BlockReferenceComponent: React.FC<BlockReferenceProps> = ({
 export const renderBlockReferences = (
   content: string,
   files: MarkdownFile[],
-  onNavigate: (fileId: string) => void
+  onNavigate: (fileId: string) => void,
+  language: Language = 'en'
 ): React.ReactNode => {
   const references = extractBlockReferencesWithContent(content, files);
 
@@ -133,6 +143,7 @@ export const renderBlockReferences = (
         reference={ref}
         files={files}
         onNavigate={onNavigate}
+        language={language}
       />
     );
 

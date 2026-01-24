@@ -1,16 +1,17 @@
 import React, { useState, useRef, useEffect, useCallback, memo } from 'react';
 import { Send, User, Sparkles, Bot, X, Trash2, Minimize2, Archive, Mic, MicOff, Loader2, Square, Maximize2, Clock, Brain, Search, FileText } from 'lucide-react';
-import { ChatMessage, AIState } from '../types';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { translations, Language } from '../utils/translations';
+import { List } from 'react-window';
+import { AutoSizer } from 'react-virtualized-auto-sizer';
+import { ChatMessage, AIState } from '../types';
 import { RAGResultsCard } from './RAGResultsCard';
 import { ToolCallCard, StreamToolCard, parseToolCallsFromContent, ThinkingCard } from './ToolCallCard';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { CheckpointDrawer } from './context';
 import { MemoryPreviewModal, MemoryItem } from './MemoryPreviewModal';
-import { List } from 'react-window';
-import { AutoSizer } from 'react-virtualized-auto-sizer';
+import Tooltip from './Tooltip';
+import { translations, Language } from '../utils/translations';
 
 interface Checkpoint {
   id: string;
@@ -43,7 +44,15 @@ interface ChatPanelProps {
   checkpoints?: Checkpoint[];
 }
 
-const SmartMessageContent: React.FC<{ content: string; isStreaming?: boolean }> = ({ content, isStreaming }) => {
+const SmartMessageContent: React.FC<{ content: string; isStreaming?: boolean; language: Language; disableToolParsing?: boolean }> = ({ content, isStreaming, language, disableToolParsing = false }) => {
+  if (disableToolParsing) {
+    return (
+      <div className="chat-markdown-content">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+      </div>
+    );
+  }
+
   const parts = parseToolCallsFromContent(content);
 
   if (parts.length === 1 && parts[0].type === 'text') {
@@ -70,6 +79,7 @@ const SmartMessageContent: React.FC<{ content: string; isStreaming?: boolean }> 
               toolName={part.toolName}
               status={part.status || 'executing'}
               result={part.result}
+              language={language}
             />
           );
         } else if (part.type === 'thinking' && part.content) {
@@ -78,6 +88,7 @@ const SmartMessageContent: React.FC<{ content: string; isStreaming?: boolean }> 
               key={idx}
               content={part.content}
               defaultExpanded={false}
+              language={language}
             />
           );
         }
@@ -150,29 +161,33 @@ function MessageItemComponent(props: MessageItemProps): React.ReactElement {
                 <Loader2 size={14} className="animate-spin text-violet-500" />
                 <span className="text-xs text-slate-500 italic">{language === 'zh' ? 'AI 正在思考...' : 'AI is thinking...'}</span>
                 {onStopStreaming && (
-                  <button
-                    onClick={onStopStreaming}
-                    className="ml-2 p-1 hover:bg-red-100 dark:hover:bg-red-900/20 rounded text-red-500 transition-colors"
-                    title={t.stopGeneration}
-                  >
-                    <Square size={12} />
-                  </button>
+                  <Tooltip content={t.stopGeneration}>
+                    <button
+                      onClick={onStopStreaming}
+                      className="ml-2 p-1 hover:bg-red-100 dark:hover:bg-red-900/20 rounded text-red-500 transition-colors"
+                      aria-label={t.stopGeneration}
+                    >
+                      <Square size={12} />
+                    </button>
+                  </Tooltip>
                 )}
               </div>
             ) : (
               <div>
-                <SmartMessageContent content={msg.content} isStreaming={true} />
+                <SmartMessageContent content={msg.content} isStreaming={true} language={language} disableToolParsing={Boolean(msg.toolCalls?.length)} />
                 <div className="flex items-center gap-2 mt-2 pt-2 border-t border-paper-100 dark:border-cyber-700">
                   <Loader2 size={12} className="animate-spin text-violet-400" />
                   <span className="text-[10px] text-slate-400 italic">{language === 'zh' ? '生成中...' : 'Generating...'}</span>
                   {onStopStreaming && (
-                    <button
-                      onClick={onStopStreaming}
-                      className="ml-auto p-1 hover:bg-red-100 dark:hover:bg-red-900/20 rounded text-red-500 transition-colors"
-                      title={t.stopGeneration}
-                    >
-                      <Square size={10} />
-                    </button>
+                    <Tooltip content={t.stopGeneration}>
+                      <button
+                        onClick={onStopStreaming}
+                        className="ml-auto p-1 hover:bg-red-100 dark:hover:bg-red-900/20 rounded text-red-500 transition-colors"
+                        aria-label={t.stopGeneration}
+                      >
+                        <Square size={10} />
+                      </button>
+                    </Tooltip>
                   )}
                 </div>
               </div>
@@ -196,7 +211,7 @@ function MessageItemComponent(props: MessageItemProps): React.ReactElement {
                 <span className="text-xs text-slate-500 italic">{language === 'zh' ? 'AI 正在思考...' : 'AI is thinking...'}</span>
               </div>
             ) : msg.role === 'assistant' ? (
-              <SmartMessageContent content={msg.content} isStreaming={false} />
+              <SmartMessageContent content={msg.content} isStreaming={false} language={language} disableToolParsing={Boolean(msg.toolCalls?.length)} />
             ) : (
               <div className="chat-markdown-content">
                 <ReactMarkdown
@@ -675,44 +690,50 @@ ${memoryContents}
 
               {/* Compact Context Button - Show when there are enough messages */}
               {onCompactChat && messages.length >= 2 && !aiState.isThinking && (
-                <button
-                  onClick={onCompactChat}
-                  className="p-1.5 rounded-md text-violet-400 hover:text-violet-500 hover:bg-violet-100/50 dark:hover:bg-violet-900/30 transition-all"
-                  title={language === 'zh' ? '压缩上下文' : 'Compact Context'}
-                >
-                  <Archive size={15} />
-                </button>
+                <Tooltip content={t.tooltips?.compactContext || (language === 'zh' ? '压缩上下文' : 'Compact Context')}>
+                  <button
+                    onClick={onCompactChat}
+                    className="p-1.5 rounded-md text-violet-400 hover:text-violet-500 hover:bg-violet-100/50 dark:hover:bg-violet-900/30 transition-all"
+                    aria-label={t.tooltips?.compactContext || (language === 'zh' ? '压缩上下文' : 'Compact Context')}
+                  >
+                    <Archive size={15} />
+                  </button>
+                </Tooltip>
               )}
 
               {/* Compact Mode Toggle */}
-              <button
-                onClick={() => setCompactMode(!compactMode)}
-                className="p-1.5 rounded-md text-slate-400 hover:text-violet-500 hover:bg-violet-100/50 dark:hover:bg-violet-900/30 transition-all"
-                title={compactMode ? t.expandView : t.compactView}
-              >
-                {compactMode ? <Maximize2 size={15} /> : <Minimize2 size={15} />}
-              </button>
+              <Tooltip content={compactMode ? t.expandView : t.compactView}>
+                <button
+                  onClick={() => setCompactMode(!compactMode)}
+                  className="p-1.5 rounded-md text-slate-400 hover:text-violet-500 hover:bg-violet-100/50 dark:hover:bg-violet-900/30 transition-all"
+                  aria-label={compactMode ? t.expandView : t.compactView}
+                >
+                  {compactMode ? <Maximize2 size={15} /> : <Minimize2 size={15} />}
+                </button>
+              </Tooltip>
 
               {/* Memory Management Button */}
-              <button
-                onClick={() => {
-                  console.log('[Brain] Toggle Memory Management clicked, current state:', showMemorySearch);
-                  setShowMemorySearch(!showMemorySearch);
-                }}
-                className={`p-1.5 rounded-md transition-all relative ${showMemorySearch
-                    ? 'text-violet-500 bg-violet-100/50 dark:bg-violet-900/30'
-                    : 'text-slate-400 hover:text-violet-500 hover:bg-violet-100/50 dark:hover:bg-violet-900/30'
-                  }`}
-                title={language === 'zh' ? '管理记忆' : 'Manage Memories'}
-              >
-                <Brain size={15} />
-                {/* Badge showing number of injected memories */}
-                {injectedMemoryCount > 0 && (
-                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
-                    {injectedMemoryCount > 9 ? '9+' : injectedMemoryCount}
-                  </span>
-                )}
-              </button>
+              <Tooltip content={t.tooltips?.manageMemories || (language === 'zh' ? '管理记忆' : 'Manage Memories')}>
+                <button
+                  onClick={() => {
+                    console.log('[Brain] Toggle Memory Management clicked, current state:', showMemorySearch);
+                    setShowMemorySearch(!showMemorySearch);
+                  }}
+                  className={`p-1.5 rounded-md transition-all relative ${showMemorySearch
+                      ? 'text-violet-500 bg-violet-100/50 dark:bg-violet-900/30'
+                      : 'text-slate-400 hover:text-violet-500 hover:bg-violet-100/50 dark:hover:bg-violet-900/30'
+                    }`}
+                  aria-label={t.tooltips?.manageMemories || (language === 'zh' ? '管理记忆' : 'Manage Memories')}
+                >
+                  <Brain size={15} />
+                  {/* Badge showing number of injected memories */}
+                  {injectedMemoryCount > 0 && (
+                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+                      {injectedMemoryCount > 9 ? '9+' : injectedMemoryCount}
+                    </span>
+                  )}
+                </button>
+              </Tooltip>
 
               {/* Memory Management Panel */}
               {showMemorySearch && (
@@ -837,22 +858,26 @@ ${memoryContents}
               )}
 
               {/* Clear */}
-              <button
-                onClick={onClearChat}
-                className="p-1.5 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-100/50 dark:hover:bg-red-900/30 transition-all"
-                title={t.clearHistory}
-              >
-                <Trash2 size={15} />
-              </button>
+              <Tooltip content={t.clearHistory}>
+                <button
+                  onClick={onClearChat}
+                  className="p-1.5 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-100/50 dark:hover:bg-red-900/30 transition-all"
+                  aria-label={t.clearHistory}
+                >
+                  <Trash2 size={15} />
+                </button>
+              </Tooltip>
 
               {/* Close */}
-              <button
-                onClick={onClose}
-                className="p-1.5 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100/50 dark:hover:bg-slate-700/50 transition-all"
-                title={language === 'zh' ? '关闭' : 'Close'}
-              >
-                <X size={15} />
-              </button>
+              <Tooltip content={t.close || (language === 'zh' ? '关闭' : 'Close')}>
+                <button
+                  onClick={onClose}
+                  className="p-1.5 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100/50 dark:hover:bg-slate-700/50 transition-all"
+                  aria-label={t.close || (language === 'zh' ? '关闭' : 'Close')}
+                >
+                  <X size={15} />
+                </button>
+              </Tooltip>
             </div>
           </div>
         </div>
@@ -909,29 +934,33 @@ ${memoryContents}
                               <Loader2 size={14} className="animate-spin text-violet-500" />
                               <span className="text-xs text-slate-500 italic">{language === 'zh' ? 'AI 正在思考...' : 'AI is thinking...'}</span>
                               {onStopStreaming && (
-                                <button
-                                  onClick={onStopStreaming}
-                                  className="ml-2 p-1 hover:bg-red-100 dark:hover:bg-red-900/20 rounded text-red-500 transition-colors"
-                                  title={t.stopGeneration}
-                                >
-                                  <Square size={12} />
-                                </button>
+                                <Tooltip content={t.stopGeneration}>
+                                  <button
+                                    onClick={onStopStreaming}
+                                    className="ml-2 p-1 hover:bg-red-100 dark:hover:bg-red-900/20 rounded text-red-500 transition-colors"
+                                    aria-label={t.stopGeneration}
+                                  >
+                                    <Square size={12} />
+                                  </button>
+                                </Tooltip>
                               )}
                             </div>
                           ) : (
                             <div>
-                              <SmartMessageContent content={msg.content} isStreaming={true} />
+                              <SmartMessageContent content={msg.content} isStreaming={true} language={language} disableToolParsing={Boolean(msg.toolCalls?.length)} />
                               <div className="flex items-center gap-2 mt-2 pt-2 border-t border-paper-100 dark:border-cyber-700">
                                 <Loader2 size={12} className="animate-spin text-violet-400" />
                                 <span className="text-[10px] text-slate-400 italic">{language === 'zh' ? '生成中...' : 'Generating...'}</span>
                                 {onStopStreaming && (
-                                  <button
-                                    onClick={onStopStreaming}
-                                    className="ml-auto p-1 hover:bg-red-100 dark:hover:bg-red-900/20 rounded text-red-500 transition-colors"
-                                    title={t.stopGeneration}
-                                  >
-                                    <Square size={10} />
-                                  </button>
+                                  <Tooltip content={t.stopGeneration}>
+                                    <button
+                                      onClick={onStopStreaming}
+                                      className="ml-auto p-1 hover:bg-red-100 dark:hover:bg-red-900/20 rounded text-red-500 transition-colors"
+                                      aria-label={t.stopGeneration}
+                                    >
+                                      <Square size={10} />
+                                    </button>
+                                  </Tooltip>
                                 )}
                               </div>
                             </div>
@@ -950,7 +979,7 @@ ${memoryContents}
                           `}
                         >
                           {msg.role === 'assistant' ? (
-                            <SmartMessageContent content={msg.content} isStreaming={false} />
+                            <SmartMessageContent content={msg.content} isStreaming={false} language={language} disableToolParsing={Boolean(msg.toolCalls?.length)} />
                           ) : (
                             <div className="chat-markdown-content">
                               <ReactMarkdown remarkPlugins={[remarkGfm]}>
@@ -994,13 +1023,15 @@ ${memoryContents}
                 <Loader2 size={14} className="animate-spin text-violet-500" />
                 <span className="text-xs text-slate-500">{language === 'zh' ? 'AI 正在思考...' : 'AI is thinking...'}</span>
                 {isStreaming && onStopStreaming && (
-                  <button
-                    onClick={onStopStreaming}
-                    className="ml-2 p-1 hover:bg-red-100 dark:hover:bg-red-900/20 rounded text-red-500 transition-colors"
-                    title={t.stopGeneration}
-                  >
-                    <Square size={12} />
-                  </button>
+                  <Tooltip content={t.stopGeneration}>
+                    <button
+                      onClick={onStopStreaming}
+                      className="ml-2 p-1 hover:bg-red-100 dark:hover:bg-red-900/20 rounded text-red-500 transition-colors"
+                      aria-label={t.stopGeneration}
+                    >
+                      <Square size={12} />
+                    </button>
+                  </Tooltip>
                 )}
               </div>
             </div>
@@ -1023,17 +1054,8 @@ ${memoryContents}
 
               {/* Voice Input Button */}
               {isSupported && (
-                <button
-                  type="button"
-                  onClick={toggle}
-                  disabled={aiState.isThinking || isProcessing}
-                  className={`p-3 rounded-xl transition-all shrink-0 ${isProcessing
-                      ? 'bg-amber-500 text-white animate-pulse shadow-lg shadow-amber-500/50'
-                      : isListening
-                        ? 'bg-red-500 text-white animate-pulse shadow-lg shadow-red-500/50'
-                        : 'bg-neutral-700 hover:bg-neutral-600 text-neutral-300 disabled:opacity-50'
-                    }`}
-                  title={
+                <Tooltip
+                  content={
                     isProcessing
                       ? (language === 'zh' ? '正在转录...' : 'Processing...')
                       : isListening
@@ -1041,8 +1063,27 @@ ${memoryContents}
                         : (t.voice?.startRecording || 'Start Recording')
                   }
                 >
-                  {isProcessing ? <Loader2 size={20} className="animate-spin" /> : isListening ? <MicOff size={20} /> : <Mic size={20} />}
-                </button>
+                  <button
+                    type="button"
+                    onClick={toggle}
+                    disabled={aiState.isThinking || isProcessing}
+                    className={`p-3 rounded-xl transition-all shrink-0 ${isProcessing
+                        ? 'bg-amber-500 text-white animate-pulse shadow-lg shadow-amber-500/50'
+                        : isListening
+                          ? 'bg-red-500 text-white animate-pulse shadow-lg shadow-red-500/50'
+                          : 'bg-neutral-700 hover:bg-neutral-600 text-neutral-300 disabled:opacity-50'
+                      }`}
+                    aria-label={
+                      isProcessing
+                        ? (language === 'zh' ? '正在转录...' : 'Processing...')
+                        : isListening
+                          ? (t.voice?.stopRecording || 'Stop Recording')
+                          : (t.voice?.startRecording || 'Start Recording')
+                    }
+                  >
+                    {isProcessing ? <Loader2 size={20} className="animate-spin" /> : isListening ? <MicOff size={20} /> : <Mic size={20} />}
+                  </button>
+                </Tooltip>
               )}
 
               {/* Send Button */}

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { BarChart2, TrendingUp, TrendingDown, Target, Clock, Award, BookOpen, AlertTriangle, Calendar, Filter } from 'lucide-react';
 import { ExamResult, KnowledgePointStat } from '../types';
+import Tooltip from './Tooltip';
 
 interface AnalyticsDashboardProps {
   examResults: ExamResult[];
@@ -266,15 +267,17 @@ export const AnalyticsDashboard = ({
                 const height = Math.max(result.score, 5); // Minimum 5% height for visibility
                 return (
                   <div key={result.id} className="flex-1 flex flex-col items-center gap-2">
-                    <div
-                      className="w-full bg-gradient-to-t from-[rgb(var(--primary-500))] to-[rgb(var(--secondary-500))] rounded-t relative group cursor-pointer transition-all hover:opacity-80"
-                      style={{ height: `${height}%` }}
-                      title={`${result.quizTitle}: ${result.score}%`}
-                    >
-                      <div className="absolute -top-8 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-[rgb(var(--bg-element))] px-2 py-1 rounded text-xs whitespace-nowrap">
-                        {result.score}%
+                    <Tooltip content={`${result.quizTitle}: ${result.score}%`} className="w-full">
+                      <div
+                        className="w-full bg-gradient-to-t from-[rgb(var(--primary-500))] to-[rgb(var(--secondary-500))] rounded-t relative group cursor-pointer transition-all hover:opacity-80"
+                        style={{ height: `${height}%` }}
+                        aria-label={`${result.quizTitle}: ${result.score}%`}
+                      >
+                        <div className="absolute -top-8 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-[rgb(var(--bg-element))] px-2 py-1 rounded text-xs whitespace-nowrap">
+                          {result.score}%
+                        </div>
                       </div>
-                    </div>
+                    </Tooltip>
                     <span className="text-xs text-[rgb(var(--text-secondary))] rotate-45 origin-left mt-2">
                       {formatDate(result.date)}
                     </span>

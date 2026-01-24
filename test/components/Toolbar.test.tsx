@@ -147,7 +147,7 @@ describe('Toolbar', () => {
       const toggleChat = vi.fn();
       render(<Toolbar {...defaultProps} toggleChat={toggleChat} />);
       
-      const chatButton = screen.getByTitle('AI Chat');
+      const chatButton = screen.getByLabelText('AI Chat');
       fireEvent.click(chatButton);
       
       expect(toggleChat).toHaveBeenCalledTimes(1);
@@ -157,7 +157,7 @@ describe('Toolbar', () => {
       const toggleSettings = vi.fn();
       render(<Toolbar {...defaultProps} toggleSettings={toggleSettings} />);
       
-      const settingsButton = screen.getByTitle('Settings');
+      const settingsButton = screen.getByLabelText('Settings');
       fireEvent.click(settingsButton);
       
       expect(toggleSettings).toHaveBeenCalledTimes(1);
@@ -177,7 +177,7 @@ describe('Toolbar', () => {
       const onExport = vi.fn();
       render(<Toolbar {...defaultProps} onExport={onExport} />);
       
-      const exportButton = screen.getByTitle('Download');
+      const exportButton = screen.getByLabelText('Download');
       fireEvent.click(exportButton);
       
       expect(onExport).toHaveBeenCalledTimes(1);
@@ -203,14 +203,14 @@ describe('Toolbar', () => {
       render(<Toolbar {...defaultProps} />);
       
       // Find the view mode dropdown button
-      const viewButton = screen.getByTitle('View Mode');
+      const viewButton = screen.getByTestId('view-mode');
       expect(viewButton).toBeInTheDocument();
     });
 
     it('should open dropdown when clicked', () => {
       render(<Toolbar {...defaultProps} />);
       
-      const viewButton = screen.getByTitle('View Mode');
+      const viewButton = screen.getByTestId('view-mode');
       fireEvent.click(viewButton);
       
       // Should show menu items (use getAllByText since "Editor" appears in button label too)
@@ -223,21 +223,21 @@ describe('Toolbar', () => {
     it('should show AI actions button', () => {
       render(<Toolbar {...defaultProps} />);
       
-      const aiButton = screen.getByTitle('AI Operations');
+      const aiButton = screen.getByRole('button', { name: /^AI$/ });
       expect(aiButton).toBeInTheDocument();
     });
 
     it('should disable AI button when AI is thinking', () => {
       render(<Toolbar {...defaultProps} isAIThinking={true} />);
       
-      const aiButton = screen.getByTitle('AI Operations');
+      const aiButton = screen.getByRole('button', { name: /^AI$/ });
       expect(aiButton).toBeDisabled();
     });
 
     it('should open AI menu when clicked', () => {
       render(<Toolbar {...defaultProps} />);
       
-      const aiButton = screen.getByTitle('AI Operations');
+      const aiButton = screen.getByRole('button', { name: /^AI$/ });
       fireEvent.click(aiButton);
       
       // Should show AI menu items
@@ -248,7 +248,7 @@ describe('Toolbar', () => {
       const onAIPolish = vi.fn();
       render(<Toolbar {...defaultProps} onAIPolish={onAIPolish} />);
       
-      const aiButton = screen.getByTitle('AI Operations');
+      const aiButton = screen.getByRole('button', { name: /^AI$/ });
       fireEvent.click(aiButton);
       
       const polishButton = screen.getByText('Polish');
@@ -290,15 +290,15 @@ describe('Toolbar', () => {
     it('should use English translations', () => {
       render(<Toolbar {...defaultProps} language="en" />);
       
-      expect(screen.getByTitle('Settings')).toBeInTheDocument();
-      expect(screen.getByTitle('Download')).toBeInTheDocument();
+      expect(screen.getByLabelText('Settings')).toBeInTheDocument();
+      expect(screen.getByLabelText('Download')).toBeInTheDocument();
     });
 
     it('should use Chinese translations', () => {
       render(<Toolbar {...defaultProps} language="zh" />);
       
       // Component should render with Chinese translations
-      expect(screen.getByTitle('设置')).toBeInTheDocument();
+      expect(screen.getByLabelText('设置')).toBeInTheDocument();
     });
   });
 

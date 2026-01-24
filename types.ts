@@ -126,6 +126,7 @@ export interface AIState {
 }
 
 export type AIProvider = 'gemini' | 'ollama' | 'openai' | 'anthropic';
+export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
 export type BackupFrequency = 'never' | 'daily' | 'weekly' | 'monthly';
 
@@ -186,13 +187,16 @@ export interface RAGResultData {
 export interface ToolCall {
   id: string;
   name: string;
-  args: Record<string, any>;
-  result?: any;
+  args: Record<string, JsonValue>;
+  result?: JsonValue;
   status: 'pending' | 'running' | 'success' | 'error';
+  provider?: AIProvider;
   error?: string;
   startTime?: number;
   endTime?: number;
 }
+
+export type ToolEventCallback = (toolCall: ToolCall) => void;
 
 export interface ChatMessage {
   id: string;

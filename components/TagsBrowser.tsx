@@ -12,17 +12,21 @@ import {
   TagStats
 } from '../src/services/tag/tagService';
 import { ConfirmDialog } from './ConfirmDialog';
+import Tooltip from './Tooltip';
+import { translations, Language } from '../utils/translations';
 
 interface TagsBrowserProps {
   files: MarkdownFile[];
   onSelectFile: (fileId: string) => void;
   onFileUpdate?: (file: MarkdownFile) => void;
   setFiles?: React.Dispatch<React.SetStateAction<MarkdownFile[]>>;  // 添加 setFiles 回调
+  language?: Language;
 }
 
 type EditMode = 'none' | 'rename' | 'delete' | 'merge';
 
-export const TagsBrowser: React.FC<TagsBrowserProps> = ({ files, onSelectFile, onFileUpdate, setFiles }) => {
+export const TagsBrowser: React.FC<TagsBrowserProps> = ({ files, onSelectFile, onFileUpdate, setFiles, language = 'en' }) => {
+  const t = translations[language];
   // 当 onFileUpdate 未定义时，本地更新 files 数组
   const handleFileUpdate = (updatedFile: MarkdownFile) => {
     if (onFileUpdate) {
@@ -389,27 +393,31 @@ export const TagsBrowser: React.FC<TagsBrowserProps> = ({ files, onSelectFile, o
 
               {editMode === 'none' && editingTag === null && (
                 <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setEditMode('rename');
-                      setEditingTag(tag);
-                    }}
-                    className="p-0.5 text-slate-400 hover:text-cyan-500 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 rounded"
-                    title="Rename"
-                  >
-                    <Edit2 size={10} />
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDelete(tag);
-                    }}
-                    className="p-0.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
-                    title="Delete"
-                  >
-                    <Trash2 size={10} />
-                  </button>
+                  <Tooltip content={t.tooltips?.rename || "Rename"}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditMode('rename');
+                        setEditingTag(tag);
+                      }}
+                      className="p-0.5 text-slate-400 hover:text-cyan-500 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 rounded"
+                      aria-label={t.tooltips?.rename || "Rename"}
+                    >
+                      <Edit2 size={10} />
+                    </button>
+                  </Tooltip>
+                  <Tooltip content={t.delete || "Delete"}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(tag);
+                      }}
+                      className="p-0.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
+                      aria-label={t.delete || "Delete"}
+                    >
+                      <Trash2 size={10} />
+                    </button>
+                  </Tooltip>
                 </div>
               )}
             </div>
@@ -447,27 +455,33 @@ export const TagsBrowser: React.FC<TagsBrowserProps> = ({ files, onSelectFile, o
         <div className="flex items-center gap-1">
           {editMode === 'none' && (
             <>
-              <button
-                onClick={() => setEditMode('rename')}
-                className="p-1 text-slate-400 hover:text-cyan-500 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 rounded"
-                title="Rename Mode"
-              >
-                <Edit2 size={12} />
-              </button>
-              <button
-                onClick={() => setEditMode('delete')}
-                className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
-                title="Delete Mode"
-              >
-                <Trash2 size={12} />
-              </button>
-              <button
-                onClick={() => setEditMode('merge')}
-                className="p-1 text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded"
-                title="Merge Mode"
-              >
-                <Merge size={12} />
-              </button>
+              <Tooltip content={t.tooltips?.renameMode || "Rename Mode"}>
+                <button
+                  onClick={() => setEditMode('rename')}
+                  className="p-1 text-slate-400 hover:text-cyan-500 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 rounded"
+                  aria-label={t.tooltips?.renameMode || "Rename Mode"}
+                >
+                  <Edit2 size={12} />
+                </button>
+              </Tooltip>
+              <Tooltip content={t.tooltips?.deleteMode || "Delete Mode"}>
+                <button
+                  onClick={() => setEditMode('delete')}
+                  className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
+                  aria-label={t.tooltips?.deleteMode || "Delete Mode"}
+                >
+                  <Trash2 size={12} />
+                </button>
+              </Tooltip>
+              <Tooltip content={t.tooltips?.mergeMode || "Merge Mode"}>
+                <button
+                  onClick={() => setEditMode('merge')}
+                  className="p-1 text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded"
+                  aria-label={t.tooltips?.mergeMode || "Merge Mode"}
+                >
+                  <Merge size={12} />
+                </button>
+              </Tooltip>
             </>
           )}
         </div>

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -12,12 +12,15 @@ import mermaid from 'mermaid';
 import { preprocessWikiLinks, extractBlockReferencesWithContent } from '../src/types/wiki';
 import { MarkdownFile } from '../types';
 import { findFileByWikiLinkTarget } from '../src/services/wiki/wikiLinkService';
+import Tooltip from './Tooltip';
+import { translations, Language } from '../utils/translations';
 
 // --- Types ---
 interface PreviewProps {
   content: string;
   initialScrollRatio?: number;
   files?: MarkdownFile[];
+  language?: Language;
 }
 
 // --- Rehype Plugin to skip mermaid code blocks from highlighting ---
@@ -289,6 +292,77 @@ const extractText = (children: React.ReactNode): string => {
   return '';
 };
 
+const PREVIEW_MARGIN = 12;
+const PREVIEW_FALLBACK_WIDTH = 320;
+const PREVIEW_FALLBACK_HEIGHT = 180;
+
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+const useFloatingPreview = (
+  isOpen: boolean,
+  triggerRef: React.RefObject<HTMLElement>,
+  preferredPlacement: 'top' | 'bottom' = 'bottom'
+) => {
+  const popupRef = useRef<HTMLDivElement>(null);
+  const sizeRef = useRef({ width: PREVIEW_FALLBACK_WIDTH, height: PREVIEW_FALLBACK_HEIGHT });
+  const [popupPos, setPopupPos] = useState({ top: 0, left: 0 });
+  const [arrowOffset, setArrowOffset] = useState(12);
+  const [placement, setPlacement] = useState<'top' | 'bottom'>(preferredPlacement);
+
+  const updatePosition = useCallback(() => {
+    if (!triggerRef.current || typeof window === 'undefined') return;
+
+    const rect = triggerRef.current.getBoundingClientRect();
+    const { width, height } = sizeRef.current;
+
+    const spaceAbove = rect.top;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    let nextPlacement = preferredPlacement;
+
+    if (preferredPlacement === 'top' && spaceAbove < height + PREVIEW_MARGIN && spaceBelow > spaceAbove) {
+      nextPlacement = 'bottom';
+    }
+    if (preferredPlacement === 'bottom' && spaceBelow < height + PREVIEW_MARGIN && spaceAbove > spaceBelow) {
+      nextPlacement = 'top';
+    }
+
+    const preferredTop = nextPlacement === 'top'
+      ? rect.top - height - PREVIEW_MARGIN
+      : rect.bottom + PREVIEW_MARGIN;
+    const preferredLeft = rect.left + rect.width / 2 - width / 2;
+
+    const left = clamp(preferredLeft, PREVIEW_MARGIN, Math.max(PREVIEW_MARGIN, window.innerWidth - width - PREVIEW_MARGIN));
+    const top = clamp(preferredTop, PREVIEW_MARGIN, Math.max(PREVIEW_MARGIN, window.innerHeight - height - PREVIEW_MARGIN));
+
+    const centerX = rect.left + rect.width / 2;
+    const arrowX = clamp(centerX - left - 6, 10, width - 20);
+
+    setPopupPos({ top, left });
+    setArrowOffset(arrowX);
+    setPlacement(nextPlacement);
+  }, [preferredPlacement, triggerRef]);
+
+  useEffect(() => {
+    if (!isOpen || !popupRef.current) return;
+    const rect = popupRef.current.getBoundingClientRect();
+    sizeRef.current = { width: rect.width, height: rect.height };
+    updatePosition();
+  }, [isOpen, updatePosition]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleReposition = () => updatePosition();
+    window.addEventListener('resize', handleReposition);
+    window.addEventListener('scroll', handleReposition, true);
+    return () => {
+      window.removeEventListener('resize', handleReposition);
+      window.removeEventListener('scroll', handleReposition, true);
+    };
+  }, [isOpen, updatePosition]);
+
+  return { popupRef, popupPos, arrowOffset, placement };
+};
+
 // --- WikiLink Preview Component for use in Preview.tsx ---
 interface WikiLinkPreviewProps {
   target: string;
@@ -301,6 +375,8 @@ const WikiLinkPreview: React.FC<WikiLinkPreviewProps> = ({ target, alias, files 
   const [showPreview, setShowPreview] = useState(false);
   const [targetFile, setTargetFile] = useState<{ id: string; name: string; path?: string; content?: string; lastModified?: number } | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const triggerRef = useRef<HTMLSpanElement>(null);
+  const { popupRef, popupPos, arrowOffset, placement } = useFloatingPreview(showPreview, triggerRef, 'bottom');
 
   // 防御性检查：确保 files 是数组
   const safeFiles = files || [];
@@ -369,6 +445,7 @@ const WikiLinkPreview: React.FC<WikiLinkPreviewProps> = ({ target, alias, files 
 
   return (
     <span
+      ref={triggerRef}
       className="relative inline-block"
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
@@ -385,20 +462,30 @@ const WikiLinkPreview: React.FC<WikiLinkPreviewProps> = ({ target, alias, files 
         <span className="border-b border-dashed border-current">{displayText}</span>
       </a>
 
-      {/* Hover Preview Popup - 向右下方显示 */}
-      {showPreview && targetFile && (
-        <span className="absolute top-full left-full ml-2 mt-2 w-72 z-[100] pointer-events-none block">
-          <span className="w-3 h-3 bg-white/95 dark:bg-gray-800/95 rotate-45 absolute left-4 -top-1.5 border-l border-t border-gray-200 dark:border-gray-700 block"></span>
-          <span className="bg-white/95 dark:bg-gray-800/95 backdrop-blur-xl border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl overflow-hidden p-3 block">
-            <span className="flex items-center gap-2 mb-2 pb-2 border-b border-gray-100 dark:border-gray-700 block">
+      {/* Hover Preview Popup - Auto Placement */}
+      {showPreview && targetFile && typeof document !== 'undefined' && ReactDOM.createPortal(
+        <div
+          ref={popupRef}
+          style={{ position: 'fixed', top: popupPos.top, left: popupPos.left, zIndex: 9999 }}
+          className="w-72 pointer-events-none"
+        >
+          <div
+            className={`w-3 h-3 bg-white/95 dark:bg-gray-800/95 rotate-45 absolute border-l border-t border-gray-200 dark:border-gray-700 ${
+              placement === 'top' ? '-bottom-1.5' : '-top-1.5'
+            }`}
+            style={{ left: `${arrowOffset}px` }}
+          />
+          <div className="bg-white/95 dark:bg-gray-800/95 backdrop-blur-xl border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl overflow-hidden p-3">
+            <div className="flex items-center gap-2 mb-2 pb-2 border-b border-gray-100 dark:border-gray-700">
               <FileText size={14} className="text-cyan-500 flex-shrink-0" />
               <span className="text-xs font-bold text-gray-700 dark:text-gray-200 truncate">{targetFile.name}</span>
-            </span>
-            <span className="text-[10px] text-gray-500 dark:text-gray-400 line-clamp-6 leading-relaxed whitespace-pre-wrap block">
-              {targetFile.content.slice(0, 300).replace(/[#*`_~]/g, '')}...
-            </span>
-          </span>
-        </span>
+            </div>
+            <div className="text-[10px] text-gray-500 dark:text-gray-400 line-clamp-6 leading-relaxed whitespace-pre-wrap">
+              {(targetFile.content || '').slice(0, 300).replace(/[#*`_~]/g, '')}...
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </span>
   );
@@ -416,9 +503,9 @@ const BlockReferencePreview: React.FC<BlockReferencePreviewProps> = ({ target, s
   const [showPreview, setShowPreview] = useState(false);
   const [blockContent, setBlockContent] = useState('');
   const [fileExists, setFileExists] = useState(false);
-  const [popupPos, setPopupPos] = useState({ top: 0, left: 0 });
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const triggerRef = useRef<HTMLSpanElement>(null);
+  const { popupRef, popupPos, arrowOffset, placement } = useFloatingPreview(showPreview, triggerRef, 'bottom');
 
   // 防御性检查：确保 files 是数组
   const safeFiles = files || [];
@@ -482,14 +569,6 @@ const BlockReferencePreview: React.FC<BlockReferencePreviewProps> = ({ target, s
   const handleMouseEnter = () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => {
-      // 计算预览框位置
-      if (triggerRef.current) {
-        const rect = triggerRef.current.getBoundingClientRect();
-        setPopupPos({
-          top: rect.bottom + 8,
-          left: rect.left
-        });
-      }
       setShowPreview(true);
     }, 500);
   };
@@ -531,6 +610,7 @@ const BlockReferencePreview: React.FC<BlockReferencePreviewProps> = ({ target, s
       {/* 使用 Portal 渲染到 body，避免父元素拦截滚动事件 */}
       {showPreview && typeof document !== 'undefined' && ReactDOM.createPortal(
         <div
+          ref={popupRef}
           style={{
             position: 'fixed',
             top: popupPos.top,
@@ -542,7 +622,12 @@ const BlockReferencePreview: React.FC<BlockReferencePreviewProps> = ({ target, s
           onMouseLeave={handlePopupLeave}
         >
           {/* 箭头指示器 */}
-          <div className="w-3 h-3 bg-gradient-to-br from-orange-100 to-amber-50 dark:from-orange-900/80 dark:to-amber-900/60 rotate-45 absolute left-4 -top-1.5 border-l border-t border-orange-300 dark:border-orange-700"></div>
+          <div
+            className={`w-3 h-3 bg-gradient-to-br from-orange-100 to-amber-50 dark:from-orange-900/80 dark:to-amber-900/60 rotate-45 absolute border-l border-t border-orange-300 dark:border-orange-700 ${
+              placement === 'top' ? '-bottom-1.5' : '-top-1.5'
+            }`}
+            style={{ left: `${arrowOffset}px` }}
+          />
 
           {/* 主容器 */}
           <div className="bg-gradient-to-br from-white/98 to-orange-50/90 dark:from-cyber-900/98 dark:to-orange-950/80 backdrop-blur-xl border border-orange-300/60 dark:border-orange-700/60 rounded-xl shadow-2xl shadow-orange-500/10 dark:shadow-orange-500/5 overflow-hidden">
@@ -712,7 +797,7 @@ const MermaidRenderer = ({ code, isDark }: { code: string, isDark: boolean }) =>
  * EnhancedCodeBlock: Renders code with Header, Copy button, and Wrap toggle
  * When renderHtml is true and language is 'html', renders the HTML instead of showing code
  */
-const createEnhancedCodeBlock = (renderHtml: boolean) => {
+const createEnhancedCodeBlock = (renderHtml: boolean, tooltips: { copyCode: string; toggleWrap: string }) => {
   return ({ children, className, inline, node, ...props }: any) => {
     const [copied, setCopied] = useState(false);
     const [wrap, setWrap] = useState(false);
@@ -794,20 +879,24 @@ const createEnhancedCodeBlock = (renderHtml: boolean) => {
             </span>
           </div>
           <div className="flex items-center gap-1">
-            <button
-              onClick={() => setWrap(!wrap)}
-              className={`p-1.5 rounded transition-all ${wrap ? 'text-cyan-400' : 'text-slate-500 hover:text-slate-300'}`}
-              title="Toggle Word Wrap"
-            >
-              <WrapText size={16} />
-            </button>
-            <button
-              onClick={handleCopy}
-              className="p-1.5 rounded text-slate-500 hover:text-slate-300 transition-all"
-              title="Copy code"
-            >
-              {copied ? <Check size={16} className="text-emerald-400" /> : <Copy size={16} />}
-            </button>
+            <Tooltip content={tooltips.toggleWrap}>
+              <button
+                onClick={() => setWrap(!wrap)}
+                className={`p-1.5 rounded transition-all ${wrap ? 'text-cyan-400' : 'text-slate-500 hover:text-slate-300'}`}
+                aria-label={tooltips.toggleWrap}
+              >
+                <WrapText size={16} />
+              </button>
+            </Tooltip>
+            <Tooltip content={tooltips.copyCode}>
+              <button
+                onClick={handleCopy}
+                className="p-1.5 rounded text-slate-500 hover:text-slate-300 transition-all"
+                aria-label={tooltips.copyCode}
+              >
+                {copied ? <Check size={16} className="text-emerald-400" /> : <Copy size={16} />}
+              </button>
+            </Tooltip>
           </div>
         </div>
 
@@ -958,7 +1047,9 @@ const EnhancedImage = ({ src, alt, ...props }: any) => {
           <ImageOff size={24} className="text-slate-400 dark:text-slate-500" />
           <span className="flex-1 min-w-0">
             <span className="block text-sm font-medium text-slate-600 dark:text-slate-300">Image failed to load</span>
-            <span className="block text-xs truncate opacity-70" title={src}>{alt || src}</span>
+          <Tooltip content={src}>
+            <span className="block text-xs truncate opacity-70">{alt || src}</span>
+          </Tooltip>
           </span>
         </span>
       </span>
@@ -987,9 +1078,10 @@ const EnhancedImage = ({ src, alt, ...props }: any) => {
  */
 interface TagPreviewProps {
   tag: string;
+  tooltipText: string;
 }
 
-const TagPreview: React.FC<TagPreviewProps> = ({ tag }) => {
+const TagPreview: React.FC<TagPreviewProps> = ({ tag, tooltipText }) => {
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -998,28 +1090,31 @@ const TagPreview: React.FC<TagPreviewProps> = ({ tag }) => {
   };
 
   return (
-    <span
-      onClick={handleClick}
-      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer transition-all
-        bg-gradient-to-r from-violet-100 to-purple-100 dark:from-violet-900/40 dark:to-purple-900/40
-        text-violet-700 dark:text-violet-300
-        border border-violet-200 dark:border-violet-700/50
-        hover:from-violet-200 hover:to-purple-200 dark:hover:from-violet-800/50 dark:hover:to-purple-800/50
-        hover:border-violet-300 dark:hover:border-violet-600
-        hover:shadow-sm hover:scale-105
-        select-none"
-      title={`Click to filter by #${tag}`}
-    >
-      <Tag size={10} className="flex-shrink-0" />
-      <span>{tag}</span>
-    </span>
+    <Tooltip content={tooltipText}>
+      <span
+        onClick={handleClick}
+        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer transition-all
+          bg-gradient-to-r from-violet-100 to-purple-100 dark:from-violet-900/40 dark:to-purple-900/40
+          text-violet-700 dark:text-violet-300
+          border border-violet-200 dark:border-violet-700/50
+          hover:from-violet-200 hover:to-purple-200 dark:hover:from-violet-800/50 dark:hover:to-purple-800/50
+          hover:border-violet-300 dark:hover:border-violet-600
+          hover:shadow-sm hover:scale-105
+          select-none"
+        aria-label={tooltipText}
+      >
+        <Tag size={10} className="flex-shrink-0" />
+        <span>{tag}</span>
+      </span>
+    </Tooltip>
   );
 };
 
 
-export const Preview: React.FC<PreviewProps> = ({ content, initialScrollRatio, files = [] }) => {
+export const Preview: React.FC<PreviewProps> = ({ content, initialScrollRatio, files = [], language = 'en' }) => {
   const [renderHtml, setRenderHtml] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const t = translations[language];
 
   // Simple heuristic to detect if the content contains HTML tags
   const hasHtml = useMemo(() => {
@@ -1088,9 +1183,25 @@ export const Preview: React.FC<PreviewProps> = ({ content, initialScrollRatio, f
               // Override pre to simply pass through children, as our 'code' component handles the block wrapper
               pre: ({ children }) => <>{children}</>,
               // Custom Code Block Handler (with HTML rendering support)
-              code: createEnhancedCodeBlock(renderHtml),
+              code: createEnhancedCodeBlock(renderHtml, {
+                copyCode: t.tooltips?.copyCode || 'Copy code',
+                toggleWrap: t.tooltips?.toggleWordWrap || 'Toggle Word Wrap'
+              }),
               // Custom Image Handler with error fallback
               img: EnhancedImage,
+              input: ({ node, type, checked, ...props }) => {
+                if (type === 'checkbox') {
+                  return (
+                    <input
+                      type="checkbox"
+                      checked={Boolean(checked)}
+                      readOnly
+                      {...props}
+                    />
+                  );
+                }
+                return <input type={type} {...props} />;
+              },
               // Add IDs to headings for outline navigation
               h1: ({ children, ...props }) => {
                 const text = extractText(children);
@@ -1149,7 +1260,10 @@ export const Preview: React.FC<PreviewProps> = ({ content, initialScrollRatio, f
               },
               // Custom Hashtag Handler
               hashtag: ({ 'data-tag': tag }: any) => {
-                return <TagPreview tag={tag} />;
+                const tooltipText = t.tooltips?.filterByTag
+                  ? t.tooltips.filterByTag.replace('{tag}', tag)
+                  : `Click to filter by #${tag}`;
+                return <TagPreview tag={tag} tooltipText={tooltipText} />;
               },
             } as any}
           >

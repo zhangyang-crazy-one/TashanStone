@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { EditorPane, MarkdownFile, CodeMirrorEditorRef } from '../types';
 import { CodeMirrorEditor } from './CodeMirrorEditor';
 import { Preview } from './Preview';
+import Tooltip from './Tooltip';
 import { translations, Language } from '../utils/translations';
 
 interface SplitEditorProps {
@@ -122,18 +123,22 @@ export const SplitEditor: React.FC<SplitEditorProps> = ({
         {/* Panel Title Bar - 只在分屏模式下显示，避免与 EditorTabs 重复 */}
         {splitMode !== 'none' && (
           <div className="h-9 px-4 flex items-center gap-2 border-b border-paper-200 dark:border-cyber-700 bg-paper-100 dark:bg-cyber-800 shrink-0">
-            <button
-              onClick={() => onToggleMode?.(pane.id)}
-              className="flex items-center gap-2 text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300 hover:bg-paper-200 dark:hover:bg-cyber-700 px-2 py-1 rounded transition-colors cursor-pointer"
-              title={pane.mode === 'editor' ? t.preview : t.editor}
-            >
-              {modeIcon}
-              <span className="text-xs font-semibold">{modeLabel}</span>
-            </button>
+            <Tooltip content={pane.mode === 'editor' ? t.preview : t.editor}>
+              <button
+                onClick={() => onToggleMode?.(pane.id)}
+                className="flex items-center gap-2 text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300 hover:bg-paper-200 dark:hover:bg-cyber-700 px-2 py-1 rounded transition-colors cursor-pointer"
+                aria-label={pane.mode === 'editor' ? t.preview : t.editor}
+              >
+                {modeIcon}
+                <span className="text-xs font-semibold">{modeLabel}</span>
+              </button>
+            </Tooltip>
             <div className="h-3 w-px bg-paper-300 dark:bg-cyber-600" />
-            <span className="text-xs text-slate-600 dark:text-slate-300 truncate flex-1" title={file.name}>
-              {file.name}
-            </span>
+            <Tooltip content={file.name} className="flex-1 min-w-0">
+              <span className="text-xs text-slate-600 dark:text-slate-300 truncate flex-1">
+                {file.name}
+              </span>
+            </Tooltip>
           </div>
         )}
 
@@ -142,7 +147,7 @@ export const SplitEditor: React.FC<SplitEditorProps> = ({
           {pane.mode === 'editor' ? (
             <CodeMirrorEditor
               key={`cm-editor-${file.id}-${pane.id}`}
-              ref={codeMirrorRef}
+              ref={isActiveEditorPane ? codeMirrorRef : undefined}
               content={file.content}
               onChange={(content) => onContentChange(file.id, content)}
               onCursorChange={(position) => onCursorChange?.(file.id, position)}
@@ -161,6 +166,7 @@ export const SplitEditor: React.FC<SplitEditorProps> = ({
               key={`preview-${file.id}-${pane.id}`}
               content={file.content}
               files={files}
+              language={language}
               initialScrollRatio={(() => {
                 // 基于光标位置计算滚动比例
                 const cursorPos = getCursorPosition?.(file.id) || file.cursorPosition;
@@ -262,7 +268,7 @@ export const SplitEditor: React.FC<SplitEditorProps> = ({
         } : {}}
         className="min-h-0 min-w-0 overflow-hidden flex flex-col"
       >
-        {renderPane(visiblePanes[0], true)}
+        {renderPane(visiblePanes[0], visiblePanes[0]?.id === activePane)}
       </div>
 
       {/* 分割线和第二个面板 - 只在分屏模式下显示 */}
@@ -305,7 +311,7 @@ export const SplitEditor: React.FC<SplitEditorProps> = ({
             }}
             className="min-h-0 min-w-0 overflow-hidden flex flex-col"
           >
-            {visiblePanes[1] && renderPane(visiblePanes[1], false)}
+            {visiblePanes[1] && renderPane(visiblePanes[1], visiblePanes[1]?.id === activePane)}
           </div>
         </>
       )}

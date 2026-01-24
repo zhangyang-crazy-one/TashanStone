@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Edit3, Save, Star, Eye, FileText, ExternalLink } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import Tooltip from './Tooltip';
 
 export interface MemoryItem {
   id: string;
@@ -39,6 +40,9 @@ const translations = {
     saveSuccess: '保存成功',
     saveFailed: '保存失败',
     contentPlaceholder: '输入记忆内容...',
+    tooltips: {
+      openFile: '打开文件'
+    }
   },
   en: {
     preview: 'Preview',
@@ -53,6 +57,9 @@ const translations = {
     saveSuccess: 'Saved successfully',
     saveFailed: 'Save failed',
     contentPlaceholder: 'Enter memory content...',
+    tooltips: {
+      openFile: 'Open file'
+    }
   }
 };
 
@@ -141,18 +148,20 @@ export const MemoryPreviewModal: React.FC<MemoryPreviewModalProps> = ({
           
           <div className="flex items-center gap-1">
             {/* Star Button */}
-            <button
-              onClick={handleStar}
-              disabled={isStarring || !onStar}
-              className={`p-1.5 rounded-lg transition-colors ${
-                memory.isStarred 
-                  ? 'text-amber-500 bg-amber-100/50 dark:bg-amber-900/30' 
-                  : 'text-slate-400 hover:text-amber-500 hover:bg-amber-100/50 dark:hover:bg-amber-900/30'
-              }`}
-              title={t.star}
-            >
-              <Star size={14} fill={memory.isStarred ? 'currentColor' : 'none'} />
-            </button>
+            <Tooltip content={t.star}>
+              <button
+                onClick={handleStar}
+                disabled={isStarring || !onStar}
+                className={`p-1.5 rounded-lg transition-colors ${
+                  memory.isStarred 
+                    ? 'text-amber-500 bg-amber-100/50 dark:bg-amber-900/30' 
+                    : 'text-slate-400 hover:text-amber-500 hover:bg-amber-100/50 dark:hover:bg-amber-900/30'
+                }`}
+                aria-label={t.star}
+              >
+                <Star size={14} fill={memory.isStarred ? 'currentColor' : 'none'} />
+              </button>
+            </Tooltip>
             
             {/* Close Button */}
             <button
@@ -171,13 +180,15 @@ export const MemoryPreviewModal: React.FC<MemoryPreviewModalProps> = ({
             <span className="text-xs text-slate-600 dark:text-slate-400 truncate flex-1 font-mono">
               {memory.filePath}
             </span>
-            <button
-              onClick={openSourceFile}
-              className="p-1 text-slate-400 hover:text-violet-500 transition-colors"
-              title="Open file"
-            >
-              <ExternalLink size={12} />
-            </button>
+            <Tooltip content={t.tooltips?.openFile || "Open file"}>
+              <button
+                onClick={openSourceFile}
+                className="p-1 text-slate-400 hover:text-violet-500 transition-colors"
+                aria-label={t.tooltips?.openFile || "Open file"}
+              >
+                <ExternalLink size={12} />
+              </button>
+            </Tooltip>
           </div>
         )}
 

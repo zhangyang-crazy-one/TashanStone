@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Plus, Trash2, Edit2, Sparkles, X, Filter, SortAsc, SortDesc, Brain, RefreshCw, AlertCircle } from 'lucide-react';
+import Tooltip from './Tooltip';
 
 interface MemoryDocument {
   id: string;
@@ -206,6 +207,7 @@ const MemoryPanel: React.FC<MemoryPanelProps> = ({
     delete: language === 'zh' ? '删除' : 'Delete',
     edit: language === 'zh' ? '编辑' : 'Edit',
     create: language === 'zh' ? '新建记忆' : 'New Memory',
+    close: language === 'zh' ? '关闭' : 'Close',
     filterAll: language === 'zh' ? '全部' : 'All',
     filterHigh: language === 'zh' ? '高' : 'High',
     filterMedium: language === 'zh' ? '中' : 'Medium',
@@ -233,27 +235,33 @@ const MemoryPanel: React.FC<MemoryPanelProps> = ({
           )}
         </div>
         <div className="flex items-center gap-1">
-          <button
-            onClick={handleRefresh}
-            className="p-1.5 rounded-md text-slate-400 hover:text-violet-500 hover:bg-violet-100/50 dark:hover:bg-violet-900/30 transition-all"
-            title={t.refresh}
-          >
-            <RefreshCw size={15} className={isLoading ? 'animate-spin' : ''} />
-          </button>
-          <button
-            onClick={onCreateMemory}
-            className="p-1.5 rounded-md text-slate-400 hover:text-violet-500 hover:bg-violet-100/50 dark:hover:bg-violet-900/30 transition-all"
-            title={t.create}
-          >
-            <Plus size={18} />
-          </button>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-100/50 dark:hover:bg-red-900/30 transition-all"
-            title={language === 'zh' ? '关闭' : 'Close'}
-          >
-            <X size={18} />
-          </button>
+          <Tooltip content={t.refresh}>
+            <button
+              onClick={handleRefresh}
+              className="p-1.5 rounded-md text-slate-400 hover:text-violet-500 hover:bg-violet-100/50 dark:hover:bg-violet-900/30 transition-all"
+              aria-label={t.refresh}
+            >
+              <RefreshCw size={15} className={isLoading ? 'animate-spin' : ''} />
+            </button>
+          </Tooltip>
+          <Tooltip content={t.create}>
+            <button
+              onClick={onCreateMemory}
+              className="p-1.5 rounded-md text-slate-400 hover:text-violet-500 hover:bg-violet-100/50 dark:hover:bg-violet-900/30 transition-all"
+              aria-label={t.create}
+            >
+              <Plus size={18} />
+            </button>
+          </Tooltip>
+          <Tooltip content={t.close || (language === 'zh' ? '关闭' : 'Close')}>
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-100/50 dark:hover:bg-red-900/30 transition-all"
+              aria-label={t.close || (language === 'zh' ? '关闭' : 'Close')}
+            >
+              <X size={18} />
+            </button>
+          </Tooltip>
         </div>
       </div>
 
@@ -365,28 +373,32 @@ const MemoryPanel: React.FC<MemoryPanelProps> = ({
                     </span>
                     <div className="flex items-center gap-1">
                       {onEditMemory && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onEditMemory(memory);
-                          }}
-                          className="p-1 hover:bg-violet-100 dark:hover:bg-violet-900/30 rounded transition-colors"
-                          title={t.edit}
-                        >
-                          <Edit2 size={12} className="text-violet-500" />
-                        </button>
+                        <Tooltip content={t.edit}>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onEditMemory(memory);
+                            }}
+                            className="p-1 hover:bg-violet-100 dark:hover:bg-violet-900/30 rounded transition-colors"
+                            aria-label={t.edit}
+                          >
+                            <Edit2 size={12} className="text-violet-500" />
+                          </button>
+                        </Tooltip>
                       )}
                       {onDeleteMemory && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDelete(memory.id);
-                          }}
-                          className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
-                          title={t.delete}
-                        >
-                          <Trash2 size={12} className="text-red-500" />
-                        </button>
+                        <Tooltip content={t.delete}>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDelete(memory.id);
+                            }}
+                            className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
+                            aria-label={t.delete}
+                          >
+                            <Trash2 size={12} className="text-red-500" />
+                          </button>
+                        </Tooltip>
                       )}
                     </div>
                   </div>

@@ -1,9 +1,10 @@
 
 import React, { useState, useEffect } from 'react';
-import { Quiz, AIConfig, Theme, MistakeRecord } from '../types';
 import { CheckCircle2, XCircle, HelpCircle, Download, BookOpen, AlertTriangle, ArrowRight, ArrowLeft, RotateCcw, BookmarkX, Trash2, Sparkles, Loader2, CheckSquare, Circle } from 'lucide-react';
+import { Quiz, AIConfig, Theme, MistakeRecord } from '../types';
 import { gradeQuizQuestion, generateQuizExplanation } from '../services/aiService';
 import { srsService } from '../src/services/srs/srsService';
+import Tooltip from './Tooltip';
 import { translations, Language } from '../utils/translations';
 
 interface QuizPanelProps {
@@ -427,13 +428,15 @@ export const QuizPanel: React.FC<QuizPanelProps> = ({ quiz, aiConfig, theme, onC
                     ) : (
                         savedMistakes.map(mistake => (
                             <div key={mistake.id} className="bg-white dark:bg-cyber-800 rounded-xl border border-red-200 dark:border-red-900/50 shadow-sm p-6 relative group">
-                                <button 
-                                    onClick={() => deleteMistake(mistake.id)} 
-                                    className="absolute top-4 right-4 p-2 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
-                                    title="Remove from collection"
-                                >
-                                    <Trash2 size={18} />
-                                </button>
+                                <Tooltip content={t.tooltips?.removeFromCollection || "Remove from collection"}>
+                                    <button 
+                                        onClick={() => deleteMistake(mistake.id)} 
+                                        className="absolute top-4 right-4 p-2 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                                        aria-label={t.tooltips?.removeFromCollection || "Remove from collection"}
+                                    >
+                                        <Trash2 size={18} />
+                                    </button>
+                                </Tooltip>
                                 
                                 <div className="text-xs text-slate-500 mb-2 flex items-center gap-2">
                                     <span className="bg-paper-100 dark:bg-cyber-700 px-2 py-0.5 rounded text-[10px]">{new Date(mistake.timestamp).toLocaleDateString()}</span>
@@ -510,17 +513,21 @@ export const QuizPanel: React.FC<QuizPanelProps> = ({ quiz, aiConfig, theme, onC
                 </div>
             </div>
             <div className="flex gap-2">
-                 <button 
-                    onClick={() => setShowMistakes(true)} 
-                    className="flex items-center gap-2 px-3 py-1.5 text-slate-600 dark:text-slate-300 hover:text-red-500 dark:hover:text-red-400 transition-colors border border-paper-300 dark:border-cyber-600 rounded-md bg-white dark:bg-cyber-800" 
-                    title="View Mistake Collection"
-                >
-                    <BookmarkX size={18} />
-                    <span className="hidden sm:inline text-sm">Mistakes</span>
-                </button>
-                 <button onClick={handleDownload} className="p-2 text-slate-400 hover:text-cyan-500 transition-colors" title="Download Quiz JSON">
-                    <Download size={20} />
-                </button>
+                 <Tooltip content={t.tooltips?.viewMistakes || "View Mistake Collection"}>
+                    <button 
+                      onClick={() => setShowMistakes(true)} 
+                      className="flex items-center gap-2 px-3 py-1.5 text-slate-600 dark:text-slate-300 hover:text-red-500 dark:hover:text-red-400 transition-colors border border-paper-300 dark:border-cyber-600 rounded-md bg-white dark:bg-cyber-800" 
+                      aria-label={t.tooltips?.viewMistakes || "View Mistake Collection"}
+                    >
+                      <BookmarkX size={18} />
+                      <span className="hidden sm:inline text-sm">Mistakes</span>
+                    </button>
+                  </Tooltip>
+                 <Tooltip content={t.tooltips?.downloadQuiz || "Download Quiz JSON"}>
+                  <button onClick={handleDownload} className="p-2 text-slate-400 hover:text-cyan-500 transition-colors" aria-label={t.tooltips?.downloadQuiz || "Download Quiz JSON"}>
+                      <Download size={20} />
+                  </button>
+                 </Tooltip>
                 <button onClick={onClose} className="px-3 py-1.5 rounded-md bg-paper-200 dark:bg-cyber-700 text-slate-600 dark:text-slate-300 hover:bg-paper-300 dark:hover:bg-cyber-600 transition-colors text-sm font-medium">
                     {t.exitQuiz}
                 </button>

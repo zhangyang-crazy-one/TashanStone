@@ -16,6 +16,7 @@ import {
   ChevronLeft
 } from 'lucide-react';
 import { StudyPlan, ReviewTask } from '../types';
+import Tooltip from './Tooltip';
 
 interface LearningRoadmapProps {
   studyPlans: StudyPlan[];
@@ -440,13 +441,15 @@ export const LearningRoadmap = ({
             <div className="lg:col-span-2 bg-[rgb(var(--bg-panel))] rounded-lg border border-[rgb(var(--border-main))] overflow-hidden">
               {/* Calendar Header */}
               <div className="flex items-center justify-between p-4 border-b border-[rgb(var(--border-main))] bg-[rgb(var(--bg-element))]/50">
-                <button
-                  onClick={() => navigateMonth('prev')}
-                  className="p-2 rounded-lg hover:bg-[rgb(var(--bg-element))] text-[rgb(var(--text-secondary))] hover:text-[rgb(var(--text-primary))] transition-colors"
-                  title={t.prevMonth}
-                >
-                  <ChevronLeft size={20} />
-                </button>
+                <Tooltip content={t.prevMonth}>
+                  <button
+                    onClick={() => navigateMonth('prev')}
+                    className="p-2 rounded-lg hover:bg-[rgb(var(--bg-element))] text-[rgb(var(--text-secondary))] hover:text-[rgb(var(--text-primary))] transition-colors"
+                    aria-label={t.prevMonth}
+                  >
+                    <ChevronLeft size={20} />
+                  </button>
+                </Tooltip>
                 <div className="flex items-center gap-3">
                   <h3 className="text-lg font-semibold text-[rgb(var(--text-primary))]">
                     {t.months[selectedDate.getMonth()]} {selectedDate.getFullYear()}
@@ -458,13 +461,15 @@ export const LearningRoadmap = ({
                     {t.goToday}
                   </button>
                 </div>
-                <button
-                  onClick={() => navigateMonth('next')}
-                  className="p-2 rounded-lg hover:bg-[rgb(var(--bg-element))] text-[rgb(var(--text-secondary))] hover:text-[rgb(var(--text-primary))] transition-colors"
-                  title={t.nextMonth}
-                >
-                  <ChevronRight size={20} />
-                </button>
+                <Tooltip content={t.nextMonth}>
+                  <button
+                    onClick={() => navigateMonth('next')}
+                    className="p-2 rounded-lg hover:bg-[rgb(var(--bg-element))] text-[rgb(var(--text-secondary))] hover:text-[rgb(var(--text-primary))] transition-colors"
+                    aria-label={t.nextMonth}
+                  >
+                    <ChevronRight size={20} />
+                  </button>
+                </Tooltip>
               </div>
 
               {/* Weekday Headers */}
@@ -727,16 +732,18 @@ export const LearningRoadmap = ({
                           style={{ width: `${plan.progress}%` }}
                         />
                       </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeletePlan(plan.id);
-                        }}
-                        className="p-2 text-[rgb(var(--text-secondary))] hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"
-                        title={t.deletePlan}
-                      >
-                        <Trash2 size={18} />
-                      </button>
+                      <Tooltip content={t.deletePlan}>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeletePlan(plan.id);
+                          }}
+                          className="p-2 text-[rgb(var(--text-secondary))] hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"
+                          aria-label={t.deletePlan}
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </Tooltip>
                     </div>
                   </div>
 

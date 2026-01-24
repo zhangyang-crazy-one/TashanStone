@@ -91,10 +91,15 @@ const createWikiLinkHoverTooltip = (files: Array<{ id: string; name: string; pat
         if (targetFile) {
           const previewContent = targetFile.content?.slice(0, 200) || 'No preview available';
 
+          const coords = view.coordsAtPos(pos);
+          const spaceAbove = coords ? coords.top : 0;
+          const spaceBelow = coords ? window.innerHeight - coords.bottom : 0;
+          const above = coords ? spaceAbove > spaceBelow : true;
+
           const tooltip: Tooltip = {
             pos: linkStart,
             end: linkEnd,
-            above: true,
+            above,
             arrow: true,
             create: () => {
               const dom = document.createElement('div');
@@ -245,6 +250,13 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorRef, EditorProps>(({
   const mountedRef = useRef(true); // 防止组件卸载后 requestAnimationFrame 执行
   const containerRef = useRef<HTMLDivElement>(null);
   const [isInitializing, setIsInitializing] = useState(true);
+  const initializingRef = useRef(true);
+
+  const stopInitializing = useCallback(() => {
+    if (!initializingRef.current) return;
+    initializingRef.current = false;
+    setIsInitializing(false);
+  }, []);
 
   // 使用 refs 存储最新的回调和状态，避免 extensions 重建
   const onCursorChangeRef = useRef(onCursorChange);
@@ -450,42 +462,48 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorRef, EditorProps>(({
     ...getWikiLinkExtensions(files)
   ], [files]); // 只依赖 files，因为 WikiLink 装饰需要它
 
+  const initialCursorStart = initialCursor?.start ?? null;
+  const initialCursorEnd = initialCursor?.end ?? null;
+
   useEffect(() => {
-    if (!viewRef.current || !initialCursor) return;
+    if (!viewRef.current || initialCursorStart === null || initialCursorEnd === null) return;
 
     const view = viewRef.current;
 
     // 检查是否需要设置光标
     const currentSelection = view.state.selection.main;
     const needsInitialization = !initializedRef.current ||
-      currentSelection.from !== initialCursor.start ||
-      currentSelection.to !== initialCursor.end;
+      currentSelection.from !== initialCursorStart ||
+      currentSelection.to !== initialCursorEnd;
 
-    if (!needsInitialization) return;
+    if (!needsInitialization) {
+      stopInitializing();
+      return;
+    }
 
     initializedRef.current = true;
 
     // 使用 CodeMirror 内置的 scrollIntoView effect
     // 这是正确的方式，它会在适当的时机自动处理滚动
     view.dispatch({
-      selection: { anchor: initialCursor.start, head: initialCursor.end },
-      effects: EditorView.scrollIntoView(initialCursor.start, { y: 'center' })
+      selection: { anchor: initialCursorStart, head: initialCursorEnd },
+      effects: EditorView.scrollIntoView(initialCursorStart, { y: 'center' })
     });
 
     // 短暂延迟后移除初始化状态
     requestAnimationFrame(() => {
-      setIsInitializing(false);
+      stopInitializing();
     });
-  }, [initialCursor]);
+  }, [initialCursorStart, initialCursorEnd, stopInitializing]);
 
   // 强力备用机制：无论如何，在组件挂载短暂延迟后必须显示编辑器
   // 这解决了 viewRef 尚未准备好导致 Mount Effect 失效的问题，防止白屏
   useEffect(() => {
     const timer = setTimeout(() => {
-      setIsInitializing(false);
+      stopInitializing();
     }, 100); // 100ms 兜底
     return () => clearTimeout(timer);
-  }, []);
+  }, [stopInitializing]);
 
   // 同步外部 content 变化到 CodeMirror EditorView
   // 解决 Snippets 插入后内容不更新的问题
@@ -583,7 +601,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorRef, EditorProps>(({
           // 编辑器实例创建后，请求下一帧显示
           requestAnimationFrame(() => {
             if (mountedRef.current) {
-              setIsInitializing(false);
+              stopInitializing();
             }
           });
 

@@ -2,6 +2,7 @@
 import React from 'react';
 import { X, FileText, Eye, Edit3 } from 'lucide-react';
 import { EditorPane, MarkdownFile } from '../types';
+import Tooltip from './Tooltip';
 import { translations, Language } from '../utils/translations';
 
 interface EditorTabsProps {
@@ -54,38 +55,42 @@ export const EditorTabs: React.FC<EditorTabsProps> = ({
             </span>
 
             {/* 模式切换 */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleMode(pane.id);
-              }}
-              className={`
-                p-1.5 rounded transition-all flex-shrink-0
-                ${isActive
-                  ? 'hover:bg-paper-100 dark:hover:bg-cyber-800 text-cyan-600 dark:text-cyan-400'
-                  : 'hover:bg-paper-200 dark:hover:bg-cyber-600 text-slate-400'}
-              `}
-              title={pane.mode === 'editor' ? t.preview : t.editor}
-            >
-              {pane.mode === 'editor' ? <Eye size={13} /> : <Edit3 size={13} />}
-            </button>
+            <Tooltip content={pane.mode === 'editor' ? t.preview : t.editor}>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleMode(pane.id);
+                }}
+                className={`
+                  p-1.5 rounded transition-all flex-shrink-0
+                  ${isActive
+                    ? 'hover:bg-paper-100 dark:hover:bg-cyber-800 text-cyan-600 dark:text-cyan-400'
+                    : 'hover:bg-paper-200 dark:hover:bg-cyber-600 text-slate-400'}
+                `}
+                aria-label={pane.mode === 'editor' ? t.preview : t.editor}
+              >
+                {pane.mode === 'editor' ? <Eye size={13} /> : <Edit3 size={13} />}
+              </button>
+            </Tooltip>
 
             {/* 关闭按钮 */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onClosePane(pane.id);
-              }}
-              className={`
-                p-1.5 rounded transition-all flex-shrink-0
-                ${isActive
-                  ? 'hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-600 dark:hover:text-red-400'
-                  : 'hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-600'}
-              `}
-              title="Close Tab"
-            >
-              <X size={13} />
-            </button>
+            <Tooltip content={t.tooltips?.closeTab || "Close Tab"}>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClosePane(pane.id);
+                }}
+                className={`
+                  p-1.5 rounded transition-all flex-shrink-0
+                  ${isActive
+                    ? 'hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-600 dark:hover:text-red-400'
+                    : 'hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-600'}
+                `}
+                aria-label={t.tooltips?.closeTab || "Close Tab"}
+              >
+                <X size={13} />
+              </button>
+            </Tooltip>
           </div>
         );
       })}

@@ -2,13 +2,14 @@
 
 import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { X, Save, Server, Cpu, Key, Globe, Palette, Upload, Trash2, Check, Download, Plus, Languages, MessageSquare, ChevronDown, Wrench, AlertTriangle, Play, Terminal, Code2, Box, Keyboard, Command, Shield, Eye, EyeOff, FolderOpen, Tag, RefreshCw, Database, Trash, Zap } from 'lucide-react';
-import { AIConfig, AppTheme, AppShortcut } from '../types';
-import { translations, Language } from '../utils/translations';
+import { AIConfig, AppTheme, AppShortcut, JsonValue } from '../types';
 import { generateAIResponse, VirtualMCPClient } from '../services/aiService';
 import { mcpService } from '../src/services/mcpService';
 import { DEFAULT_CONTEXT_CONFIG } from '../src/services/context/types';
 import { memoryCleanupService, type CleanupStats, type CleanupReport } from '../src/services/context/memoryCleanupService';
 import { memoryAutoUpgradeService, type MemoryAutoUpgradeConfig } from '../src/services/context/memoryAutoUpgrade';
+import Tooltip from './Tooltip';
+import { translations, Language } from '../utils/translations';
 
 interface AISettingsModalProps {
   isOpen: boolean;
@@ -237,9 +238,9 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
     setTestLog([`> Sending prompt: "${testPrompt}"...`]);
 
     try {
-      const mockToolCallback = async (name: string, args: any) => {
+      const mockToolCallback = async (name: string, args: Record<string, JsonValue>) => {
         setTestLog(prev => [...prev, `\n✅ Tool '${name}' triggered!`, `📦 Arguments:\n${JSON.stringify(args, null, 2)}`]);
-        return { success: true, message: "Test execution simulated." };
+        return { success: true, message: "Test execution simulated." } as JsonValue;
       };
 
       await generateAIResponse(
@@ -969,13 +970,15 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                               {tool.name}
                             </span>
                           </div>
-                          <button
-                            onClick={() => { setTestTool(tool.name); setTestPrompt(`Use ${tool.name} to...`); setTestLog([]); }}
-                            className="p-1.5 rounded-md bg-paper-100 dark:bg-cyber-700 hover:bg-emerald-500 hover:text-white text-slate-500 transition-all"
-                            title="Test this tool"
-                          >
-                            <Play size={12} fill="currentColor" />
-                          </button>
+                          <Tooltip content={t.tooltips?.testTool || "Test this tool"}>
+                            <button
+                              onClick={() => { setTestTool(tool.name); setTestPrompt(`Use ${tool.name} to...`); setTestLog([]); }}
+                              className="p-1.5 rounded-md bg-paper-100 dark:bg-cyber-700 hover:bg-emerald-500 hover:text-white text-slate-500 transition-all"
+                              aria-label={t.tooltips?.testTool || "Test this tool"}
+                            >
+                              <Play size={12} fill="currentColor" />
+                            </button>
+                          </Tooltip>
                         </div>
                         {/* Full description - no line clamp */}
                         <p className="text-xs text-slate-500 dark:text-slate-400 whitespace-pre-wrap">
@@ -1520,28 +1523,30 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                       </div>
 
                       {theme.isCustom && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (showConfirmDialog) {
-                              showConfirmDialog(
-                                t.deleteTheme,
-                                `Delete theme "${theme.name}"?`,
-                                () => onDeleteTheme(theme.id),
-                                'danger',
-                                'Delete',
-                                'Cancel'
-                              );
-                            } else {
-                              // Fallback to native confirm if showConfirmDialog not provided
-                              if (confirm(`Delete theme "${theme.name}"?`)) onDeleteTheme(theme.id);
-                            }
-                          }}
-                          className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                          title={t.deleteTheme}
-                        >
-                          <Trash2 size={16} />
-                        </button>
+                        <Tooltip content={t.deleteTheme}>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (showConfirmDialog) {
+                                showConfirmDialog(
+                                  t.deleteTheme,
+                                  `Delete theme "${theme.name}"?`,
+                                  () => onDeleteTheme(theme.id),
+                                  'danger',
+                                  'Delete',
+                                  'Cancel'
+                                );
+                              } else {
+                                // Fallback to native confirm if showConfirmDialog not provided
+                                if (confirm(`Delete theme "${theme.name}"?`)) onDeleteTheme(theme.id);
+                              }
+                            }}
+                            className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                            aria-label={t.deleteTheme}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </Tooltip>
                       )}
                     </div>
                   ))}

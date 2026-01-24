@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, RotateCcw, Trash2, Plus, Clock, FileText, Loader2, Check, Sparkles } from 'lucide-react';
+import Tooltip from '../Tooltip';
 
 interface Checkpoint {
   id: string;
@@ -202,14 +203,16 @@ export const CheckpointDrawer: React.FC<CheckpointDrawerProps> = ({
 
                   <div className="flex items-center gap-1 mt-3 pt-2 border-t border-neutral-700/50">
                     {onCreateMemory && (
-                      <button
-                        onClick={() => onCreateMemory(checkpoint.id)}
-                        className="flex items-center justify-center gap-1 px-2 py-1 text-xs text-violet-400 hover:bg-violet-500/10 rounded transition-colors"
-                        title={language === 'zh' ? '创建记忆' : 'Create Memory'}
-                      >
-                        <Sparkles className="w-3 h-3" />
-                        Memory
-                      </button>
+                      <Tooltip content={language === 'zh' ? '创建记忆' : 'Create Memory'}>
+                        <button
+                          onClick={() => onCreateMemory(checkpoint.id)}
+                          className="flex items-center justify-center gap-1 px-2 py-1 text-xs text-violet-400 hover:bg-violet-500/10 rounded transition-colors"
+                          aria-label={language === 'zh' ? '创建记忆' : 'Create Memory'}
+                        >
+                          <Sparkles className="w-3 h-3" />
+                          Memory
+                        </button>
+                      </Tooltip>
                     )}
                     <button
                       onClick={() => handleRestore(checkpoint.id)}
