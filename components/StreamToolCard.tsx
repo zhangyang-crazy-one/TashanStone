@@ -1,6 +1,6 @@
 import React, { memo, useCallback, useMemo, useState } from 'react';
 import { AlertTriangle, Check, CheckCheck, ChevronDown, Copy, Loader2, Sparkles, Terminal } from 'lucide-react';
-import { JsonValue } from '../types';
+import { AIProvider, JsonValue } from '../types';
 import Tooltip from './Tooltip';
 import { HtmlHighlight, JsonHighlight } from './SyntaxHighlight';
 import { deepParseJson, deepParseObject, formatWithSyntaxHighlight, ParsedToolResult } from '../utils/jsonHelpers';
@@ -10,6 +10,11 @@ interface StreamToolCardProps {
   status: 'executing' | 'success' | 'error';
   result?: string;
   args?: Record<string, JsonValue>;
+  partialArgs?: Record<string, JsonValue>;
+  rawArgs?: string;
+  isStreaming?: boolean;
+  progress?: number;
+  provider?: AIProvider;
   language?: Language;
 }
 export const StreamToolCard: React.FC<StreamToolCardProps> = memo(({
@@ -17,6 +22,10 @@ export const StreamToolCard: React.FC<StreamToolCardProps> = memo(({
   status,
   result,
   args,
+  partialArgs,
+  rawArgs,
+  isStreaming = false,
+  progress,
   language = 'en'
 }) => {
   const [isExpanded, setIsExpanded] = useState(status === 'executing');
@@ -98,6 +107,12 @@ export const StreamToolCard: React.FC<StreamToolCardProps> = memo(({
   };
   const config = statusConfig[actualStatus];
   const outputValue = parsedData.outputValue;
+  const inputArgs = args && Object.keys(args).length > 0
+    ? args
+    : partialArgs && Object.keys(partialArgs).length > 0
+      ? partialArgs
+      : undefined;
+  const showRawArgs = !inputArgs && rawArgs;
   return (
     <div
       className={`
@@ -149,6 +164,11 @@ export const StreamToolCard: React.FC<StreamToolCardProps> = memo(({
                   {toolName}
                 </span>
               </Tooltip>
+              {isStreaming && actualStatus === 'executing' && (
+                <span className="text-[10px] uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                  streaming
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-2 mt-0.5">
               <span className={`
@@ -203,29 +223,45 @@ export const StreamToolCard: React.FC<StreamToolCardProps> = memo(({
         ${isExpanded ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0'}
       `}>
         <div className="border-t border-slate-200 dark:border-white/10">
-          {args && Object.keys(args).length > 0 && (
+          {(inputArgs || showRawArgs) && (
             <div className="px-4 py-3 border-b border-slate-200 dark:border-white/10">
               <div className="text-[10px] uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2 flex items-center gap-1">
                 <Sparkles size={10} />
-                INPUT
+                {inputArgs ? 'INPUT' : 'INPUT (partial)'}
               </div>
-              <div className="flex flex-wrap gap-2">
-                {Object.entries(args).map(([key, value]) => (
+              {inputArgs ? (
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(inputArgs).map(([key, value]) => (
+                    <div
+                      key={key}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg
+                        bg-slate-100 dark:bg-slate-800/50
+                        border border-slate-200 dark:border-slate-700/50
+                        text-xs font-mono"
+                    >
+                      <span className="text-slate-500 dark:text-slate-400">{key}</span>
+                      <span className="text-slate-400 dark:text-slate-500">=</span>
+                      <span className={`${config.text} truncate max-w-[150px]`}>
+                        {typeof value === 'string' ? `"${value}"` : JSON.stringify(value)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : showRawArgs ? (
+                <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-700/50">
+                  <pre className="whitespace-pre-wrap break-words text-xs leading-relaxed font-mono text-slate-300">
+                    {rawArgs}
+                  </pre>
+                </div>
+              ) : null}
+              {typeof progress === 'number' && (
+                <div className="mt-2 h-1 rounded-full bg-slate-200 dark:bg-slate-700/40 overflow-hidden">
                   <div
-                    key={key}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg
-                      bg-slate-100 dark:bg-slate-800/50
-                      border border-slate-200 dark:border-slate-700/50
-                      text-xs font-mono"
-                  >
-                    <span className="text-slate-500 dark:text-slate-400">{key}</span>
-                    <span className="text-slate-400 dark:text-slate-500">=</span>
-                    <span className={`${config.text} truncate max-w-[150px]`}>
-                      {typeof value === 'string' ? `"${value}"` : JSON.stringify(value)}
-                    </span>
-                  </div>
-                ))}
-              </div>
+                    className={`h-full bg-gradient-to-r ${config.gradient}`}
+                    style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
+                  />
+                </div>
+              )}
             </div>
           )}
           {result && (

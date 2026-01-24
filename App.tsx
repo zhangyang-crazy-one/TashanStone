@@ -26,7 +26,7 @@ import { StudyPlanPanel } from './components/StudyPlanPanel';
 import { LinkInsertModal } from './components/LinkInsertModal';
 import { CompactMemoryPrompt } from './components/CompactMemoryPrompt';
 import { ViewMode, AIState, MarkdownFile, AIConfig, ChatMessage, GraphData, AppTheme, Quiz, RAGStats, OCRStats, AppShortcut, RAGResultData, EditorPane, Snippet, StudyPlan, ExamResult, KnowledgePointStat, QuestionBank, QuizQuestion, LinkInsertResult, CodeMirrorEditorRef, MemoryCandidate, ToolCall, JsonValue } from './types';
-import { polishContent, expandContent, generateAIResponse, generateAIResponseStream, generateKnowledgeGraph, synthesizeKnowledgeBase, generateQuiz, generateMindMap, extractQuizFromRawContent, compactConversation, searchPermanentMemories, autoCreateMemoryFromSession, initPersistentMemory, getEmbedding, analyzeSessionForMemory, createMemoryFromCandidate } from './services/aiService';
+import { polishContent, expandContent, generateAIResponse, generateAIResponseStream, generateKnowledgeGraph, synthesizeKnowledgeBase, generateQuiz, generateMindMap, extractQuizFromRawContent, compactConversation, searchPermanentMemories, autoCreateMemoryFromSession, initPersistentMemory, getEmbedding, analyzeSessionForMemory, createMemoryFromCandidate, supportsNativeStreamingToolCalls } from './services/aiService';
 import { applyTheme, getAllThemes, getSavedThemeId, saveCustomTheme, deleteCustomTheme, DEFAULT_THEMES, getLastUsedThemeIdForMode } from './services/themeService';
 import { readDirectory, readDirectoryEnhanced, saveFileToDisk, processPdfFile, extractTextFromFile, parseCsvToQuiz, isExtensionSupported } from './services/fileService';
 import { VectorStore } from './services/ragService';
@@ -39,6 +39,7 @@ import { AlertCircle, CheckCircle2 } from 'lucide-react';
 import { undo as codeMirrorUndo, redo as codeMirrorRedo } from '@codemirror/commands';
 import { translations, Language } from './utils/translations';
 import { encodeBase64Utf8 } from './utils/base64';
+import { useStreamingToolCalls } from '@/src/hooks/useStreamingToolCalls';
 
 const generateId = () => Math.random().toString(36).substring(2, 11);
 
@@ -95,6 +96,279 @@ const DEFAULT_SHORTCUTS: AppShortcut[] = [
   { id: 'quick_link', label: 'Quick Link', keys: 'Ctrl+Alt+L', actionId: 'quick_link' }
 ];
 
+const STREAM_UPDATE_INTERVAL_MS = 40;
+
+interface ToolCallExtraction {
+  name: string;
+  args: Record<string, JsonValue>;
+  startIndex: number;
+  endIndex: number;
+}
+
+interface StreamMessageUpdate {
+  messageId: string;
+  content: string;
+}
+
+const isPlainObject = (value: JsonValue): value is Record<string, JsonValue> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const sanitizeJsonString = (raw: string): string => {
+  let result = '';
+  let inString = false;
+  let escape = false;
+  for (const char of raw) {
+    if (escape) {
+      result += char;
+      escape = false;
+      continue;
+    }
+    if (char === '\\') {
+      result += char;
+      if (inString) {
+        escape = true;
+      }
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      result += char;
+      continue;
+    }
+    if (inString && (char === '\n' || char === '\r')) {
+      result += '\\n';
+      continue;
+    }
+    result += char;
+  }
+  return result;
+};
+
+const parseJsonValue = (raw: string): JsonValue | null => {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return null;
+  }
+  try {
+    return JSON.parse(trimmed) as JsonValue;
+  } catch {
+  }
+  const sanitized = sanitizeJsonString(trimmed);
+  if (sanitized !== trimmed) {
+    try {
+      return JSON.parse(sanitized) as JsonValue;
+    } catch {
+    }
+  }
+  return null;
+};
+
+const normalizeToolArgs = (raw: JsonValue | undefined): Record<string, JsonValue> => {
+  if (typeof raw === 'string') {
+    return parseJsonArgs(raw) ?? { raw };
+  }
+  if (isPlainObject(raw)) {
+    return raw;
+  }
+  if (raw !== undefined) {
+    return { input: raw };
+  }
+  return {};
+};
+
+const parseToolCallPayload = (raw: string): { name: string; args: Record<string, JsonValue> } | null => {
+  const parsed = parseJsonValue(raw);
+  if (!parsed || !isPlainObject(parsed)) {
+    const toolNameMatch = raw.match(/"tool"\s*:\s*"([^"]+)"/) || raw.match(/"name"\s*:\s*"([^"]+)"/);
+    if (!toolNameMatch) {
+      return null;
+    }
+    const toolName = toolNameMatch[1].trim();
+    if (!toolName) {
+      return null;
+    }
+
+    const extractArgsBlock = (key: 'arguments' | 'args' | 'input'): string | null => {
+      const keyIndex = raw.indexOf(`"${key}"`);
+      if (keyIndex === -1) {
+        return null;
+      }
+      const braceStart = raw.indexOf('{', keyIndex);
+      if (braceStart === -1) {
+        return null;
+      }
+      let depth = 0;
+      let inString = false;
+      let escape = false;
+      for (let i = braceStart; i < raw.length; i++) {
+        const char = raw[i];
+        if (escape) {
+          escape = false;
+          continue;
+        }
+        if (char === '\\') {
+          if (inString) {
+            escape = true;
+          }
+          continue;
+        }
+        if (char === '"') {
+          inString = !inString;
+          continue;
+        }
+        if (!inString) {
+          if (char === '{') {
+            depth += 1;
+          } else if (char === '}') {
+            depth -= 1;
+            if (depth === 0) {
+              return raw.slice(braceStart, i + 1);
+            }
+          }
+        }
+      }
+      return null;
+    };
+
+    const argsBlock = extractArgsBlock('arguments') || extractArgsBlock('args') || extractArgsBlock('input');
+    if (argsBlock) {
+      const parsedArgs = parseJsonValue(argsBlock);
+      if (parsedArgs && isPlainObject(parsedArgs)) {
+        return { name: toolName, args: parsedArgs };
+      }
+    }
+
+    return { name: toolName, args: {} };
+  }
+  const toolName = typeof parsed.tool === 'string'
+    ? parsed.tool
+    : typeof parsed.name === 'string'
+      ? parsed.name
+      : '';
+  if (!toolName.trim()) {
+    return null;
+  }
+  const rawArgs = (parsed.arguments ?? parsed.args ?? parsed.input) as JsonValue | undefined;
+  return { name: toolName.trim(), args: normalizeToolArgs(rawArgs) };
+};
+
+const parseJsonArgs = (raw: string): Record<string, JsonValue> | null => {
+  const parsed = parseJsonValue(raw);
+  if (parsed && isPlainObject(parsed)) {
+    return parsed;
+  }
+  return null;
+};
+
+const parseInvokeArguments = (raw: string): Record<string, JsonValue> => {
+  const args: Record<string, JsonValue> = {};
+  const paramPattern = /<parameter\s+name="([^"]+)">([\s\S]*?)<\/parameter>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = paramPattern.exec(raw)) !== null) {
+    args[match[1]] = match[2].trim();
+  }
+  if (Object.keys(args).length > 0) {
+    return args;
+  }
+  return parseJsonArgs(raw) ?? { raw: raw.trim() };
+};
+
+const extractToolCallsFromText = (text: string): ToolCallExtraction[] => {
+  const matches: ToolCallExtraction[] = [];
+
+  const overlaps = (start: number, end: number) =>
+    matches.some(existing =>
+      (start >= existing.startIndex && start < existing.endIndex) ||
+      (end > existing.startIndex && end <= existing.endIndex)
+    );
+
+  const addMatch = (start: number, end: number, name: string, args: Record<string, JsonValue>) => {
+    if (!name.trim()) {
+      return;
+    }
+    if (overlaps(start, end)) {
+      return;
+    }
+    matches.push({ name: name.trim(), args, startIndex: start, endIndex: end });
+  };
+
+  const toolCallBlock = /```tool_call\s*\n([\s\S]*?)```/gi;
+  for (const match of text.matchAll(toolCallBlock)) {
+    if (match.index === undefined) continue;
+    const rawJson = (match[1] || '').trim().replace(/,\s*}/, '}').replace(/,\s*]/, ']');
+    const parsed = parseToolCallPayload(rawJson);
+    if (parsed) {
+      addMatch(match.index, match.index + match[0].length, parsed.name, parsed.args);
+    }
+  }
+
+  const xmlToolCall = /<(?:minimax:)?tool_call>\s*<invoke\s+name="([^"]+)">([\s\S]*?)<\/invoke>\s*<\/(?:minimax:)?tool_call>/gi;
+  for (const match of text.matchAll(xmlToolCall)) {
+    if (match.index === undefined) continue;
+    const toolName = (match[1] || '').trim();
+    addMatch(match.index, match.index + match[0].length, toolName, parseInvokeArguments(match[2] || ''));
+  }
+
+  const jsonToolCall = /<(?:minimax:)?tool_call>\s*([\s\S]*?)<\/(?:minimax:)?tool_call>/gi;
+  for (const match of text.matchAll(jsonToolCall)) {
+    if (match.index === undefined) continue;
+    const inner = match[1] || '';
+    if (inner.includes('<invoke')) {
+      continue;
+    }
+    const parsed = parseToolCallPayload(inner);
+    if (parsed) {
+      addMatch(match.index, match.index + match[0].length, parsed.name, parsed.args);
+    }
+  }
+
+  const simpleInvoke = /<invoke\s+name="([^"]+)">([\s\S]*?)<\/invoke>/gi;
+  for (const match of text.matchAll(simpleInvoke)) {
+    if (match.index === undefined) continue;
+    const toolName = (match[1] || '').trim();
+    addMatch(match.index, match.index + match[0].length, toolName, parseInvokeArguments(match[2] || ''));
+  }
+
+  const toolResultBlock = /<tool_result\b([^>]*)>([\s\S]*?)<\/tool_result>/gi;
+  for (const match of text.matchAll(toolResultBlock)) {
+    if (match.index === undefined) continue;
+    const attrs = match[1] || '';
+    const toolNameMatch = attrs.match(/name=(?:"([^"]+)"|'([^']+)')/i);
+    const toolName = (toolNameMatch?.[1] || toolNameMatch?.[2] || '').trim();
+    if (!toolName) {
+      continue;
+    }
+    const typeMatch = attrs.match(/type=(?:"([^"]+)"|'([^']+)')/i);
+    const typeValue = (typeMatch?.[1] || typeMatch?.[2] || '').toLowerCase();
+    const urlMatch = attrs.match(/url=(?:"([^"]+)"|'([^']+)')/i);
+    const urlValue = (urlMatch?.[1] || urlMatch?.[2] || '').trim();
+
+    let args: Record<string, JsonValue> = {};
+    if (urlValue) {
+      args = { url: urlValue };
+    } else {
+      const content = (match[2] || '').trim();
+      const parsedValue = parseJsonValue(content);
+      if (parsedValue !== null) {
+        args = isPlainObject(parsedValue) ? parsedValue : { input: parsedValue };
+      } else if (content) {
+        args = typeValue === 'url' ? { url: content } : { text: content };
+      }
+    }
+    addMatch(match.index, match.index + match[0].length, toolName, args);
+  }
+
+  const markdownTool = /🔧\s*\*\*(?:Tool|Executing):\s*([^*]+)\*\*(?:\.\.\.)?(?:\s*```json\s*([\s\S]*?)```)?/gi;
+  for (const match of text.matchAll(markdownTool)) {
+    if (match.index === undefined) continue;
+    const toolName = (match[1] || '').trim();
+    const args = parseJsonArgs(match[2] || '') ?? {};
+    addMatch(match.index, match.index + match[0].length, toolName, args);
+  }
+
+  return matches.sort((a, b) => a.startIndex - b.startIndex);
+};
+
 interface FileHistory {
   past: string[];
   future: string[];
@@ -112,6 +386,11 @@ const App: React.FC = () => {
     return t.length > 0 ? t : DEFAULT_THEMES;
   });
   const [activeThemeId, setActiveThemeId] = useState<string>(() => getSavedThemeId());
+  const {
+    upsertToolCall: upsertStreamingToolCall,
+    resetToolCalls: resetStreamingToolCalls,
+    getToolCalls: getStreamingToolCalls
+  } = useStreamingToolCalls();
 
   const buildToolResultBlock = (toolName: string, toolResult: { success: boolean; formatted: string }) => {
     const encoded = encodeBase64Utf8(toolResult.formatted);
@@ -354,6 +633,62 @@ const App: React.FC = () => {
       return saved ? JSON.parse(saved) : [];
     } catch (e) { return []; }
   });
+
+  const streamMessageUpdateRef = useRef<StreamMessageUpdate | null>(null);
+  const streamFrameRef = useRef<number | null>(null);
+  const lastStreamYieldRef = useRef<number>(0);
+
+  const scheduleStreamingMessageUpdate = useCallback((messageId: string, content: string) => {
+    const pending = streamMessageUpdateRef.current;
+    if (!pending || pending.messageId !== messageId) {
+      streamMessageUpdateRef.current = { messageId, content };
+    } else {
+      pending.content = content;
+    }
+
+    if (streamFrameRef.current !== null) return;
+
+    const scheduleFrame = typeof requestAnimationFrame === 'function'
+      ? requestAnimationFrame
+      : (callback: FrameRequestCallback) => setTimeout(callback, 16);
+
+    streamFrameRef.current = scheduleFrame(() => {
+      const latest = streamMessageUpdateRef.current;
+      streamMessageUpdateRef.current = null;
+      streamFrameRef.current = null;
+      if (!latest) return;
+      setChatMessages(prev => prev.map(msg =>
+        msg.id === latest.messageId ? { ...msg, content: latest.content } : msg
+      ));
+    });
+  }, []);
+
+  const flushStreamingMessageUpdate = useCallback(() => {
+    const pending = streamMessageUpdateRef.current;
+    if (!pending) return;
+    if (streamFrameRef.current !== null) {
+      const cancelFrame = typeof cancelAnimationFrame === 'function'
+        ? cancelAnimationFrame
+        : (frameId: number) => clearTimeout(frameId);
+      cancelFrame(streamFrameRef.current);
+      streamFrameRef.current = null;
+    }
+    streamMessageUpdateRef.current = null;
+    setChatMessages(prev => prev.map(msg =>
+      msg.id === pending.messageId ? { ...msg, content: pending.content } : msg
+    ));
+  }, []);
+
+  const maybeYieldToBrowser = useCallback(async () => {
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    if (now - lastStreamYieldRef.current < STREAM_UPDATE_INTERVAL_MS) {
+      return;
+    }
+    lastStreamYieldRef.current = now;
+    await new Promise<void>(resolve => {
+      requestAnimationFrame(() => resolve());
+    });
+  }, []);
 
   // UI State
   const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.Split);
@@ -1702,11 +2037,12 @@ const App: React.FC = () => {
   };
 
   // Streaming control handler
-  const handleStopStreaming = () => {
+  const handleStopStreaming = useCallback(() => {
+    flushStreamingMessageUpdate();
     abortControllerRef.current?.abort();
     setIsStreaming(false);
     setAiState(prev => ({ ...prev, isThinking: false }));
-  };
+  }, [flushStreamingMessageUpdate]);
 
   // -- AI Actions Wrappers for Shortcuts --
   const performPolish = async () => {
@@ -2036,35 +2372,81 @@ const App: React.FC = () => {
         setIsStreaming(true);
         setAiState({ isThinking: false, message: null, error: null });
         abortControllerRef.current = new AbortController();
+        lastStreamYieldRef.current = 0;
 
-        let fullContent = '';
-        let conversationHistory = [...historyForAI];
-        let currentPrompt = text;
+        const baseToolInstruction = `You are ZhangNote AI assistant with the following tools:
+- **read_file**: Read specific file content (use when user wants to read/view a file)
+- **search_files**: Search keyword across all files (use when user wants to find/search text)
+- **search_knowledge_base**: Semantic search in notes (use for general questions about notes)
+- **create_file**, **update_file**, **delete_file**: File management`;
 
-        // 超时保护配置
-        const MAX_TOTAL_TIME = 10 * 60 * 1000; // 10分钟总超时
-        const ROUND_TIMEOUT = 60 * 1000; // 60秒单轮超时
-        const startTime = Date.now();
-        let toolRound = 0;
+        const supportsNativeStreamingTools = supportsNativeStreamingToolCalls(aiConfig);
 
         try {
-          while (true) {
-            toolRound++;
-            const roundStartTime = Date.now();
+          if (supportsNativeStreamingTools) {
+            resetStreamingToolCalls();
 
-            // 检查总超时
-            if (Date.now() - startTime > MAX_TOTAL_TIME) {
-              fullContent += '\n\n⏱️ **提示**: 对话已运行10分钟，自动结束以保护系统资源。如需继续，请发送新消息。';
-              console.log('[Stream] Total timeout reached after 10 minutes');
-              break;
-            }
+            const handleToolEvent = (toolCall: ToolCall) => {
+              upsertStreamingToolCall(toolCall);
+              const updatedToolCalls = getStreamingToolCalls();
+              setChatMessages(prev => prev.map(msg =>
+                msg.id === aiMessageId
+                  ? { ...msg, toolCalls: updatedToolCalls }
+                  : msg
+              ));
+            };
 
-            console.log(`[Stream] Tool round ${toolRound}`);
+            const nativeToolCallback = async (name: string, args: Record<string, JsonValue>) => {
+              const result = await executeToolUnified(name, args);
+              return result.result;
+            };
 
             const stream = generateAIResponseStream(
-              currentPrompt,
+              text,
               aiConfig,
-              `You are ZhangNote AI assistant. You can use tools to help users.
+              baseToolInstruction,
+              [],
+              undefined,
+              historyForAI,
+              nativeToolCallback,
+              handleToolEvent
+            );
+
+            let streamingContent = '';
+            for await (const chunk of stream) {
+              streamingContent += chunk;
+              scheduleStreamingMessageUpdate(aiMessageId, streamingContent);
+              await maybeYieldToBrowser();
+            }
+            flushStreamingMessageUpdate();
+          } else {
+            let fullContent = '';
+            let conversationHistory = [...historyForAI];
+            let currentPrompt = text;
+
+            // 超时保护配置
+            const MAX_TOTAL_TIME = 10 * 60 * 1000; // 10分钟总超时
+            const ROUND_TIMEOUT = 60 * 1000; // 60秒单轮超时
+            const startTime = Date.now();
+            let toolRound = 0;
+
+            while (true) {
+              toolRound++;
+              const roundStartTime = Date.now();
+
+              // 检查总超时
+              if (Date.now() - startTime > MAX_TOTAL_TIME) {
+                fullContent += '\n\n⏱️ **提示**: 对话已运行10分钟，自动结束以保护系统资源。如需继续，请发送新消息。';
+                console.log('[Stream] Total timeout reached after 10 minutes');
+                break;
+              }
+
+              console.log(`[Stream] Tool round ${toolRound}`);
+
+              const stream = generateAIResponseStream(
+                currentPrompt,
+                aiConfig,
+                `You are ZhangNote AI assistant. You can use tools to help users.
 
 ## Built-in Tools (应用内工具 - 最高优先级)
 
@@ -2106,132 +2488,124 @@ IMPORTANT:
 - Output COMPLETE JSON in tool_call block
 - After tool result, continue your response
 - End with [TASK_COMPLETE] when fully done`,
-              [],
-              undefined,
-              conversationHistory
-            );
+                [],
+                undefined,
+                conversationHistory
+              );
 
-            let roundContent = '';
-            let pendingToolCall = '';
-            let inToolBlock = false;
-            let toolBlockStart = -1;
+              let roundContent = '';
+              let inToolBlock = false;
 
-            for await (const chunk of stream) {
-              roundContent += chunk;
+              for await (const chunk of stream) {
+                roundContent += chunk;
 
-              // 渐进式检测 tool_call 块
-              const toolBlockMatch = roundContent.match(/```tool_call\s*\n/);
-              if (toolBlockMatch && !inToolBlock) {
-                inToolBlock = true;
-                toolBlockStart = toolBlockMatch.index! + toolBlockMatch[0].length;
-              }
-
-              // 更新显示（过滤掉不完整的 tool_call 块）
-              let displayContent = fullContent + roundContent;
-              if (inToolBlock) {
-                // 检查是否有完整的 tool_call 块
-                const completeMatch = roundContent.match(/```tool_call\s*\n([\s\S]*?)```/);
-                if (!completeMatch) {
-                  // 隐藏不完整的 tool_call 块，显示执行提示
-                  const beforeBlock = roundContent.substring(0, roundContent.indexOf('```tool_call'));
-                  displayContent = fullContent + beforeBlock + '\n\n🔧 *Preparing tool call...*';
-                }
-              }
-
-              setChatMessages(prev => prev.map(msg =>
-                msg.id === aiMessageId
-                  ? { ...msg, content: displayContent }
-                  : msg
-              ));
-            }
-
-            // 流结束后检查完整的 tool_call
-            const toolCallMatch = roundContent.match(/```tool_call\s*\n([\s\S]*?)```/);
-
-            // 检测 AI 主动结束信号
-            if (roundContent.includes('[TASK_COMPLETE]')) {
-              console.log('[Stream] AI signaled task completion');
-              const cleanContent = roundContent.replace(/\[TASK_COMPLETE\]/g, '').trim();
-              fullContent += cleanContent;
-              break;
-            }
-
-            // 检查单轮超时
-            const roundDuration = Date.now() - roundStartTime;
-            if (roundDuration > ROUND_TIMEOUT) {
-              console.warn(`[Stream] Round ${toolRound} exceeded timeout (${roundDuration}ms)`);
-              fullContent += roundContent + '\n\n⚠️ **警告**: 本轮响应超时（60秒），已自动结束。';
-              break;
-            }
-
-            if (toolCallMatch) {
-              try {
-                // 尝试解析 JSON
-                let jsonStr = toolCallMatch[1].trim();
-
-                // 修复常见的 JSON 问题
-                jsonStr = jsonStr.replace(/,\s*}/, '}').replace(/,\s*]/, ']');
-
-                const toolCall = JSON.parse(jsonStr);
-                const toolName = toolCall.tool || toolCall.name;
-                const toolArgs = (toolCall.arguments || toolCall.args || {}) as Record<string, JsonValue>;
-
-                if (!toolName) {
-                  throw new Error('Missing tool name');
+                // 渐进式检测 tool_call 块
+                const toolBlockMatch = roundContent.match(/```tool_call\s*\n/);
+                if (toolBlockMatch && !inToolBlock) {
+                  inToolBlock = true;
                 }
 
-                // 显示执行状态
-                const beforeTool = roundContent.substring(0, roundContent.indexOf('```tool_call'));
-                setChatMessages(prev => prev.map(msg =>
-                  msg.id === aiMessageId
-                    ? { ...msg, content: fullContent + beforeTool + `\n\n🔧 **Executing: ${toolName}**...\n` }
-                    : msg
-                ));
+                // 更新显示（过滤掉不完整的 tool_call 块）
+                let displayContent = fullContent + roundContent;
+                if (inToolBlock) {
+                  // 检查是否有完整的 tool_call 块
+                  const completeMatch = roundContent.match(/```tool_call\s*\n([\s\S]*?)```/);
+                  if (!completeMatch) {
+                    // 隐藏不完整的 tool_call 块，显示执行提示
+                    const beforeBlock = roundContent.substring(0, roundContent.indexOf('```tool_call'));
+                    displayContent = fullContent + beforeBlock + '\n\n🔧 *Preparing tool call...*';
+                  }
+                }
 
-                // 执行工具
-                const toolResult = await executeToolUnified(toolName, toolArgs);
+                scheduleStreamingMessageUpdate(aiMessageId, displayContent);
+                await maybeYieldToBrowser();
+              }
 
-                // 更新内容
-                const toolResultBlock = buildToolResultBlock(toolName, toolResult);
-                const afterToolContent = `${beforeTool}\n\n${toolResultBlock}\n`;
+              // 流结束后检查完整的 tool_call
+              flushStreamingMessageUpdate();
+              const toolCallMatches = extractToolCallsFromText(roundContent);
 
-                fullContent += afterToolContent;
+              // 检测 AI 主动结束信号
+              if (roundContent.includes('[TASK_COMPLETE]')) {
+                console.log('[Stream] AI signaled task completion');
+                const cleanContent = roundContent.replace(/\[TASK_COMPLETE\]/g, '').trim();
+                fullContent += cleanContent;
+                break;
+              }
 
-                setChatMessages(prev => prev.map(msg =>
-                  msg.id === aiMessageId
-                    ? { ...msg, content: fullContent }
-                    : msg
-                ));
+              // 检查单轮超时
+              const roundDuration = Date.now() - roundStartTime;
+              if (roundDuration > ROUND_TIMEOUT) {
+                console.warn(`[Stream] Round ${toolRound} exceeded timeout (${roundDuration}ms)`);
+                fullContent += roundContent + '\n\n⚠️ **警告**: 本轮响应超时（60秒），已自动结束。';
+                break;
+              }
 
-                // 更新对话历史继续下一轮
-                conversationHistory = [
-                  ...conversationHistory,
-                  { id: generateId(), role: 'assistant' as const, content: roundContent, timestamp: Date.now() },
-                  { id: generateId(), role: 'user' as const, content: `Tool "${toolName}" result:\n${toolResult.formatted}\n\nContinue with the next step or provide your final answer.`, timestamp: Date.now() }
-                ];
-                currentPrompt = `Tool "${toolName}" result:\n${toolResult.formatted}\n\nContinue with the next step or provide your final answer.`;
+              if (toolCallMatches.length > 0) {
+                try {
+                  let cursor = 0;
+                  let appendedContent = '';
+                  const toolResultsForHistory: string[] = [];
 
-              } catch (parseError) {
-                console.error('[Stream] Tool call parse error:', parseError, toolCallMatch[1]);
-                // 解析失败，显示原始内容并停止循环
+                  for (const toolCall of toolCallMatches) {
+                    const toolName = toolCall.name;
+                    const toolArgs = toolCall.args;
+                    const beforeTool = roundContent.substring(cursor, toolCall.startIndex);
+
+                    setChatMessages(prev => prev.map(msg =>
+                      msg.id === aiMessageId
+                        ? { ...msg, content: fullContent + appendedContent + beforeTool + `\n\n🔧 **Executing: ${toolName}**...\n` }
+                        : msg
+                    ));
+
+                    const toolResult = await executeToolUnified(toolName, toolArgs);
+                    const toolResultBlock = buildToolResultBlock(toolName, toolResult);
+
+                    appendedContent += `${beforeTool}\n\n${toolResultBlock}\n`;
+                    toolResultsForHistory.push(`Tool "${toolName}" result:\n${toolResult.formatted}`);
+                    cursor = toolCall.endIndex;
+                  }
+
+                  const tailContent = roundContent.substring(cursor);
+                  appendedContent += tailContent;
+                  fullContent += appendedContent;
+
+                  setChatMessages(prev => prev.map(msg =>
+                    msg.id === aiMessageId
+                      ? { ...msg, content: fullContent }
+                      : msg
+                  ));
+
+                  const toolResultsMessage = `${toolResultsForHistory.join('\n\n')}\n\nContinue with the next step or provide your final answer.`;
+                  conversationHistory = [
+                    ...conversationHistory,
+                    { id: generateId(), role: 'assistant' as const, content: roundContent, timestamp: Date.now() },
+                    { id: generateId(), role: 'user' as const, content: toolResultsMessage, timestamp: Date.now() }
+                  ];
+                  currentPrompt = toolResultsMessage;
+                } catch (parseError) {
+                  console.error('[Stream] Tool call parse error:', parseError);
+                  // 解析失败，显示原始内容并停止循环
+                  fullContent += roundContent;
+                  break;
+                }
+              } else {
+                // 没有工具调用，正常结束
                 fullContent += roundContent;
                 break;
               }
-            } else {
-              // 没有工具调用，正常结束
-              fullContent += roundContent;
-              break;
             }
+
+            // 最终更新
+            setChatMessages(prev => prev.map(msg =>
+              msg.id === aiMessageId
+                ? { ...msg, content: fullContent }
+                : msg
+            ));
           }
 
-          // 最终更新
-          setChatMessages(prev => prev.map(msg =>
-            msg.id === aiMessageId
-              ? { ...msg, content: fullContent }
-              : msg
-          ));
-
         } finally {
+          flushStreamingMessageUpdate();
           setIsStreaming(false);
           abortControllerRef.current = null;
         }

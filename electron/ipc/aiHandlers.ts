@@ -87,7 +87,7 @@ export function registerAiHandlers(): void {
     });
 
     // Stream fetch for AI responses - Real streaming via IPC events
-    ipcMain.handle('ai:streamFetch', async (event, url: string, options: RequestInit): Promise<{ streamId: string; status: number; headers: Record<string, string> }> => {
+    ipcMain.handle('ai:streamFetch', async (event, url: string, options: RequestInit): Promise<{ streamId: string; status: number; headers: Record<string, string>; errorText?: string }> => {
         const streamId = `stream_${++streamIdCounter}_${Date.now()}`;
 
         try {
@@ -107,10 +107,6 @@ export function registerAiHandlers(): void {
                 body: options.body as string
             });
 
-            if (!response.body) {
-                throw new Error('No response body');
-            }
-
             const headers: Record<string, string> = {};
             response.headers.forEach((value, key) => {
                 headers[key] = value;
@@ -118,6 +114,33 @@ export function registerAiHandlers(): void {
 
             // Get the sender's BrowserWindow
             const webContents = event.sender;
+
+            if (response.status >= 400) {
+                let errorText = '';
+                try {
+                    errorText = await response.text();
+                } catch (readError) {
+                    logger.warn('AI stream error body read failed', { streamId, error: readError });
+                }
+
+                logger.error('AI stream request failed', {
+                    streamId,
+                    status: response.status,
+                    url: fetchUrl,
+                    errorText: errorText.slice(0, 2000)
+                });
+
+                return {
+                    streamId,
+                    status: response.status,
+                    headers,
+                    errorText
+                };
+            }
+
+            if (!response.body) {
+                throw new Error('No response body');
+            }
 
             // Start reading stream in background
             (async () => {

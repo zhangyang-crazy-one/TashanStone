@@ -5,7 +5,13 @@ import { AIConfig, MarkdownFile, GraphData, Quiz, QuizQuestion, ChatMessage, Jso
 import { mcpService } from "../src/services/mcpService";
 import { platformFetch, platformStreamFetch } from "../src/services/ai/platformFetch";
 import { ToolAnalyzer, createToolAnalyzer } from "./toolSelector";
-import { getToolCallAdapter } from "./toolCallAdapters";
+import {
+  createStreamingAdapterState,
+  getStreamingToolCallAdapter,
+  getToolCallAdapter,
+  StreamingAdapterState,
+  StreamingToolCallAdapter
+} from "./toolCallAdapters";
 import {
   ContextManager,
   createContextManager,
@@ -546,9 +552,24 @@ const searchFilesParams = {
   }
 };
 
+type OpenAIToolDefinition = {
+    type: 'function';
+    function: {
+        name: string;
+        description?: string;
+        parameters: Record<string, unknown>;
+    };
+};
+
+type AnthropicToolDefinition = {
+    name: string;
+    description?: string;
+    input_schema: Record<string, unknown>;
+};
+
 // --- Function Declarations for OpenAI / Ollama (JSON Schema format) ---
 
-const OPENAI_TOOLS = [
+const OPENAI_TOOLS: OpenAIToolDefinition[] = [
   {
     type: "function",
     function: {
@@ -629,7 +650,7 @@ const OPENAI_TOOLS = [
 // --- RAG Tool Declarations ---
 
 // OpenAI/Ollama format
-const SEARCH_KNOWLEDGE_BASE_TOOL = {
+const SEARCH_KNOWLEDGE_BASE_TOOL: OpenAIToolDefinition = {
   type: "function",
   function: {
     name: "search_knowledge_base",
@@ -643,6 +664,111 @@ const SEARCH_KNOWLEDGE_BASE_TOOL = {
       required: ["query"]
     }
   }
+};
+
+const buildOpenAIToolsForPrompt = (prompt: string, mcpClient?: IMCPClient): OpenAIToolDefinition[] => {
+    const allTools = mcpClient ? mcpClient.getTools() : [];
+    const toolAnalyzer = createToolAnalyzer();
+    const analysisResult = toolAnalyzer.analyze(allTools, prompt || '');
+    const dynamicTools = toolAnalyzer.selectByIntent(allTools, analysisResult.intent);
+    const mappedDynamic = dynamicTools.map<OpenAIToolDefinition>(tool => ({
+        type: 'function',
+        function: {
+            name: tool.name,
+            description: tool.description,
+            parameters: (tool.parameters || {}) as Record<string, unknown>
+        }
+    }));
+    return [...OPENAI_TOOLS, SEARCH_KNOWLEDGE_BASE_TOOL, ...mappedDynamic];
+};
+
+const buildAnthropicToolsForPrompt = (prompt: string, mcpClient?: IMCPClient): AnthropicToolDefinition[] => {
+    const allTools = mcpClient ? mcpClient.getTools() : [];
+    const toolAnalyzer = createToolAnalyzer();
+    const analysisResult = toolAnalyzer.analyze(allTools, prompt || '');
+    const dynamicTools = toolAnalyzer.selectByIntent(allTools, analysisResult.intent);
+    const mappedDynamic = dynamicTools.map(tool => ({
+        name: tool.name,
+        description: tool.description,
+        input_schema: (tool.parameters || { type: 'object', properties: {} }) as Record<string, unknown>
+    }));
+
+    const baseToolsAnthropic: AnthropicToolDefinition[] = [
+        {
+            name: 'create_file',
+            description: 'Create a new file with the given name and content.',
+            input_schema: {
+                type: 'object',
+                properties: {
+                    filename: { type: 'string', description: "Name of the file" },
+                    content: { type: 'string', description: "Content of the file" }
+                },
+                required: ['filename', 'content']
+            }
+        },
+        {
+            name: 'update_file',
+            description: 'Update an existing file.',
+            input_schema: {
+                type: 'object',
+                properties: {
+                    filename: { type: 'string', description: "Name of the file" },
+                    content: { type: 'string', description: "New content" }
+                },
+                required: ['filename', 'content']
+            }
+        },
+        {
+            name: 'delete_file',
+            description: 'Delete a file by name.',
+            input_schema: {
+                type: 'object',
+                properties: {
+                    filename: { type: 'string', description: "Name of the file" }
+                },
+                required: ['filename']
+            }
+        },
+        {
+            name: 'read_file',
+            description: 'Read the content of a specific file. Optionally specify line range.',
+            input_schema: {
+                type: 'object',
+                properties: {
+                    path: { type: 'string', description: "File name or path" },
+                    startLine: { type: 'number', description: "Optional: Start line (1-indexed)" },
+                    endLine: { type: 'number', description: "Optional: End line (1-indexed)" }
+                },
+                required: ['path']
+            }
+        },
+        {
+            name: 'search_files',
+            description: 'Search for a keyword across all files.',
+            input_schema: {
+                type: 'object',
+                properties: {
+                    keyword: { type: 'string', description: "Keyword to search" },
+                    filePattern: { type: 'string', description: "Optional: File name pattern" }
+                },
+                required: ['keyword']
+            }
+        },
+        {
+            name: 'search_knowledge_base',
+            description: "Search the user's indexed notes and documents.",
+            input_schema: {
+                type: 'object',
+                properties: {
+                    query: { type: 'string', description: "Search query" },
+                    maxResults: { type: 'number', description: "Max results" }
+                },
+                required: ['query']
+            }
+        }
+    ];
+
+    return [...baseToolsAnthropic, ...mappedDynamic];
 };
 
 // Gemini format (using @google/genai's Type)
@@ -707,6 +833,283 @@ const extractJson = (text: string): string => {
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // --- Streaming Response Helpers ---
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
+const shouldLogAnthropicStream = (): boolean => {
+  const globalAny = globalThis as Record<string, unknown>;
+  if (globalAny.__TASHAN_STREAM_DEBUG__ === true) {
+    return true;
+  }
+  if (typeof process !== 'undefined' && process.env?.TASHAN_STREAM_DEBUG === '1') {
+    return true;
+  }
+  return false;
+};
+
+const formatAnthropicStreamEvent = (event: unknown): string => {
+  if (!isRecord(event)) {
+    return JSON.stringify({ type: 'unknown', rawType: typeof event });
+  }
+
+  const summary: Record<string, unknown> = {};
+  const eventType = typeof event.type === 'string' ? event.type : 'unknown';
+  summary.type = eventType;
+
+  if (typeof event.index === 'number') {
+    summary.index = event.index;
+  }
+  if (typeof event.stop_reason === 'string') {
+    summary.stop_reason = event.stop_reason;
+  }
+
+  if (isRecord(event.delta)) {
+    const delta = event.delta;
+    if (typeof delta.stop_reason === 'string') {
+      summary.delta_stop_reason = delta.stop_reason;
+    }
+    if (typeof delta.text === 'string') {
+      summary.delta_text_len = delta.text.length;
+    }
+    if (typeof delta.partial_json === 'string') {
+      summary.delta_partial_json_len = delta.partial_json.length;
+      summary.delta_partial_json_tail = delta.partial_json.slice(-160);
+    }
+  }
+
+  if (isRecord(event.content_block)) {
+    const block = event.content_block;
+    if (typeof block.type === 'string') {
+      summary.content_block_type = block.type;
+    }
+    if (typeof block.name === 'string') {
+      summary.tool_name = block.name;
+    }
+    if (typeof block.id === 'string') {
+      summary.tool_id = block.id;
+    }
+    if (block.type === 'tool_use') {
+      const input = block.input;
+      if (typeof input === 'string') {
+        summary.tool_input_len = input.length;
+      } else if (isRecord(input) || Array.isArray(input)) {
+        summary.tool_input_len = JSON.stringify(input).length;
+      }
+    }
+  }
+
+  return JSON.stringify(summary);
+};
+
+const formatAnthropicStreamLine = (line: string): string => {
+  const trimmed = line.trim();
+  const summary: Record<string, unknown> = {
+    length: trimmed.length,
+    prefix: trimmed.slice(0, 16)
+  };
+
+  if (trimmed.startsWith('event:')) {
+    summary.event = trimmed.slice(6).trim();
+  }
+
+  if (trimmed.startsWith('data:')) {
+    const data = trimmed.replace(/^data:\s*/, '');
+    const typeMatch = data.match(/\"type\"\s*:\s*\"([^\"]+)\"/);
+    if (typeMatch) {
+      summary.json_type = typeMatch[1];
+    }
+    summary.data_head = data.slice(0, 60);
+    summary.data_tail = data.slice(-60);
+  }
+
+  return JSON.stringify(summary);
+};
+
+const shouldLogOpenAIStream = (): boolean => shouldLogAnthropicStream();
+
+const formatOpenAIStreamEvent = (event: unknown): string => {
+  if (!isRecord(event)) {
+    return JSON.stringify({ type: 'unknown', rawType: typeof event });
+  }
+
+  const summary: Record<string, unknown> = { type: 'openai' };
+  if (typeof event.id === 'string') {
+    summary.id = event.id;
+  }
+
+  const choices = Array.isArray(event.choices) ? event.choices : [];
+  const firstChoice = choices[0];
+  if (isRecord(firstChoice)) {
+    if (typeof firstChoice.finish_reason === 'string') {
+      summary.finish_reason = firstChoice.finish_reason;
+    }
+    const delta = isRecord(firstChoice.delta) ? firstChoice.delta : null;
+    if (delta) {
+      if (typeof delta.content === 'string') {
+        summary.delta_content_len = delta.content.length;
+      }
+      if (Array.isArray(delta.tool_calls)) {
+        summary.tool_calls = delta.tool_calls.length;
+        const toolNames = delta.tool_calls
+          .map(call => (isRecord(call) && isRecord(call.function) && typeof call.function.name === 'string')
+            ? call.function.name
+            : null)
+          .filter((name): name is string => Boolean(name))
+          .slice(0, 3);
+        if (toolNames.length > 0) {
+          summary.tool_names = toolNames;
+        }
+        const argLengths = delta.tool_calls
+          .map(call => (isRecord(call) && isRecord(call.function) && typeof call.function.arguments === 'string')
+            ? call.function.arguments.length
+            : null)
+          .filter((len): len is number => typeof len === 'number')
+          .slice(0, 3);
+        if (argLengths.length > 0) {
+          summary.tool_args_len = argLengths;
+        }
+      }
+    }
+  }
+
+  if (isRecord(event.error)) {
+    const error = event.error;
+    if (typeof error.message === 'string') {
+      summary.error_message = error.message;
+    }
+    if (typeof error.type === 'string') {
+      summary.error_type = error.type;
+    }
+  }
+
+  return JSON.stringify(summary);
+};
+
+const formatOpenAIStreamLine = (line: string): string => {
+  const trimmed = line.trim();
+  const summary: Record<string, unknown> = {
+    length: trimmed.length,
+    prefix: trimmed.slice(0, 16)
+  };
+
+  if (trimmed.startsWith('event:')) {
+    summary.event = trimmed.slice(6).trim();
+  }
+
+  if (trimmed.startsWith('data:')) {
+    const data = trimmed.replace(/^data:\s*/, '');
+    summary.is_done = data === '[DONE]';
+    summary.data_head = data.slice(0, 60);
+    summary.data_tail = data.slice(-60);
+  }
+
+  return JSON.stringify(summary);
+};
+
+const extractLastUrl = (text: string): string | null => {
+  const matches = text.match(/https?:\/\/[^\s"'<>]+/g);
+  if (!matches || matches.length === 0) {
+    return null;
+  }
+  return matches[matches.length - 1];
+};
+
+const applyToolCallFallbackArgs = (toolCall: ToolCall, contextText: string): ToolCall => {
+  if (toolCall.name !== 'navigate_page' && toolCall.name !== 'new_page') {
+    return toolCall;
+  }
+
+  const urlValue = toolCall.args?.url;
+  const hasUrl = typeof urlValue === 'string' && urlValue.trim().length > 0;
+  if (hasUrl) {
+    return toolCall;
+  }
+
+  const fallbackUrl = extractLastUrl(contextText);
+  if (!fallbackUrl) {
+    return toolCall;
+  }
+
+  const nextArgs: Record<string, JsonValue> = { url: fallbackUrl };
+  return {
+    ...toolCall,
+    args: nextArgs,
+    rawArgs: toolCall.rawArgs ?? JSON.stringify(nextArgs)
+  };
+};
+
+const ensureJsonArguments = (rawArgs: string | undefined, args: Record<string, JsonValue> | undefined): string => {
+  if (typeof rawArgs === 'string' && rawArgs.trim().length > 0) {
+    try {
+      JSON.parse(rawArgs);
+      return rawArgs;
+    } catch {
+    }
+  }
+  return JSON.stringify(args ?? {});
+};
+
+const isMiniMaxCompatible = (config: AIConfig): boolean => {
+  const baseUrl = (config.baseUrl || '').toLowerCase();
+  const model = (config.model || '').toLowerCase();
+  return baseUrl.includes('minimax') || baseUrl.includes('minimaxi') || model.includes('minimax');
+};
+
+const isOpenAICompatibleEndpoint = (config: AIConfig): boolean => {
+  const baseUrl = (config.baseUrl || '').toLowerCase();
+  if (!baseUrl) {
+    return false;
+  }
+  return !baseUrl.includes('api.openai.com');
+};
+
+const buildOpenAIToolCallMessage = (
+  toolCallPayload: Array<Record<string, unknown>>,
+  accumulatedText: string,
+  config: AIConfig
+): Record<string, unknown> => {
+  const message: Record<string, unknown> = {
+    role: 'assistant',
+    tool_calls: toolCallPayload
+  };
+
+  if (accumulatedText.trim()) {
+    message.content = accumulatedText;
+  } else if (isOpenAICompatibleEndpoint(config)) {
+    // Some OpenAI-compatible endpoints reject null content values.
+    message.content = '';
+  } else {
+    message.content = null;
+  }
+
+  return message;
+};
+
+export const supportsNativeStreamingToolCalls = (config: AIConfig): boolean => {
+  if (config.provider === 'openai') {
+    return true;
+  }
+  if (config.provider === 'anthropic') {
+    return !isMiniMaxCompatible(config);
+  }
+  return false;
+};
+
+interface OpenAIStreamOptions {
+  tools?: OpenAIToolDefinition[];
+  messagesOverride?: Array<Record<string, unknown>>;
+  streamingAdapter?: StreamingToolCallAdapter;
+  adapterState?: StreamingAdapterState;
+  toolEventCallback?: ToolEventCallback;
+}
+
+interface AnthropicStreamOptions {
+  tools?: AnthropicToolDefinition[];
+  messagesOverride?: Array<Record<string, unknown>>;
+  streamingAdapter?: StreamingToolCallAdapter;
+  adapterState?: StreamingAdapterState;
+  toolEventCallback?: ToolEventCallback;
+}
 
 /**
  * Stream Gemini response
@@ -837,14 +1240,17 @@ async function* streamAnthropic(
   prompt: string,
   config: AIConfig,
   systemInstruction?: string,
-  conversationHistory?: ChatMessage[]
+  conversationHistory?: ChatMessage[],
+  options?: AnthropicStreamOptions
 ): AsyncGenerator<string, void, unknown> {
   const baseUrl = config.baseUrl || 'https://api.anthropic.com';
   const endpoint = `${baseUrl.replace(/\/$/, '')}/v1/messages`;
 
-  const messages: any[] = [];
+  const messages: Array<Record<string, unknown>> = options?.messagesOverride
+    ? [...options.messagesOverride]
+    : [];
 
-  if (conversationHistory && conversationHistory.length > 0) {
+  if (!options?.messagesOverride && conversationHistory && conversationHistory.length > 0) {
     for (const msg of conversationHistory) {
       if (msg.role === 'user') {
         messages.push({ role: 'user', content: msg.content });
@@ -854,15 +1260,18 @@ async function* streamAnthropic(
     }
   }
 
-  messages.push({ role: 'user', content: prompt });
+  if (!options?.messagesOverride) {
+    messages.push({ role: 'user', content: prompt });
+  }
 
   // 🔧 修复: 当 modelOutputLimit 未设置时，自动从 modelContextLimit 计算
   const MODEL_LIMIT = config.contextEngine?.modelContextLimit ?? 200000;
   const MAX_OUTPUT_TOKENS = config.contextEngine?.modelOutputLimit ?? 
                             Math.floor(MODEL_LIMIT * 0.08) ?? 4096;
+  const logStreamEvents = shouldLogAnthropicStream();
   
   try {
-    const requestBody: any = {
+    const requestBody: Record<string, unknown> = {
       model: config.model || 'claude-sonnet-4-20250514',
       max_tokens: MAX_OUTPUT_TOKENS,
       messages,
@@ -873,7 +1282,11 @@ async function* streamAnthropic(
       requestBody.system = systemInstruction;
     }
 
-    const options = {
+    if (options?.tools && options.tools.length > 0) {
+      requestBody.tools = options.tools;
+    }
+
+    const requestOptions = {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -885,18 +1298,33 @@ async function* streamAnthropic(
 
     // Use platformStreamFetch for true streaming in Electron
     let buffer = '';
-    for await (const chunk of platformStreamFetch(endpoint, options)) {
+    for await (const chunk of platformStreamFetch(endpoint, requestOptions)) {
       buffer += chunk;
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
 
       for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6).trim();
+        if (line.startsWith('data:') || line.startsWith('event:')) {
+          if (logStreamEvents) {
+            console.info('[AnthropicStreamRaw]', formatAnthropicStreamLine(line));
+          }
+        }
+        if (line.startsWith('data:')) {
+          const data = line.replace(/^data:\s*/, '').trim();
           if (data === '[DONE]') continue;
 
           try {
             const json = JSON.parse(data);
+            if (logStreamEvents) {
+              console.info('[AnthropicStreamDebug]', formatAnthropicStreamEvent(json));
+            }
+            if (options?.streamingAdapter && options.adapterState) {
+              options.streamingAdapter.parseStreamingChunk(json, options.adapterState);
+              const toolCalls = options.streamingAdapter.getToolCalls(options.adapterState);
+              for (const toolCall of toolCalls) {
+                options.toolEventCallback?.(toolCall);
+              }
+            }
             // Anthropic SSE format: content_block_delta with delta.text
             if (json.type === 'content_block_delta' && json.delta?.text) {
               yield json.delta.text;
@@ -909,11 +1337,28 @@ async function* streamAnthropic(
     }
 
     // Process any remaining buffer
-    if (buffer.trim() && buffer.startsWith('data: ')) {
-      const data = buffer.slice(6).trim();
+    const remaining = buffer.trim();
+    if (remaining) {
+      if (logStreamEvents && (remaining.startsWith('data:') || remaining.startsWith('event:'))) {
+        console.info('[AnthropicStreamRaw]', formatAnthropicStreamLine(remaining));
+      }
+      if (!remaining.startsWith('data:')) {
+        return;
+      }
+      const data = remaining.replace(/^data:\s*/, '').trim();
       if (data !== '[DONE]') {
         try {
           const json = JSON.parse(data);
+          if (logStreamEvents) {
+            console.info('[AnthropicStreamDebug]', formatAnthropicStreamEvent(json));
+          }
+          if (options?.streamingAdapter && options.adapterState) {
+            options.streamingAdapter.parseStreamingChunk(json, options.adapterState);
+            const toolCalls = options.streamingAdapter.getToolCalls(options.adapterState);
+            for (const toolCall of toolCalls) {
+              options.toolEventCallback?.(toolCall);
+            }
+          }
           if (json.type === 'content_block_delta' && json.delta?.text) {
             yield json.delta.text;
           }
@@ -934,15 +1379,21 @@ async function* streamOpenAICompatible(
   prompt: string,
   config: AIConfig,
   systemInstruction?: string,
-  conversationHistory?: ChatMessage[]
+  conversationHistory?: ChatMessage[],
+  options?: OpenAIStreamOptions
 ): AsyncGenerator<string, void, unknown> {
   const baseUrl = config.baseUrl || 'https://api.openai.com/v1';
   const endpoint = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
+  const logStreamEvents = shouldLogOpenAIStream();
 
-  const messages: any[] = [];
-  if (systemInstruction) messages.push({ role: 'system', content: systemInstruction });
+  const messages: Array<Record<string, unknown>> = options?.messagesOverride
+    ? [...options.messagesOverride]
+    : [];
+  if (!options?.messagesOverride && systemInstruction) {
+    messages.push({ role: 'system', content: systemInstruction });
+  }
 
-  if (conversationHistory && conversationHistory.length > 0) {
+  if (!options?.messagesOverride && conversationHistory && conversationHistory.length > 0) {
     for (const msg of conversationHistory) {
       if (msg.role === 'user') {
         messages.push({ role: 'user', content: msg.content });
@@ -952,37 +1403,60 @@ async function* streamOpenAICompatible(
     }
   }
 
-  messages.push({ role: 'user', content: prompt });
+  if (!options?.messagesOverride) {
+    messages.push({ role: 'user', content: prompt });
+  }
 
   try {
-    const options = {
+    const requestBody: Record<string, unknown> = {
+      model: config.model,
+      messages,
+      temperature: config.temperature,
+      stream: true
+    };
+    if (options?.tools && options.tools.length > 0) {
+      requestBody.tools = options.tools;
+      requestBody.tool_choice = 'auto';
+    }
+
+    const requestOptions = {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${config.apiKey || ''}`
       },
-      body: JSON.stringify({
-        model: config.model,
-        messages,
-        temperature: config.temperature,
-        stream: true
-      })
+      body: JSON.stringify(requestBody)
     };
 
     // Use platformStreamFetch for true streaming in Electron
     let buffer = '';
-    for await (const chunk of platformStreamFetch(endpoint, options)) {
+    for await (const chunk of platformStreamFetch(endpoint, requestOptions)) {
       buffer += chunk;
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
 
       for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6).trim();
+        if (line.startsWith('data:') || line.startsWith('event:')) {
+          if (logStreamEvents) {
+            console.info('[OpenAIStreamRaw]', formatOpenAIStreamLine(line));
+          }
+        }
+        if (line.startsWith('data:')) {
+          const data = line.replace(/^data:\s*/, '').trim();
           if (data === '[DONE]') continue;
 
           try {
             const json = JSON.parse(data);
+            if (logStreamEvents) {
+              console.info('[OpenAIStreamDebug]', formatOpenAIStreamEvent(json));
+            }
+            if (options?.streamingAdapter && options.adapterState) {
+              options.streamingAdapter.parseStreamingChunk(json, options.adapterState);
+              const toolCalls = options.streamingAdapter.getToolCalls(options.adapterState);
+              for (const toolCall of toolCalls) {
+                options.toolEventCallback?.(toolCall);
+              }
+            }
             const content = json.choices?.[0]?.delta?.content;
             if (content) yield content;
           } catch (e) {
@@ -993,11 +1467,28 @@ async function* streamOpenAICompatible(
     }
 
     // Process any remaining buffer
-    if (buffer.trim() && buffer.startsWith('data: ')) {
-      const data = buffer.slice(6).trim();
+    const remaining = buffer.trim();
+    if (remaining) {
+      if (logStreamEvents && (remaining.startsWith('data:') || remaining.startsWith('event:'))) {
+        console.info('[OpenAIStreamRaw]', formatOpenAIStreamLine(remaining));
+      }
+      if (!remaining.startsWith('data:')) {
+        return;
+      }
+      const data = remaining.replace(/^data:\s*/, '').trim();
       if (data !== '[DONE]') {
         try {
           const json = JSON.parse(data);
+          if (logStreamEvents) {
+            console.info('[OpenAIStreamDebug]', formatOpenAIStreamEvent(json));
+          }
+          if (options?.streamingAdapter && options.adapterState) {
+            options.streamingAdapter.parseStreamingChunk(json, options.adapterState);
+            const toolCalls = options.streamingAdapter.getToolCalls(options.adapterState);
+            for (const toolCall of toolCalls) {
+              options.toolEventCallback?.(toolCall);
+            }
+          }
           const content = json.choices?.[0]?.delta?.content;
           if (content) yield content;
         } catch (e) {
@@ -1081,6 +1572,29 @@ const formatMCPToolResult = (toolName: string, result: any): string => {
         return `${statusEmoji} **${toolName}** completed (result truncated)`;
     }
     return `${statusEmoji} **${toolName}** completed`;
+};
+
+const INTERNAL_TOOL_NAMES = new Set([
+  'create_file',
+  'update_file',
+  'delete_file',
+  'read_file',
+  'search_files',
+  'search_knowledge_base'
+]);
+
+const STREAMING_TOOL_RESULT_MAX_CHARS = 8000;
+
+const compactToolResultForStreaming = (toolName: string, result: JsonValue): JsonValue => {
+  if (INTERNAL_TOOL_NAMES.has(toolName)) {
+    return result;
+  }
+
+  const formatted = formatMCPToolResult(toolName, result);
+  if (formatted.length > STREAMING_TOOL_RESULT_MAX_CHARS) {
+    return `${formatted.slice(0, STREAMING_TOOL_RESULT_MAX_CHARS)}...(truncated)`;
+  }
+  return formatted;
 };
 
 // Helper: Segment Text (Rule 1 & 3)
@@ -1378,7 +1892,9 @@ export async function* generateAIResponseStream(
   systemInstruction?: string,
   contextFiles: MarkdownFile[] = [],
   retrievedContext?: string,
-  conversationHistory?: ChatMessage[]
+  conversationHistory?: ChatMessage[],
+  toolsCallback?: ToolCallback,
+  toolEventCallback?: ToolEventCallback
 ): AsyncGenerator<string, void, unknown> {
   // Build full prompt with RAG context
   let fullPrompt = prompt;
@@ -1425,11 +1941,207 @@ export async function* generateAIResponseStream(
     config.language === 'zh' ? 'zh' : 'en'
   );
 
+  const supportsStreamingToolCalls = supportsNativeStreamingToolCalls(config);
+  const canUseTools = Boolean(toolsCallback);
+  const useNativeStreamingTools = supportsStreamingToolCalls && canUseTools;
+
   const mcpPromptAddition = mcpToolDescriptions
-    ? `\n\n## Your Available Tools\n\nYou are equipped with ${rawTools.length} external tools that you CAN and SHOULD use when appropriate. These tools are already connected and ready to use.\n\nWhen you need to use a tool, output a tool call in this exact JSON format:\n\`\`\`tool_call\n{"tool": "tool_name", "arguments": {...}}\n\`\`\`\n\n**Available Tools:**\n${mcpToolDescriptions}${toolGuide}\n\n**Important:** You HAVE these tools - they are not hypothetical. Do NOT say "I don't have access to..." for tools listed above.`
+    ? useNativeStreamingTools
+      ? `\n\n## Your Available Tools\n\nYou are equipped with ${rawTools.length} external tools that you CAN and SHOULD use when appropriate. These tools are already connected and ready to use.\n\n**Available Tools:**\n${mcpToolDescriptions}${toolGuide}\n\n**Important:** You HAVE these tools - they are not hypothetical. Do NOT say "I don't have access to..." for tools listed above.`
+      : `\n\n## Your Available Tools\n\nYou are equipped with ${rawTools.length} external tools that you CAN and SHOULD use when appropriate. These tools are already connected and ready to use.\n\nWhen you need to use a tool, output a tool call in this exact JSON format:\n\`\`\`tool_call\n{"tool": "tool_name", "arguments": {...}}\n\`\`\`\n\n**Available Tools:**\n${mcpToolDescriptions}${toolGuide}\n\n**Important:** You HAVE these tools - they are not hypothetical. Do NOT say "I don't have access to..." for tools listed above.`
     : '';
 
   const finalSystemInstruction = (systemInstruction || "") + mcpPromptAddition + toolDistinctionGuide(config.language === 'zh' ? 'zh' : 'en') + langInstruction;
+
+  if (useNativeStreamingTools) {
+    const streamingAdapter = getStreamingToolCallAdapter(config.provider);
+    const toolAdapter = getToolCallAdapter(config.provider);
+    const shouldPromptForToolContinuation = config.provider === 'openai' && isOpenAICompatibleEndpoint(config);
+    const toolContinuationPrompt = config.language === 'zh'
+      ? '请继续下一步或给出最终答案。'
+      : 'Continue with the next step or provide your final answer.';
+
+    if (!streamingAdapter) {
+      yield* streamOpenAICompatible(fullPrompt, config, finalSystemInstruction, conversationHistory);
+      return;
+    }
+
+    if (config.provider === 'openai') {
+      const tools = buildOpenAIToolsForPrompt(fullPrompt, mcpClient);
+      const messages: Array<Record<string, unknown>> = [];
+      if (finalSystemInstruction) {
+        messages.push({ role: 'system', content: finalSystemInstruction });
+      }
+      if (conversationHistory && conversationHistory.length > 0) {
+        for (const msg of conversationHistory) {
+          if (msg.role === 'user') {
+            messages.push({ role: 'user', content: msg.content });
+          } else if (msg.role === 'assistant') {
+            messages.push({ role: 'assistant', content: msg.content });
+          }
+        }
+      }
+      messages.push({ role: 'user', content: fullPrompt });
+
+      while (true) {
+        const adapterState = createStreamingAdapterState();
+        yield* streamOpenAICompatible(fullPrompt, config, finalSystemInstruction, conversationHistory, {
+          messagesOverride: messages,
+          tools,
+          streamingAdapter,
+          adapterState,
+          toolEventCallback
+        });
+
+        const toolCalls = streamingAdapter.getToolCalls(adapterState);
+        const resolvedToolCalls = toolCalls.map(toolCall => applyToolCallFallbackArgs(toolCall, adapterState.accumulatedText));
+        if (adapterState.isComplete && resolvedToolCalls.length > 0 && toolsCallback) {
+          const toolCallPayload = resolvedToolCalls.map(toolCall => ({
+            id: toolCall.id,
+            type: 'function',
+            function: {
+              name: toolCall.name,
+              arguments: ensureJsonArguments(toolCall.rawArgs, toolCall.args)
+            }
+          }));
+
+          const toolCallMessage = buildOpenAIToolCallMessage(
+            toolCallPayload,
+            adapterState.accumulatedText,
+            config
+          );
+          messages.push(toolCallMessage);
+
+          for (const toolCall of resolvedToolCalls) {
+            const runningCall: ToolCall = {
+              ...toolCall,
+              status: 'running',
+              startTime: Date.now()
+            };
+            toolEventCallback?.(runningCall);
+
+            try {
+              const result = await toolsCallback(toolCall.name, toolCall.args);
+              const completedCall: ToolCall = {
+                ...runningCall,
+                status: 'success',
+                result,
+                endTime: Date.now()
+              };
+              toolEventCallback?.(completedCall);
+
+              const compactResult = compactToolResultForStreaming(toolCall.name, result as JsonValue);
+              const toolResultMessage = toolAdapter.formatResult(toolCall, compactResult);
+              messages.push(toolResultMessage as Record<string, unknown>);
+            } catch (error) {
+              const errorMessage = error instanceof Error ? error.message : String(error);
+              toolEventCallback?.({
+                ...runningCall,
+                status: 'error',
+                error: errorMessage,
+                endTime: Date.now()
+              });
+              throw error;
+            }
+          }
+
+          if (shouldPromptForToolContinuation) {
+            messages.push({ role: 'user', content: toolContinuationPrompt });
+          }
+          continue;
+        }
+
+        return;
+      }
+    }
+
+    if (config.provider === 'anthropic') {
+      const tools = buildAnthropicToolsForPrompt(fullPrompt, mcpClient);
+      const messages: Array<Record<string, unknown>> = [];
+      if (conversationHistory && conversationHistory.length > 0) {
+        for (const msg of conversationHistory) {
+          if (msg.role === 'user') {
+            messages.push({ role: 'user', content: msg.content });
+          } else if (msg.role === 'assistant') {
+            messages.push({ role: 'assistant', content: msg.content });
+          }
+        }
+      }
+      messages.push({ role: 'user', content: fullPrompt });
+
+      while (true) {
+        const adapterState = createStreamingAdapterState();
+        yield* streamAnthropic(fullPrompt, config, finalSystemInstruction, conversationHistory, {
+          messagesOverride: messages,
+          tools,
+          streamingAdapter,
+          adapterState,
+          toolEventCallback
+        });
+
+        const toolCalls = streamingAdapter.getToolCalls(adapterState);
+        const resolvedToolCalls = toolCalls.map(toolCall => applyToolCallFallbackArgs(toolCall, adapterState.accumulatedText));
+        if (adapterState.isComplete && resolvedToolCalls.length > 0 && toolsCallback) {
+          const contentBlocks: Array<Record<string, unknown>> = [];
+          if (adapterState.accumulatedText.trim()) {
+            contentBlocks.push({ type: 'text', text: adapterState.accumulatedText });
+          }
+          for (const toolCall of resolvedToolCalls) {
+            contentBlocks.push({
+              type: 'tool_use',
+              id: toolCall.id,
+              name: toolCall.name,
+              input: toolCall.args
+            });
+          }
+
+          messages.push({ role: 'assistant', content: contentBlocks });
+
+          const resultBlocks: Array<Record<string, unknown>> = [];
+          for (const toolCall of resolvedToolCalls) {
+            const runningCall: ToolCall = {
+              ...toolCall,
+              status: 'running',
+              startTime: Date.now()
+            };
+            toolEventCallback?.(runningCall);
+
+            try {
+              const result = await toolsCallback(toolCall.name, toolCall.args);
+              const completedCall: ToolCall = {
+                ...runningCall,
+                status: 'success',
+                result,
+                endTime: Date.now()
+              };
+              toolEventCallback?.(completedCall);
+
+              const compactResult = compactToolResultForStreaming(toolCall.name, result as JsonValue);
+              resultBlocks.push({
+                type: 'tool_result',
+                tool_use_id: toolCall.id,
+                content: typeof compactResult === 'string' ? compactResult : JSON.stringify(compactResult)
+              });
+            } catch (error) {
+              const errorMessage = error instanceof Error ? error.message : String(error);
+              toolEventCallback?.({
+                ...runningCall,
+                status: 'error',
+                error: errorMessage,
+                endTime: Date.now()
+              });
+              throw error;
+            }
+          }
+
+          messages.push({ role: 'user', content: resultBlocks });
+          continue;
+        }
+
+        return;
+      }
+    }
+  }
 
   // Route to appropriate streaming function
   if (config.provider === 'gemini') {
@@ -2069,22 +2781,9 @@ const callOpenAICompatible = async (
       console.warn(`[OpenAI Compatible] 上下文过长，已截断 ${truncatedCount} 条早期消息`);
     }
 
-    let tools = undefined;
+    let tools: OpenAIToolDefinition[] | undefined;
     if (toolsCallback && !jsonMode) {
-        const allTools = mcpClient ? mcpClient.getTools() : [];
-        // 根据意图选择工具
-        const toolAnalyzer = createToolAnalyzer();
-        const analysisResult = toolAnalyzer.analyze(allTools, prompt || '');
-        const dynamicTools = toolAnalyzer.selectByIntent(allTools, analysisResult.intent);
-        const mappedDynamic = dynamicTools.map(t => ({
-             type: 'function',
-             function: {
-                 name: t.name,
-                 description: t.description,
-                 parameters: t.parameters
-             }
-        }));
-        tools = [...OPENAI_TOOLS, SEARCH_KNOWLEDGE_BASE_TOOL, ...mappedDynamic];
+        tools = buildOpenAIToolsForPrompt(prompt, mcpClient);
     }
     const toolAdapter = getToolCallAdapter('openai');
 
@@ -2377,99 +3076,10 @@ const callAnthropic = async (
     }
 
     // Build tools array for Anthropic format
-    let tools: any[] | undefined = undefined;
+    let tools: AnthropicToolDefinition[] | undefined = undefined;
     if (toolsCallback && !jsonMode) {
-        const allTools = mcpClient ? mcpClient.getTools() : [];
-
-        // 根据意图选择工具
         const userQuery = prompt || messagesToSend[messagesToSend.length - 1]?.content || '';
-        const toolAnalyzer = createToolAnalyzer();
-        const analysisResult = toolAnalyzer.analyze(allTools, userQuery);
-        const dynamicTools = toolAnalyzer.selectByIntent(allTools, analysisResult.intent);
-
-        // Map to Anthropic tool format
-        const baseToolsAnthropic = [
-            {
-                name: 'create_file',
-                description: 'Create a new file with the given name and content.',
-                input_schema: {
-                    type: 'object',
-                    properties: {
-                        filename: { type: 'string', description: "Name of the file" },
-                        content: { type: 'string', description: "Content of the file" }
-                    },
-                    required: ['filename', 'content']
-                }
-            },
-            {
-                name: 'update_file',
-                description: 'Update an existing file.',
-                input_schema: {
-                    type: 'object',
-                    properties: {
-                        filename: { type: 'string', description: "Name of the file" },
-                        content: { type: 'string', description: "New content" }
-                    },
-                    required: ['filename', 'content']
-                }
-            },
-            {
-                name: 'delete_file',
-                description: 'Delete a file by name.',
-                input_schema: {
-                    type: 'object',
-                    properties: {
-                        filename: { type: 'string', description: "Name of the file" }
-                    },
-                    required: ['filename']
-                }
-            },
-            {
-                name: 'read_file',
-                description: 'Read the content of a specific file. Optionally specify line range.',
-                input_schema: {
-                    type: 'object',
-                    properties: {
-                        path: { type: 'string', description: "File name or path" },
-                        startLine: { type: 'number', description: "Optional: Start line (1-indexed)" },
-                        endLine: { type: 'number', description: "Optional: End line (1-indexed)" }
-                    },
-                    required: ['path']
-                }
-            },
-            {
-                name: 'search_files',
-                description: 'Search for a keyword across all files.',
-                input_schema: {
-                    type: 'object',
-                    properties: {
-                        keyword: { type: 'string', description: "Keyword to search" },
-                        filePattern: { type: 'string', description: "Optional: File name pattern" }
-                    },
-                    required: ['keyword']
-                }
-            },
-            {
-                name: 'search_knowledge_base',
-                description: "Search the user's indexed notes and documents.",
-                input_schema: {
-                    type: 'object',
-                    properties: {
-                        query: { type: 'string', description: "Search query" },
-                        maxResults: { type: 'number', description: "Max results" }
-                    },
-                    required: ['query']
-                }
-            }
-        ];
-
-        const mappedDynamic = dynamicTools.map(t => ({
-            name: t.name,
-            description: t.description,
-            input_schema: t.parameters || { type: 'object', properties: {} }
-        }));
-
-        tools = [...baseToolsAnthropic, ...mappedDynamic];
+        tools = buildAnthropicToolsForPrompt(userQuery, mcpClient);
     }
     const toolAdapter = getToolCallAdapter('anthropic');
 

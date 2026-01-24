@@ -27,6 +27,9 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({ toolCall, language =
       status={statusMap[toolCall.status] || 'executing'}
       result={toolCall.result ? (typeof toolCall.result === 'string' ? toolCall.result : JSON.stringify(toolCall.result)) : undefined}
       args={toolCall.args}
+      partialArgs={toolCall.partialArgs}
+      rawArgs={toolCall.rawArgs}
+      isStreaming={toolCall.status === 'pending'}
       language={language}
     />
   );

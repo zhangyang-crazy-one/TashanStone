@@ -278,7 +278,7 @@ try {
         fetch: (url: string, options: RequestInit): Promise<FetchResult> =>
             ipcRenderer.invoke('ai:fetch', url, options),
         // Streaming fetch - returns streamId, then listen for chunks via onStreamChunk
-        streamFetch: (url: string, options: RequestInit): Promise<{ streamId: string; status: number; headers: Record<string, string> }> =>
+        streamFetch: (url: string, options: RequestInit): Promise<{ streamId: string; status: number; headers: Record<string, string>; errorText?: string }> =>
             ipcRenderer.invoke('ai:streamFetch', url, options),
         // Listen for stream chunks
         onStreamChunk: (callback: (data: { streamId: string; chunk?: string; done: boolean; error?: string }) => void): (() => void) => {
@@ -605,7 +605,7 @@ declare global {
             };
             ai: {
                 fetch: (url: string, options: RequestInit) => Promise<FetchResult>;
-                streamFetch: (url: string, options: RequestInit) => Promise<{ streamId: string; status: number; headers: Record<string, string> }>;
+                streamFetch: (url: string, options: RequestInit) => Promise<{ streamId: string; status: number; headers: Record<string, string>; errorText?: string }>;
                 onStreamChunk: (callback: (data: { streamId: string; chunk?: string; done: boolean; error?: string }) => void) => () => void;
             };
             sync: {

@@ -99,14 +99,27 @@ export async function* platformStreamFetch(url: string, options: RequestInit = {
     if (platform.isElectron && window.electronAPI?.ai?.streamFetch) {
         // Use Electron's IPC-based streaming
         try {
-            const { streamId, status } = await window.electronAPI.ai.streamFetch(url, options);
+            const { streamId, status, errorText } = await window.electronAPI.ai.streamFetch(url, options);
 
             if (status === 0) {
                 throw new Error('Network error: Failed to connect to AI service');
             }
 
             if (status >= 400) {
-                throw new Error(`HTTP error! status: ${status}`);
+                let detail = '';
+                if (errorText) {
+                    const trimmed = errorText.trim();
+                    if (trimmed) {
+                        try {
+                            const parsed = JSON.parse(trimmed) as { error?: { message?: string }; message?: string };
+                            detail = parsed?.error?.message || parsed?.message || trimmed;
+                        } catch {
+                            detail = trimmed;
+                        }
+                        detail = detail.slice(0, 400);
+                    }
+                }
+                throw new Error(detail ? `HTTP error! status: ${status} - ${detail}` : `HTTP error! status: ${status}`);
             }
 
             // Create a promise-based queue for stream chunks

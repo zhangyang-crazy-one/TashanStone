@@ -188,6 +188,8 @@ export interface ToolCall {
   id: string;
   name: string;
   args: Record<string, JsonValue>;
+  partialArgs?: Record<string, JsonValue>;
+  rawArgs?: string;
   result?: JsonValue;
   status: 'pending' | 'running' | 'success' | 'error';
   provider?: AIProvider;

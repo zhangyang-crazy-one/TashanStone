@@ -44,7 +44,19 @@ interface ChatPanelProps {
   checkpoints?: Checkpoint[];
 }
 
+const StreamingMessageContent: React.FC<{ content: string }> = ({ content }) => {
+  return (
+    <div className="chat-markdown-content whitespace-pre-wrap break-words">
+      {content}
+    </div>
+  );
+};
+
 const SmartMessageContent: React.FC<{ content: string; isStreaming?: boolean; language: Language; disableToolParsing?: boolean }> = ({ content, isStreaming, language, disableToolParsing = false }) => {
+  if (isStreaming) {
+    return <StreamingMessageContent content={content} />;
+  }
+
   if (disableToolParsing) {
     return (
       <div className="chat-markdown-content">
@@ -97,6 +109,144 @@ const SmartMessageContent: React.FC<{ content: string; isStreaming?: boolean; la
     </div>
   );
 };
+
+interface ChatMessageRowProps {
+  message: ChatMessage;
+  isStreamingMessage: boolean;
+  compactMode: boolean;
+  language: Language;
+  onStopStreaming?: () => void;
+}
+
+const ChatMessageRow = memo(function ChatMessageRow({
+  message,
+  isStreamingMessage,
+  compactMode,
+  language,
+  onStopStreaming
+}: ChatMessageRowProps) {
+  const t = translations[language];
+  const msg = message;
+
+  return (
+    <div className="px-4">
+      <div className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'} ${compactMode ? 'mb-2' : 'mb-4'}`}>
+        {!msg.ragResults && !compactMode && (
+          <div
+            className={`
+              w-8 h-8 rounded-full flex items-center justify-center shrink-0
+              ${msg.role === 'user'
+                ? 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400'
+                : msg.role === 'system'
+                  ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+                  : 'bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400'}
+            `}
+          >
+            {msg.role === 'user' ? <User size={16} /> : (msg.role === 'system' ? <Sparkles size={16} /> : <Bot size={16} />)}
+          </div>
+        )}
+
+        {msg.ragResults ? (
+          <div className="flex-1">
+            <RAGResultsCard
+              totalChunks={msg.ragResults.totalChunks}
+              queryTime={msg.ragResults.queryTime}
+              results={msg.ragResults.results}
+            />
+          </div>
+        ) : isStreamingMessage ? (
+          <div
+            className={`
+              max-w-[85%] rounded-2xl text-sm leading-relaxed
+              ${compactMode ? 'p-2' : 'p-3'}
+              bg-white dark:bg-cyber-800/50 border border-paper-200 dark:border-cyber-700 text-slate-700 dark:text-slate-300 rounded-tl-none
+            `}
+          >
+            {msg.content.length === 0 ? (
+              <div className="flex items-center gap-2">
+                <Loader2 size={14} className="animate-spin text-violet-500" />
+                <span className="text-xs text-slate-500 italic">{language === 'zh' ? 'AI 正在思考...' : 'AI is thinking...'}</span>
+                {onStopStreaming && (
+                  <Tooltip content={t.stopGeneration}>
+                    <button
+                      onClick={onStopStreaming}
+                      className="ml-2 p-1 hover:bg-red-100 dark:hover:bg-red-900/20 rounded text-red-500 transition-colors"
+                      aria-label={t.stopGeneration}
+                    >
+                      <Square size={12} />
+                    </button>
+                  </Tooltip>
+                )}
+              </div>
+            ) : (
+              <div>
+                <SmartMessageContent content={msg.content} isStreaming={true} language={language} disableToolParsing={Boolean(msg.toolCalls?.length)} />
+                <div className="flex items-center gap-2 mt-2 pt-2 border-t border-paper-100 dark:border-cyber-700">
+                  <Loader2 size={12} className="animate-spin text-violet-400" />
+                  <span className="text-[10px] text-slate-400 italic">{language === 'zh' ? '生成中...' : 'Generating...'}</span>
+                  {onStopStreaming && (
+                    <Tooltip content={t.stopGeneration}>
+                      <button
+                        onClick={onStopStreaming}
+                        className="ml-auto p-1 hover:bg-red-100 dark:hover:bg-red-900/20 rounded text-red-500 transition-colors"
+                        aria-label={t.stopGeneration}
+                      >
+                        <Square size={10} />
+                      </button>
+                    </Tooltip>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div
+            className={`
+              max-w-[85%] rounded-2xl text-sm leading-relaxed
+              ${compactMode ? 'p-2' : 'p-3'}
+              ${msg.role === 'user'
+                ? 'bg-cyan-50 dark:bg-cyber-800 text-slate-800 dark:text-slate-200 rounded-tr-none'
+                : msg.role === 'system'
+                  ? 'bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 text-slate-700 dark:text-slate-300 italic text-xs'
+                  : 'bg-white dark:bg-cyber-800/50 border border-paper-200 dark:border-cyber-700 text-slate-700 dark:text-slate-300 rounded-tl-none'}
+            `}
+          >
+            {msg.role === 'assistant' ? (
+              <SmartMessageContent content={msg.content} isStreaming={false} language={language} disableToolParsing={Boolean(msg.toolCalls?.length)} />
+            ) : (
+              <div className="chat-markdown-content">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {msg.content}
+                </ReactMarkdown>
+              </div>
+            )}
+
+            {msg.toolCalls && msg.toolCalls.length > 0 && !compactMode && (
+              <div className="space-y-2 mt-3 pt-3 border-t border-neutral-200 dark:border-neutral-700">
+                <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-2">
+                  {language === 'zh' ? '工具调用' : 'Tool Calls'} ({msg.toolCalls.length})
+                </div>
+                {msg.toolCalls.map(tc => (
+                  <ToolCallCard
+                    key={tc.id}
+                    toolCall={tc}
+                    language={language}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}, (prev, next) => (
+  prev.message === next.message &&
+  prev.isStreamingMessage === next.isStreamingMessage &&
+  prev.compactMode === next.compactMode &&
+  prev.language === next.language &&
+  prev.onStopStreaming === next.onStopStreaming
+));
 
 const MESSAGE_ITEM_HEIGHT = 80;
 
@@ -369,7 +519,9 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   const [memorySearchQueryAdded, setMemorySearchQueryAdded] = useState(false);
   const [previewMemory, setPreviewMemory] = useState<MemoryItem | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const shouldAutoScrollRef = useRef(true);
   const t = translations[language];
 
   // Voice input using speech recognition hook
@@ -397,8 +549,17 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     language: language === 'zh' ? 'zh-CN' : 'en-US'
   });
 
-  const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const scrollToBottom = useCallback((behavior?: ScrollBehavior) => {
+    const scrollBehavior = behavior ?? (isStreaming ? 'auto' : 'smooth');
+    messagesEndRef.current?.scrollIntoView({ behavior: scrollBehavior });
+  }, [isStreaming]);
+
+  const handleScroll = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const { scrollTop, scrollHeight, clientHeight } = container;
+    const distanceToBottom = scrollHeight - scrollTop - clientHeight;
+    shouldAutoScrollRef.current = distanceToBottom < 120;
   }, []);
 
   const injectedMemoryCount = injectedMemories.length;
@@ -409,7 +570,14 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   }, []);
 
   useEffect(() => {
-    if (isOpen) scrollToBottom();
+    if (!isOpen) return;
+    shouldAutoScrollRef.current = true;
+    scrollToBottom('auto');
+  }, [isOpen, scrollToBottom]);
+
+  useEffect(() => {
+    if (!isOpen || !shouldAutoScrollRef.current) return;
+    scrollToBottom();
   }, [messages, isOpen, scrollToBottom]);
 
   const handleMemorySearch = useCallback(async () => {
@@ -883,7 +1051,11 @@ ${memoryContents}
         </div>
 
         {/* Messages - Normal scrollable list instead of virtual list */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar">
+        <div
+          className="flex-1 overflow-y-auto custom-scrollbar"
+          ref={scrollContainerRef}
+          onScroll={handleScroll}
+        >
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-slate-400 text-center space-y-2 opacity-60">
               <Bot size={48} />
@@ -892,120 +1064,17 @@ ${memoryContents}
           ) : (
             <div className="py-4">
               {messages.map((msg, index) => {
-                const isLastMessage = index === messages.length - 1;
-                const isStreamingMessage = msg.role === 'assistant' && isLastMessage && isStreaming;
+                const isStreamingMessage = isStreaming && msg.role === 'assistant' && index === messages.length - 1;
 
                 return (
-                  <div key={msg.id || index} className="px-4">
-                    <div className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'} ${compactMode ? 'mb-2' : 'mb-4'}`}>
-                      {!msg.ragResults && !compactMode && (
-                        <div
-                          className={`
-                            w-8 h-8 rounded-full flex items-center justify-center shrink-0
-                            ${msg.role === 'user'
-                              ? 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400'
-                              : msg.role === 'system'
-                                ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
-                                : 'bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400'}
-                          `}
-                        >
-                          {msg.role === 'user' ? <User size={16} /> : (msg.role === 'system' ? <Sparkles size={16} /> : <Bot size={16} />)}
-                        </div>
-                      )}
-
-                      {msg.ragResults ? (
-                        <div className="flex-1">
-                          <RAGResultsCard
-                            totalChunks={msg.ragResults.totalChunks}
-                            queryTime={msg.ragResults.queryTime}
-                            results={msg.ragResults.results}
-                          />
-                        </div>
-                      ) : isStreamingMessage ? (
-                        <div
-                          className={`
-                            max-w-[85%] rounded-2xl text-sm leading-relaxed
-                            ${compactMode ? 'p-2' : 'p-3'}
-                            bg-white dark:bg-cyber-800/50 border border-paper-200 dark:border-cyber-700 text-slate-700 dark:text-slate-300 rounded-tl-none
-                          `}
-                        >
-                          {msg.content.length === 0 ? (
-                            <div className="flex items-center gap-2">
-                              <Loader2 size={14} className="animate-spin text-violet-500" />
-                              <span className="text-xs text-slate-500 italic">{language === 'zh' ? 'AI 正在思考...' : 'AI is thinking...'}</span>
-                              {onStopStreaming && (
-                                <Tooltip content={t.stopGeneration}>
-                                  <button
-                                    onClick={onStopStreaming}
-                                    className="ml-2 p-1 hover:bg-red-100 dark:hover:bg-red-900/20 rounded text-red-500 transition-colors"
-                                    aria-label={t.stopGeneration}
-                                  >
-                                    <Square size={12} />
-                                  </button>
-                                </Tooltip>
-                              )}
-                            </div>
-                          ) : (
-                            <div>
-                              <SmartMessageContent content={msg.content} isStreaming={true} language={language} disableToolParsing={Boolean(msg.toolCalls?.length)} />
-                              <div className="flex items-center gap-2 mt-2 pt-2 border-t border-paper-100 dark:border-cyber-700">
-                                <Loader2 size={12} className="animate-spin text-violet-400" />
-                                <span className="text-[10px] text-slate-400 italic">{language === 'zh' ? '生成中...' : 'Generating...'}</span>
-                                {onStopStreaming && (
-                                  <Tooltip content={t.stopGeneration}>
-                                    <button
-                                      onClick={onStopStreaming}
-                                      className="ml-auto p-1 hover:bg-red-100 dark:hover:bg-red-900/20 rounded text-red-500 transition-colors"
-                                      aria-label={t.stopGeneration}
-                                    >
-                                      <Square size={10} />
-                                    </button>
-                                  </Tooltip>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <div
-                          className={`
-                            max-w-[85%] rounded-2xl text-sm leading-relaxed
-                            ${compactMode ? 'p-2' : 'p-3'}
-                            ${msg.role === 'user'
-                              ? 'bg-cyan-50 dark:bg-cyber-800 text-slate-800 dark:text-slate-200 rounded-tr-none'
-                              : msg.role === 'system'
-                                ? 'bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 text-slate-700 dark:text-slate-300 italic text-xs'
-                                : 'bg-white dark:bg-cyber-800/50 border border-paper-200 dark:border-cyber-700 text-slate-700 dark:text-slate-300 rounded-tl-none'}
-                          `}
-                        >
-                          {msg.role === 'assistant' ? (
-                            <SmartMessageContent content={msg.content} isStreaming={false} language={language} disableToolParsing={Boolean(msg.toolCalls?.length)} />
-                          ) : (
-                            <div className="chat-markdown-content">
-                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                {msg.content}
-                              </ReactMarkdown>
-                            </div>
-                          )}
-
-                          {msg.toolCalls && msg.toolCalls.length > 0 && !compactMode && (
-                            <div className="space-y-2 mt-3 pt-3 border-t border-neutral-200 dark:border-neutral-700">
-                              <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-2">
-                                {language === 'zh' ? '工具调用' : 'Tool Calls'} ({msg.toolCalls.length})
-                              </div>
-                              {msg.toolCalls.map(tc => (
-                                <ToolCallCard
-                                  key={tc.id}
-                                  toolCall={tc}
-                                  language={language}
-                                />
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                  <ChatMessageRow
+                    key={msg.id || index}
+                    message={msg}
+                    isStreamingMessage={isStreamingMessage}
+                    compactMode={compactMode}
+                    language={language}
+                    onStopStreaming={onStopStreaming}
+                  />
                 );
               })}
             </div>
