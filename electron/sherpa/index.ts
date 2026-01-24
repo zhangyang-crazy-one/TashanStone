@@ -54,6 +54,7 @@ export class SherpaOnnxService {
     private isInitialized = false;
     private initPromise: Promise<boolean> | null = null;
     private streamingSessions: Map<string, StreamingSession> = new Map();
+    private nativeLibPathConfigured = false;
 
     /**
      * 获取模型存储路径
@@ -202,6 +203,7 @@ export class SherpaOnnxService {
             // 动态导入 sherpa-onnx-node (原生 Node.js addon，比 WASM 版本更稳定)
             let sherpaOnnx;
             try {
+                this.ensureNativeLibraryPath();
                 sherpaOnnx = require('sherpa-onnx-node');
                 this.sherpaModule = sherpaOnnx;
                 logger.info(`  ✓ Loaded sherpa-onnx-node version: ${sherpaOnnx.version || 'unknown'}`);
@@ -317,6 +319,7 @@ export class SherpaOnnxService {
 
             // 1. 检查 sherpa-onnx-node 模块是否可以导入
             try {
+                this.ensureNativeLibraryPath();
                 const sherpaOnnx = require('sherpa-onnx-node');
                 if (sherpaOnnx && typeof sherpaOnnx.OnlineRecognizer === 'function') {
                     logger.info('  ✓ sherpa-onnx-node module loaded successfully');
@@ -353,6 +356,70 @@ export class SherpaOnnxService {
             logger.error('Error checking Sherpa-ONNX availability:', error);
             return false;
         }
+    }
+
+    /**
+     * 配置 native 依赖库路径，避免 Linux/macOS 无法加载 .so/.dylib
+     */
+    private ensureNativeLibraryPath(): void {
+        if (this.nativeLibPathConfigured) {
+            return;
+        }
+
+        const envKey =
+            process.platform === 'linux'
+                ? 'LD_LIBRARY_PATH'
+                : process.platform === 'darwin'
+                    ? 'DYLD_LIBRARY_PATH'
+                    : null;
+
+        if (!envKey) {
+            this.nativeLibPathConfigured = true;
+            return;
+        }
+
+        const platformArch = `${process.platform === 'win32' ? 'win' : process.platform}-${process.arch}`;
+        const packageName = `sherpa-onnx-${platformArch}`;
+        const candidates = new Set<string>();
+
+        // 打包后：app.asar.unpacked/node_modules
+        if (process.resourcesPath) {
+            candidates.add(path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', packageName));
+            candidates.add(path.join(process.resourcesPath, 'app.asar', 'node_modules', packageName));
+        }
+
+        // 开发模式：app.getAppPath()/node_modules + cwd/node_modules
+        candidates.add(path.join(app.getAppPath(), 'node_modules', packageName));
+        candidates.add(path.join(process.cwd(), 'node_modules', packageName));
+
+        // 通过模块解析得到的真实路径
+        try {
+            const resolved = require.resolve(`${packageName}/package.json`);
+            candidates.add(path.dirname(resolved));
+        } catch {
+            // ignore
+        }
+
+        const delimiter = path.delimiter;
+        const currentValue = process.env[envKey] ?? '';
+        const entries = new Set(currentValue.split(delimiter).filter(Boolean));
+        let updated = false;
+
+        for (const candidate of candidates) {
+            if (!candidate) continue;
+            const addonPath = path.join(candidate, 'sherpa-onnx.node');
+            if (fs.existsSync(addonPath) && !entries.has(candidate)) {
+                entries.add(candidate);
+                updated = true;
+            }
+        }
+
+        if (updated) {
+            process.env[envKey] = Array.from(entries).join(delimiter);
+            logger.info(`[Sherpa] ${envKey} updated for native dependencies`);
+        }
+
+        this.nativeLibPathConfigured = true;
     }
 
     /**

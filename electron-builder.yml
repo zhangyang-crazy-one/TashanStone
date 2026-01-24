@@ -58,6 +58,10 @@ asarUnpack:
   # Sherpa-ONNX 语音识别
   - "**/node_modules/sherpa-onnx/**/*"
   - "**/node_modules/sherpa-onnx-win-x64/**/*"
+  - "**/node_modules/sherpa-onnx-linux-x64/**/*"
+  - "**/node_modules/sherpa-onnx-linux-arm64/**/*"
+  - "**/node_modules/sherpa-onnx-darwin-x64/**/*"
+  - "**/node_modules/sherpa-onnx-darwin-arm64/**/*"
   # ONNX Runtime (onnxruntime-common 是 esearch-ocr 的依赖)
   - "**/node_modules/onnxruntime-node/**/*"
   - "**/node_modules/onnxruntime-common/**/*"

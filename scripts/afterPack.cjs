@@ -14,6 +14,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 
 /**
  * 递归复制目录
@@ -42,6 +43,40 @@ function copyDirSync(src, dest) {
   }
 
   return true;
+}
+
+function patchSherpaRpath(unpackedModules) {
+  const sherpaDirs = fs.readdirSync(unpackedModules, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith('sherpa-onnx-'))
+    .map((entry) => entry.name);
+
+  if (sherpaDirs.length === 0) {
+    console.log('[afterPack] No sherpa-onnx-* packages found for rpath patch');
+    return;
+  }
+
+  for (const dirName of sherpaDirs) {
+    const nodePath = path.join(unpackedModules, dirName, 'sherpa-onnx.node');
+    if (!fs.existsSync(nodePath)) {
+      continue;
+    }
+
+    if (process.platform === 'linux') {
+      try {
+        execFileSync('patchelf', ['--set-rpath', '$ORIGIN', nodePath], { stdio: 'inherit' });
+        console.log(`[afterPack] Patched RPATH for ${dirName}/sherpa-onnx.node`);
+      } catch (error) {
+        console.warn('[afterPack] patchelf failed; sherpa may require LD_LIBRARY_PATH at runtime', error.message || error);
+      }
+    } else if (process.platform === 'darwin') {
+      try {
+        execFileSync('install_name_tool', ['-add_rpath', '@loader_path', nodePath], { stdio: 'inherit' });
+        console.log(`[afterPack] Added @loader_path for ${dirName}/sherpa-onnx.node`);
+      } catch (error) {
+        console.warn('[afterPack] install_name_tool failed; sherpa may require DYLD_LIBRARY_PATH at runtime', error.message || error);
+      }
+    }
+  }
 }
 
 /**
@@ -136,5 +171,9 @@ exports.default = async function(context) {
     console.log('[afterPack] Pure JS dependencies fix completed successfully!\n');
   } else {
     console.error('[afterPack] WARNING: Some critical modules are missing!\n');
+  }
+
+  if (fs.existsSync(unpackedModules)) {
+    patchSherpaRpath(unpackedModules);
   }
 };

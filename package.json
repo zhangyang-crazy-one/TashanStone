@@ -13,7 +13,7 @@
   "main": "dist-electron/electron/main.js",
   "scripts": {
     "dev": "vite",
-    "dev:electron": "concurrently -k \"vite --port 5173 --strictPort\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
+    "dev:electron": "concurrently -k \"vite --port 5173 --strictPort\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 node scripts/run-electron-dev.cjs\"",
     "build": "tsc && vite build",
     "build:electron": "cross-env ELECTRON=true npm run build && tsc -p electron/tsconfig.json && tsc -p electron/tsconfig.preload.json && node -e \"require('fs').renameSync('dist-electron/electron/preload.js','dist-electron/electron/preload.cjs')\"",
     "preview": "vite preview",
@@ -37,7 +37,7 @@
     "download:sherpa-model": "node scripts/download-sherpa-model.cjs",
     "download:ocr-model": "node scripts/download-ocr-model.cjs",
     "bun:dev": "bun run vite",
-    "bun:dev:electron": "bun run concurrently -k \"vite --port 5173 --strictPort\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
+    "bun:dev:electron": "bun run concurrently -k \"vite --port 5173 --strictPort\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 node scripts/run-electron-dev.cjs\"",
     "bun:build": "bun run tsc && bun run vite build",
     "bun:build:electron": "cross-env ELECTRON=true bun run bun:build && bun run tsc -p electron/tsconfig.json && bun run tsc -p electron/tsconfig.preload.json && bun -e \"require('fs').renameSync('dist-electron/electron/preload.js','dist-electron/electron/preload.cjs')\"",
     "bun:dist": "bun run bun:build:electron && bun run electron-builder",
