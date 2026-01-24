@@ -37,31 +37,12 @@ export default defineConfig(({ mode }) => {
       build: {
         outDir: 'dist',
         emptyOutDir: true,
-        chunkSizeWarningLimit: 1600,
         rollupOptions: {
           output: {
-            manualChunks: (id) => {
-              if (!id.includes('node_modules')) return undefined;
-
-              const matchers = (pkgs: string[]) =>
-                pkgs.some((pkg) => id.includes(`/node_modules/${pkg}/`) || id.includes(`/node_modules/${pkg}`));
-
-              if (matchers(['react', 'react-dom'])) return 'vendor-react';
-              if (matchers(['@uiw', '@codemirror', 'codemirror', '@lezer', 'lezer-'])) return 'codemirror';
-              if (matchers(['rehype-katex', 'katex'])) return 'katex';
-              if (matchers(['d3'])) return 'd3';
-              if (matchers(['pdfjs-dist'])) return 'pdf';
-              if (matchers(['cytoscape', 'cose-bilkent', 'cytoscape-cose-bilkent', 'cytoscape-fcose', 'layout-base', 'cose-base'])) return 'cytoscape';
-              if (matchers(['dagre', 'dagre-d3-es', 'graphlib'])) return 'dagre';
-              if (matchers(['react-window', 'react-virtualized-auto-sizer'])) return 'virtual';
-              if (matchers(['lucide-react'])) return 'icons';
-              if (matchers(['@google'])) return 'ai-sdk';
-              if (matchers(['onnxruntime-web', '@paddlejs', 'sherpa-onnx'])) return 'ml';
-              if (matchers(['mammoth', 'jszip', 'xmlbuilder', 'xmldom', 'dingbat-to-unicode'])) return 'documents';
-              if (matchers(['react-markdown', 'remark-', 'rehype-', 'micromark', 'mdast-', 'hast-', 'unist-', 'vfile', 'unified', 'lowlight', 'highlight.js', 'property-information', 'space-separated-tokens', 'comma-separated-tokens', 'html-void-elements', 'web-namespaces', 'zwitch', 'trough', 'bail'])) return 'markdown';
-              if (matchers(['mermaid', '@mermaid-js', 'langium', 'chevrotain', 'khroma', 'roughjs', 'ts-dedent', 'uuid', 'marked', 'stylis', 'dayjs', 'lodash-es', 'dompurify', '@iconify'])) return 'mermaid';
-
-              return 'vendor';
+            manualChunks: {
+              vendor: ['react', 'react-dom'],
+              markdown: ['react-markdown', 'remark-gfm', 'remark-math', 'rehype-katex', 'rehype-highlight'],
+              visualization: ['d3', 'mermaid'],
             }
           }
         }
