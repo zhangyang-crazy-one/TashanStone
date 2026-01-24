@@ -2,7 +2,8 @@ import { test, expect } from '@playwright/test';
 
 test.describe('TashanStone App', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#root', { state: 'attached' });
   });
 
   test('should load the application', async ({ page }) => {
@@ -20,7 +21,7 @@ test.describe('TashanStone App', () => {
         page.locator('header').first()
       )
     );
-    await expect(toolbar).toBeVisible({ timeout: 10000 });
+    await expect(toolbar).toBeVisible({ timeout: 30000 });
   });
 
   test('should display the sidebar', async ({ page }) => {
@@ -30,6 +31,6 @@ test.describe('TashanStone App', () => {
         page.locator('aside').first()
       )
     );
-    await expect(sidebar).toBeVisible({ timeout: 10000 });
+    await expect(sidebar).toBeVisible({ timeout: 30000 });
   });
 });

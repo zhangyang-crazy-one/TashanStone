@@ -42,7 +42,7 @@ jobs:
         run: bun install
 
       - name: Install Playwright
-        run: bun exec playwright install --with-deps
+        run: bunx playwright install --with-deps
 
       - name: Build Desktop
         run: bun run bun:build:electron
@@ -63,12 +63,12 @@ jobs:
 
       - name: Run Smoke Tests (Linux)
         if: runner.os == 'Linux'
-        run: xvfb-run --auto-servernum bun exec playwright test e2e/smoke.spec.ts
+        run: xvfb-run --auto-servernum bunx playwright test e2e/smoke.spec.ts
         continue-on-error: true
 
       - name: Run Smoke Tests (Windows)
         if: runner.os == 'Windows'
-        run: bun exec playwright test e2e/smoke.spec.ts
+        run: bunx playwright test e2e/smoke.spec.ts
         continue-on-error: true
 
       - name: Upload test results
