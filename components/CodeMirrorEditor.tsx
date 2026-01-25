@@ -56,6 +56,7 @@ interface EditorProps {
   initialCursor?: { start: number; end: number };
   files?: Array<{ id: string; name: string; path?: string; content?: string }>;
   onNavigate?: (fileId: string) => void;
+  onFocus?: () => void;
 }
 
 const wikiLinkDecoration = Decoration.mark({
@@ -240,7 +241,8 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorRef, EditorProps>(({
   onCursorSave,  // 保存光标位置回调
   initialCursor,
   files = [],
-  onNavigate
+  onNavigate,
+  onFocus
 }, ref) => {
   const viewRef = useRef<EditorView | null>(null);
   const [currentWikiLink, setCurrentWikiLink] = useState<WikiLink | null>(null);
@@ -262,6 +264,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorRef, EditorProps>(({
   const onCursorChangeRef = useRef(onCursorChange);
   const onCursorSaveRef = useRef(onCursorSave);  // 保存光标位置的 ref
   const onNavigateRef = useRef(onNavigate);
+  const onFocusRef = useRef(onFocus);
   const filesRef = useRef(files);
   const currentWikiLinkRef = useRef(currentWikiLink);
   const linkTargetExistsRef = useRef(linkTargetExists);
@@ -305,7 +308,8 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorRef, EditorProps>(({
     onCursorSaveRef.current = onCursorSave;
     onNavigateRef.current = onNavigate;
     filesRef.current = files;
-  }, [onCursorChange, onCursorSave, onNavigate, files]);
+    onFocusRef.current = onFocus;
+  }, [onCursorChange, onCursorSave, onNavigate, onFocus, files]);
 
   useEffect(() => {
     currentWikiLinkRef.current = currentWikiLink;
@@ -611,6 +615,9 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorRef, EditorProps>(({
               const { anchor, head } = viewRef.current.state.selection.main;
               onCursorSaveRef.current?.({ anchor, head });
             }
+          });
+          view.dom.addEventListener('focusin', () => {
+            onFocusRef.current?.();
           });
 
           // 最健壮的修复：使用 IntersectionObserver 检测可见性变化

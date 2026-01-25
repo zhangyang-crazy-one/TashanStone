@@ -200,22 +200,253 @@ All shared types live in `types.ts` at project root:
 
 ```
 TashaStone/
-├── components/          # React UI components
-├── services/            # Frontend services (AI, auth, file, etc.)
-├── src/
-│   ├── hooks/           # Custom React hooks
-│   └── services/        # Platform-aware services
-├── electron/
-│   ├── main.ts          # Electron main process entry
-│   ├── preload.ts       # Preload script (IPC bridge)
-│   ├── ipc/             # IPC handlers by domain
-│   ├── database/        # SQLite repositories
-│   ├── lancedb/         # Vector database
-│   └── mcp/             # MCP protocol implementation
-├── test/                # Vitest test files
-├── types.ts             # Shared TypeScript types
-└── utils/               # Utility functions
+├── .claude/                           # Claude AI 配置
+│   ├── agents/                        # 自定义代理
+│   │   ├── code-reviewer.md
+│   │   ├── feature-developer.md
+│   │   └── project-manager.md
+│   ├── ccnotify/                      # 通知系统
+│   ├── commands/                      # 斜杠命令
+│   │   ├── bootstrap.md, commit.md, feature-start.md
+│   │   ├── next.md, progress.md, start.md
+│   │   └── update-status.md
+│   ├── hooks/                         # 生命周期钩子
+│   ├── rules/                         # 规则文件
+│   │   ├── 00-global.md ~ 07-refactoring.md
+│   │   ├── architecture-rules.md
+│   │   └── ui-ux-rules.md
+│   ├── settings.json, settings.local.json
+│   └── skills/                        # 技能模块
+│       ├── ai-integration/SKILL.md
+│       ├── bug-debug/SKILL.md
+│       ├── context7/SKILL.md
+│       ├── electron-main/SKILL.md
+│       ├── electron-react/SKILL.md
+│       ├── mcp-tools/SKILL.md
+│       ├── planning-with-files/SKILL.md, templates/
+│       ├── platform-build/SKILL.md
+│       ├── rag-vectordb/SKILL.md
+│       ├── spec-interview/SKILL.md
+│       └── ui-ux-pro-max/scripts/, SKILL.md
+├── .opencode/                         # OpenCode 配置
+│   ├── agent/, command/, config.json
+│   └── opencode.json
+├── .github/                           # GitHub 配置
+│   ├── actions/, ISSUE_TEMPLATE/
+│   └── workflows/                     # CI/CD 工作流
+├── components/                        # React 组件 (90+ 文件)
+│   ├── AISettingsModal/               # AI 设置模态框
+│   │   ├── AITab.tsx, AppearanceTab.tsx, AutoUpgradeSettingsSection.tsx
+│   │   ├── BackupPasswordDialog.tsx, ContextTab.tsx, EmbeddingSection.tsx
+│   │   ├── KeyboardTab.tsx, McpTab.tsx, MemoryStatsSection.tsx
+│   │   ├── PromptsTab.tsx, ProviderCredentialsSection.tsx
+│   │   ├── SecurityTab.tsx
+│   │   └── index.tsx
+│   ├── App/                           # 应用容器
+│   │   ├── AppOverlays.tsx, AppViewRouter.tsx, AppWorkspace.tsx
+│   ├── ChatPanel/                     # AI 聊天面板
+│   │   ├── ChatHeader.tsx, ChatInput.tsx, MemoryPanel.tsx
+│   │   ├── MessageItem.tsx, MessageList.tsx, MessageMarkdown.tsx
+│   │   ├── ToolCallDetails.tsx, ToolCallStatus.tsx
+│   │   ├── index.tsx
+│   │   └── useChatMemory.ts
+│   ├── Preview/                       # Markdown 预览
+│   │   ├── BlockReferencePreview.tsx, EnhancedImage.tsx
+│   │   ├── markdownPlugins.ts, markdownUtils.ts
+│   │   ├── MermaidRenderer.tsx, PreviewCodeBlock.tsx
+│   │   ├── TagPreview.tsx, WikiLinkPreview.tsx
+│   │   ├── index.tsx
+│   │   └── useFloatingPreview.ts
+│   ├── QuizPanel/                     # 测验面板
+│   │   ├── quizAnswerUtils.ts, QuizBankLink.tsx
+│   │   ├── quizBankUtils.ts, QuizFooter.tsx
+│   │   ├── QuizHeader.tsx, QuizMistakeCollection.tsx
+│   │   ├── QuizQuestionCard.tsx, index.tsx
+│   │   └── useQuizMistakes.ts
+│   ├── Sidebar/                       # 侧边栏
+│   │   ├── FileTreeRow.tsx, SidebarContextMenu.tsx
+│   │   ├── SidebarFileActions.tsx, SidebarFileOverlays.tsx
+│   │   ├── SidebarFilesTab.tsx, SidebarFileTree.tsx
+│   │   ├── SidebarOutlineTab.tsx, SidebarSnippetsTab.tsx
+│   │   ├── SidebarStatusPanel.tsx, SidebarTabs.tsx
+│   │   ├── SidebarTagsSection.tsx, sidebarTypes.ts
+│   │   ├── sidebarUtils.tsx, index.tsx
+│   │   └── useSidebarFileTree.ts
+│   ├── context/                       # 上下文管理组件
+│   │   ├── CacheMonitor.tsx, CheckpointDrawer.tsx
+│   │   ├── CompactButton.tsx, ContextActionBadge.tsx
+│   │   ├── TokenUsageIndicator.tsx
+│   │   └── index.ts
+│   ├── *.tsx                          # 独立组件文件
+│   │   ├── AnalyticsDashboard.tsx, BacklinkPanel.tsx
+│   │   ├── BlockReference.tsx, CodeMirrorEditor.tsx
+│   │   ├── CompactMemoryPrompt.tsx, ConfirmDialog.tsx
+│   │   ├── DiffView.tsx, EditorTabs.tsx
+│   │   ├── KnowledgeGraph.tsx, LearningRoadmap.tsx
+│   │   ├── LinkInsertModal.tsx, LoginScreen.tsx
+│   │   ├── MemoryPanel.tsx, MemoryPreviewModal.tsx
+│   │   ├── MindMap.tsx, QuestionBankModal.tsx
+│   │   ├── RAGResultsCard.tsx, SearchModal.tsx
+│   │   ├── SmartOrganizeModal.tsx, SplitEditor.tsx
+│   │   ├── StreamToolCard.tsx, StudyPlanPanel.tsx
+│   │   ├── SyntaxHighlight.tsx, TagsBrowser.tsx
+│   │   ├── TagSuggestionModal.tsx, ThinkingCard.tsx
+│   │   ├── Toast.tsx, Toolbar.tsx
+│   │   ├── ToolCallCard.tsx, Tooltip.tsx
+│   │   ├── VoiceTranscriptionModal.tsx, WikiLink.tsx
+│   │   └── App.tsx
+├── services/                          # 前端服务 (AI 服务)
+│   ├── ai/                            # AI 核心服务
+│   │   ├── embeddings.ts, geminiClient.ts
+│   │   ├── mcpClients.ts, mcpToolGuide.ts
+│   │   ├── providers/                 # AI 提供商
+│   │   │   ├── anthropicProvider.ts, geminiProvider.ts
+│   │   │   ├── ollamaProvider.ts, openaiProvider.ts
+│   │   │   └── providerTypes.ts
+│   │   ├── streamingProviders.ts, toolDefinitions.ts
+│   │   └── index.ts
+│   ├── aiService.ts, authService.ts, fileService.ts
+│   ├── geminiService.ts, ocrService.ts, ragService.ts
+│   ├── themeService.ts, toolCallAdapters.ts
+│   └── toolSelector.ts
+├── src/                               # 平台无关源码
+│   ├── app/                           # 应用 hooks
+│   │   ├── appDefaults.ts
+│   │   └── hooks/                     # 30+ 应用 hooks
+│   │       ├── useAIWorkflow.ts, useAppConfig.ts
+│   │       ├── useAppFeatureState.ts, useAppNotifications.ts
+│   │       ├── useAppServices.ts, useAppUiState.ts
+│   │       ├── useAppWorkspaceState.ts, useAuthState.ts
+│   │       ├── useChatHistory.ts, useEditorActions.ts
+│   │       ├── useFileImports.ts, useFileOperations.ts
+│   │       ├── useFileState.ts, useKeyboardShortcuts.ts
+│   │       ├── useKnowledgeBase.ts, useOverlayActions.ts
+│   │       ├── useStreamingUpdates.ts, useThemeState.ts
+│   │       └── useWikiLinks.ts
+│   ├── hooks/                         # 通用 hooks
+│   │   ├── usePlatform.ts, useStorage.ts
+│   │   └── useStreamingToolCalls.ts
+│   ├── services/                      # 平台服务
+│   │   ├── ai/platformFetch.ts
+│   │   ├── context/                   # 上下文服务 (20+ 文件)
+│   │   │   ├── batch-operations.ts, checkpoint.ts
+│   │   │   ├── compaction.ts, config-utils.ts
+│   │   │   ├── index.ts, injector.ts
+│   │   │   ├── long-term-memory.ts, manager.ts
+│   │   │   ├── memoryAutoUpgrade.ts, memoryCleanupService.ts
+│   │   │   ├── memory-compression.ts, memory.ts
+│   │   │   ├── persistent-memory.ts, project-memory.ts
+│   │   │   ├── prompt-cache.ts, streaming.ts
+│   │   │   ├── token-budget.ts, toolGuide.ts
+│   │   │   └── types.ts
+│   │   ├── deep-research/types.ts
+│   │   ├── index.ts, knowledgeService.ts, mcpService.ts
+│   │   ├── organize/organizeService.ts
+│   │   ├── platform/platformService.ts
+│   │   ├── quiz/questionBankService.ts
+│   │   ├── search/searchService.ts
+│   │   ├── srs/srsService.ts
+│   │   ├── storage/                   # 存储服务
+│   │   │   ├── electronStorage.ts, storageService.ts
+│   │   │   ├── types.ts, webStorage.ts
+│   │   ├── tag/tagService.ts
+│   │   └── wiki/wikiLinkService.ts
+│   ├── types/wiki.ts
+│   └── *.css                          # 样式文件
+│       ├── atom-one-dark.css, index.css
+│       ├── pixel-theme.css, vite-env.d.ts
+│       └── streamingUtils.ts
+├── electron/                          # Electron 主进程
+│   ├── database/                      # SQLite 数据库
+│   │   ├── index.ts, migrations.ts
+│   │   └── repositories/              # 数据仓库 (10+ 文件)
+│   │       ├── authRepository.ts, chatRepository.ts
+│   │       ├── configRepository.ts, contextRepository.ts
+│   │       ├── fileRepository.ts, mistakeRepository.ts
+│   │       ├── themeRepository.ts, vectorRepository.ts
+│   │       └── *.test.md
+│   ├── ipc/                           # IPC 处理器
+│   │   ├── aiHandlers.ts, backupHandlers.ts
+│   │   ├── contextHandlers.ts, dbHandlers.ts
+│   │   ├── fileHandlers.ts, index.ts
+│   │   ├── lancedbHandlers.ts, ocrHandlers.ts
+│   │   ├── sherpaHandlers.ts, whisperHandlers.ts
+│   ├── lancedb/index.ts, main.ts, preload.ts
+│   ├── mcp/                           # MCP 协议
+│   │   ├── handlers.ts, index.ts
+│   │   ├── MCPClient.ts, types.ts
+│   ├── memory/persistentMemoryService.ts
+│   ├── ocr/index.ts
+│   ├── sherpa/                        # 语音识别
+│   │   ├── audioProcessor.ts, index.ts
+│   ├── types/ipc.ts
+│   ├── utils/                         # 工具函数
+│   │   ├── logger.ts, paths.ts
+│   └── whisper/index.ts
+├── test/                              # 测试文件
+│   ├── components/                    # 组件测试
+│   │   ├── ConfirmDialog.test.tsx, EditorTabs.test.tsx
+│   │   ├── Sidebar.test.tsx, Toast.test.tsx
+│   │   ├── Toolbar.test.tsx, WikiLink.test.tsx
+│   ├── knowledge/tag.test.ts
+│   ├── memory/                        # 内存测试
+│   │   ├── memory.integration.test.ts
+│   │   ├── memory.unit.test.ts, README.md
+│   ├── services/                      # 服务测试
+│   │   ├── aiService.toolEvents.test.ts, fileService.test.ts
+│   │   ├── srsService.test.ts, streamingSupport.test.ts
+│   │   ├── streamingToolAdapter.test.ts
+│   │   ├── themeService.test.ts, toolCallAdapters.test.ts
+│   │   └── toolSelector.test.ts
+│   ├── setup.ts, vitest.d.ts
+│   └── wiki/wikiLink.test.ts
+├── docs/                              # 文档
+│   ├── CODE_REVIEW.md, PROJECT.md, PROJECT_STATUS.md
+│   ├── issues/                        # 问题文档
+│   ├── TEMPLATE/                      # 模板
+│   ├── TODO.md, V1.75_*.md
+│   ├── deepresearch-integration-plan.md
+│   ├── utils/                         # 工具文档
+│   │   ├── BUILD_MAC.md, MCP_USAGE.md
+│   │   └── User_Guide.md
+│   └── mcp-config-example.json
+├── planning/                          # 规划文档
+│   ├── architecture_design.md, findings.md
+│   ├── logging_plan.md, progress.md
+│   ├── task_plan.md
+│   └── tool-call-unification/
+├── hooks/                             # 遗留 hooks
+│   └── useSpeechRecognition.ts
+├── utils/                             # 工具函数
+│   ├── base64.ts, escapeHtml.ts, jsonHelpers.ts
+│   ├── parseToolCalls.ts, slug.ts
+│   └── translations.ts
+├── .env.template, .gitignore
+├── AGENTS.md, App.tsx, CHANGELOG.md
+├── electron-builder.yml, index.tsx
+├── opencode.json, package.json
+├── playwright.config.ts, postcss.config.js
+├── README.md, tsconfig.json
+├── types.ts, types.d.ts, vitest.config.ts
+├── vite.config.ts, .claude/settings.json
+├── .github/workflows/, .github/dependabot.yml
+├── .github/ISSUE_TEMPLATE/, .github/PULL_REQUEST_TEMPLATE.md
+└── resources/                         # 资源文件 (模型文件)
 ```
+
+## Key Files Reference
+
+| Purpose | File |
+|---------|------|
+| **Main Entry** | `electron/main.ts`, `App.tsx`, `index.tsx` |
+| **Types** | `types.ts`, `src/types/wiki.ts` |
+| **AI Service** | `services/aiService.ts`, `services/ai/providers/*.ts` |
+| **Context Services** | `src/services/context/*.ts` |
+| **Database** | `electron/database/index.ts`, `electron/database/repositories/*.ts` |
+| **IPC Handlers** | `electron/ipc/index.ts`, `electron/ipc/*.ts` |
+| **Storage** | `src/services/storage/*.ts`, `src/services/context/persistent-memory.ts` |
+| **Tests** | `test/setup.ts`, `test/services/*.test.ts` |
+| **Config** | `vite.config.ts`, `tsconfig.json`, `electron-builder.yml` |
 
 ## Forbidden Patterns
 

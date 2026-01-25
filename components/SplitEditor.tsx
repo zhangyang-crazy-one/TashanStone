@@ -152,6 +152,7 @@ export const SplitEditor: React.FC<SplitEditorProps> = ({
               onChange={(content) => onContentChange(file.id, content)}
               onCursorChange={(position) => onCursorChange?.(file.id, position)}
               onCursorSave={(position) => onCursorSave?.(file.id, position)}
+              onFocus={() => onSelectPane?.(pane.id)}
               initialCursor={getCursorPosition?.(file.id) || file.cursorPosition}
               files={files}
               onNavigate={(fileId) => {

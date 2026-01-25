@@ -1,4 +1,4 @@
-import { QuestionBank, QuizQuestion, QuestionBankStats, AIConfig } from '../../../types';
+import { QuestionBank, QuizQuestion, QuestionBankStats, AIConfig, Quiz, DifficultyLevel } from '../../../types';
 import { generateQuiz, extractQuizFromRawContent } from '../../../services/aiService';
 
 const STORAGE_KEY = 'neon-question-banks';
@@ -182,6 +182,52 @@ export class QuestionBankService {
       console.error('[QuestionBankService] Failed to generate questions:', error);
       throw error;
     }
+  }
+
+  async createQuizFromBank(
+    bankId: string,
+    options?: { count?: number; difficulty?: DifficultyLevel | 'mixed'; tags?: string[] }
+  ): Promise<Quiz> {
+    await this.initialize();
+
+    const bank = this.banks.find(b => b.id === bankId);
+    if (!bank) throw new Error('Bank not found');
+
+    const filtered = this.filterQuestions(bank.questions, options?.difficulty, options?.tags);
+    if (filtered.length === 0) throw new Error('No questions match the selected filters');
+
+    const desiredCount = options?.count ?? Math.min(5, filtered.length);
+    const count = Math.max(1, Math.min(desiredCount, filtered.length));
+    const selected = this.shuffleQuestions(filtered).slice(0, count);
+
+    const quizQuestions = selected.map(q => this.cloneQuestionForQuiz(q));
+    const now = Date.now();
+
+    return {
+      id: `quiz-bank-${bankId}-${now}`,
+      title: `${bank.name} Quiz`,
+      description: bank.description || '',
+      questions: quizQuestions,
+      isGraded: false,
+      sourceFileId: bank.sourceFileIds[0]
+    };
+  }
+
+  createQuizFromQuestions(
+    questions: QuizQuestion[],
+    options?: { title?: string; description?: string; sourceFileId?: string }
+  ): Quiz {
+    const now = Date.now();
+    const quizQuestions = questions.map(q => this.cloneQuestionForQuiz(q));
+
+    return {
+      id: `quiz-select-${now}`,
+      title: options?.title || 'Selected Quiz',
+      description: options?.description || '',
+      questions: quizQuestions,
+      isGraded: false,
+      sourceFileId: options?.sourceFileId
+    };
   }
 
   getBankStats(bankId: string): QuestionBankStats | null {
@@ -385,6 +431,44 @@ export class QuestionBankService {
       console.error('[QuestionBankService] Failed to import:', error);
       throw new Error('Invalid JSON format');
     }
+  }
+
+  private filterQuestions(
+    questions: QuizQuestion[],
+    difficulty?: DifficultyLevel | 'mixed',
+    tags?: string[]
+  ): QuizQuestion[] {
+    let filtered = questions;
+
+    if (difficulty && difficulty !== 'mixed') {
+      filtered = filtered.filter(q => q.difficulty === difficulty);
+    }
+
+    if (tags && tags.length > 0) {
+      const tagSet = new Set(tags);
+      filtered = filtered.filter(q => q.tags?.some(tag => tagSet.has(tag)));
+    }
+
+    return filtered;
+  }
+
+  private shuffleQuestions(questions: QuizQuestion[]): QuizQuestion[] {
+    const copy = [...questions];
+    for (let i = copy.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
+  }
+
+  private cloneQuestionForQuiz(question: QuizQuestion): QuizQuestion {
+    return {
+      ...question,
+      userAnswer: undefined,
+      isCorrect: undefined,
+      gradingResult: undefined,
+      lastUsed: question.lastUsed
+    };
   }
 }
 

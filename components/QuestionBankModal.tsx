@@ -1,8 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { X, Plus, Trash2, Edit3, GraduationCap, BookOpen, Sparkles, BarChart2, Search, Filter, ChevronDown, ChevronRight, FileText } from 'lucide-react';
-import { QuestionBank, QuestionBankStats, QuizQuestion, MarkdownFile } from '../types';
-import { generateQuiz } from '../services/aiService';
-import { AIConfig } from '../types';
+import React, { useEffect, useMemo, useState } from 'react';
+import { X, Plus, Trash2, GraduationCap, BookOpen, Sparkles, Search, ChevronDown } from 'lucide-react';
+import { DifficultyLevel, MarkdownFile, QuestionBank, QuestionBankStats, Quiz, QuizQuestion } from '../types';
 import { translations } from '../utils/translations';
 import { Language } from '../utils/translations';
 
@@ -10,14 +8,15 @@ interface QuestionBankModalProps {
   isOpen: boolean;
   onClose: () => void;
   banks: QuestionBank[];
-  onCreateBank: (name: string, description?: string) => void;
+  onCreateBank: (name: string, description?: string) => Promise<QuestionBank | null>;
   onDeleteBank: (bankId: string) => void;
   onUpdateBank: (bankId: string, updates: Partial<QuestionBank>) => void;
-  onAddQuestionsToBank: (bankId: string, questions: QuizQuestion[]) => void;
+  onAddQuestionsToBank: (bankId: string, questions: QuizQuestion[]) => Promise<boolean>;
   onGenerateQuestions: (bankId: string, sourceFileId: string, count?: number, difficulty?: string) => Promise<void>;
+  onCreateQuizFromBank: (bankId: string, count?: number, difficulty?: DifficultyLevel | 'mixed') => Promise<Quiz | null>;
+  onCreateQuizFromSelection: (questions: QuizQuestion[], title?: string) => Promise<Quiz | null>;
   onRemoveQuestion: (bankId: string, questionId: string) => void;
   files: MarkdownFile[];
-  aiConfig: AIConfig;
   onShowToast: (message: string, isError?: boolean) => void;
   language?: Language;
 }
@@ -31,9 +30,10 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
   onUpdateBank,
   onAddQuestionsToBank,
   onGenerateQuestions,
+  onCreateQuizFromBank,
+  onCreateQuizFromSelection,
   onRemoveQuestion,
   files,
-  aiConfig,
   onShowToast,
   language = 'en'
 }) => {
@@ -47,7 +47,14 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
   const [isGenerating, setIsGenerating] = useState(false);
   const [selectedFileId, setSelectedFileId] = useState<string>('');
   const [questionCount, setQuestionCount] = useState<number>(5);
-  const [difficulty, setDifficulty] = useState<string>('medium');
+  const [difficulty, setDifficulty] = useState<DifficultyLevel | 'mixed'>('medium');
+  const [selectedQuestionKeys, setSelectedQuestionKeys] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!isOpen) {
+      setSelectedQuestionKeys(new Set());
+    }
+  }, [isOpen]);
 
   // Get selected file content for question generation
   const selectedFile = useMemo(() => {
@@ -96,6 +103,49 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
     );
   }, [banks, searchQuery]);
 
+  const selectionKey = (bankId: string, questionId: string) => `${bankId}:${questionId}`;
+
+  const selectedEntries = useMemo(() => {
+    const entries: Array<{ bank: QuestionBank; question: QuizQuestion }> = [];
+    for (const bank of banks) {
+      for (const question of bank.questions) {
+        if (selectedQuestionKeys.has(selectionKey(bank.id, question.id))) {
+          entries.push({ bank, question });
+        }
+      }
+    }
+    return entries;
+  }, [banks, selectedQuestionKeys]);
+
+  const selectedQuestions = useMemo(
+    () => selectedEntries.map(entry => entry.question),
+    [selectedEntries]
+  );
+
+  const selectedCount = selectedQuestions.length;
+  const selectedBankNames = useMemo(() => {
+    const names = new Set<string>();
+    selectedEntries.forEach(entry => names.add(entry.bank.name));
+    return Array.from(names);
+  }, [selectedEntries]);
+
+  const clearSelection = () => {
+    setSelectedQuestionKeys(new Set());
+  };
+
+  const toggleQuestionSelection = (bankId: string, questionId: string) => {
+    setSelectedQuestionKeys(prev => {
+      const next = new Set(prev);
+      const key = selectionKey(bankId, questionId);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
   const handleCreateBank = () => {
     if (!newBankName.trim()) {
       onShowToast(t.bankName + t.confirmDelete || 'Please enter a bank name', true);
@@ -118,10 +168,46 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
     try {
       await onGenerateQuestions(bankId, selectedFileId, questionCount, difficulty);
       onShowToast(`${t.questionCount.replace('{count}', String(questionCount))} generated successfully!`);
-    } catch (error: any) {
-      onShowToast(`Failed to generate questions: ${error.message}`, true);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      onShowToast(`Failed to generate questions: ${message}`, true);
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const handleCreateQuiz = async (bankId: string) => {
+    const bank = banks.find(b => b.id === bankId);
+    if (!bank || bank.questions.length === 0) {
+      onShowToast(t.noQuestionsInBank || 'No questions available in this bank', true);
+      return;
+    }
+
+    try {
+      const quiz = await onCreateQuizFromBank(bankId, questionCount, difficulty);
+      if (quiz) {
+        onClose();
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to create quiz';
+      onShowToast(message, true);
+    }
+  };
+
+  const handleCreateQuizFromSelection = async () => {
+    if (selectedCount === 0) {
+      onShowToast(t.noQuestionsSelected || 'No questions selected', true);
+      return;
+    }
+
+    const title = selectedBankNames.length === 1
+      ? `${selectedBankNames[0]} Quiz`
+      : (t.customQuizTitle || 'Custom Quiz');
+
+    const quiz = await onCreateQuizFromSelection(selectedQuestions, title);
+    if (quiz) {
+      clearSelection();
+      onClose();
     }
   };
 
@@ -308,21 +394,11 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
                         {/* Expanded Content */}
                         {isExpanded && (
                           <div className="px-4 pb-4 border-t border-paper-100 dark:border-cyber-700 pt-4">
-                            {/* Generation Options */}
+                            {/* Quiz Assembly */}
                             <div className="mb-4 space-y-3">
                               <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">
-                                {t.generateQuiz}:
+                                {t.createQuizFromBank || 'Create Quiz from Bank'}:
                               </label>
-                              <select
-                                value={selectedFileId}
-                                onChange={(e) => setSelectedFileId(e.target.value)}
-                                className="w-full px-3 py-2 bg-paper-100 dark:bg-cyber-900 border border-paper-200 dark:border-cyber-700 rounded-lg text-sm focus:outline-none focus:border-violet-500"
-                              >
-                                <option value="">{t.transcription?.selectFile || 'Select a file...'}</option>
-                                {files.filter(f => f.content.trim().length > 0).map(file => (
-                                  <option key={file.id} value={file.id}>{file.name}</option>
-                                ))}
-                              </select>
 
                               {/* Options Row */}
                               <div className="grid grid-cols-2 gap-3">
@@ -332,7 +408,7 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
                                   </label>
                                   <select
                                     value={questionCount}
-                                    onChange={(e) => setQuestionCount(parseInt(e.target.value))}
+                                    onChange={(e) => setQuestionCount(parseInt(e.target.value, 10))}
                                     className="w-full px-3 py-2 bg-paper-100 dark:bg-cyber-900 border border-paper-200 dark:border-cyber-700 rounded-lg text-sm focus:outline-none focus:border-violet-500"
                                   >
                                     <option value={3}>3 {t.questionCount.replace('{count}', '')}</option>
@@ -347,16 +423,42 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
                                   </label>
                                   <select
                                     value={difficulty}
-                                    onChange={(e) => setDifficulty(e.target.value)}
+                                    onChange={(e) => setDifficulty(e.target.value as DifficultyLevel | 'mixed')}
                                     className="w-full px-3 py-2 bg-paper-100 dark:bg-cyber-900 border border-paper-200 dark:border-cyber-700 rounded-lg text-sm focus:outline-none focus:border-violet-500"
                                   >
                                     <option value="easy">{t.difficultyEasy}</option>
                                     <option value="medium">{t.difficultyMedium}</option>
                                     <option value="hard">{t.difficultyHard}</option>
-                                    <option value="mixed">Mixed</option>
+                                    <option value="mixed">{t.difficultyMixed || 'Mixed'}</option>
                                   </select>
                                 </div>
                               </div>
+
+                              <button
+                                onClick={() => handleCreateQuiz(bank.id)}
+                                disabled={bank.questions.length === 0}
+                                className="w-full py-2 bg-cyan-500 hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                              >
+                                <GraduationCap size={16} />
+                                {t.startQuiz}
+                              </button>
+                            </div>
+
+                            {/* AI Question Generation */}
+                            <div className="mb-4 space-y-3">
+                              <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">
+                                {t.generateQuestions || 'Generate Questions'}:
+                              </label>
+                              <select
+                                value={selectedFileId}
+                                onChange={(e) => setSelectedFileId(e.target.value)}
+                                className="w-full px-3 py-2 bg-paper-100 dark:bg-cyber-900 border border-paper-200 dark:border-cyber-700 rounded-lg text-sm focus:outline-none focus:border-violet-500"
+                              >
+                                <option value="">{t.transcription?.selectFile || 'Select a file...'}</option>
+                                {files.filter(f => f.content.trim().length > 0).map(file => (
+                                  <option key={file.id} value={file.id}>{file.name}</option>
+                                ))}
+                              </select>
 
                               <button
                                 onClick={() => handleGenerateQuestions(bank.id)}
@@ -364,7 +466,7 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
                                 className="w-full py-2 bg-violet-500 hover:bg-violet-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
                               >
                                 <Sparkles size={16} />
-                                {isGenerating ? t.analyzingContent : `${t.generateQuiz} ${t.questionCount.replace('{count}', String(questionCount))}`}
+                                {isGenerating ? t.analyzingContent : `${t.generateQuestions || 'Generate Questions'} ${t.questionCount.replace('{count}', String(questionCount))}`}
                               </button>
                             </div>
 
@@ -374,47 +476,60 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
                                 <h4 className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
                                   {t.questionCount.replace('{count}', String(bank.questions.length))}
                                 </h4>
-                                {bank.questions.slice(0, 5).map((q, idx) => (
-                                  <div
-                                    key={q.id}
-                                    className="flex items-start justify-between p-3 bg-paper-50 dark:bg-cyber-900 rounded-lg"
-                                  >
-                                    <div className="flex-1">
-                                      <div className="flex items-center gap-2 mb-1">
-                                        <span className="text-xs font-mono text-slate-400">Q{idx + 1}</span>
-                                        {q.difficulty && (
-                                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                                            q.difficulty === 'easy' ? 'bg-green-100 dark:bg-green-900/30 text-green-700' :
-                                            q.difficulty === 'medium' ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700' :
-                                            'bg-red-100 dark:bg-red-900/30 text-red-700'
-                                          }`}>
-                                            {q.difficulty}
-                                          </span>
-                                        )}
-                                        <span className="text-[10px] text-slate-400">
-                                          Used {q.timesUsed} times
-                                        </span>
+                                <div className="space-y-2 max-h-64 overflow-y-auto custom-scrollbar pr-1">
+                                  {bank.questions.map((q, idx) => {
+                                    const key = selectionKey(bank.id, q.id);
+                                    const isSelected = selectedQuestionKeys.has(key);
+                                    return (
+                                      <div
+                                        key={q.id}
+                                        className={`flex items-start justify-between gap-2 p-3 rounded-lg border ${
+                                          isSelected
+                                            ? 'border-cyan-400/60 bg-cyan-50/40 dark:bg-cyan-900/20'
+                                            : 'border-transparent bg-paper-50 dark:bg-cyber-900'
+                                        }`}
+                                      >
+                                        <label className="flex items-start gap-3 flex-1 cursor-pointer">
+                                          <input
+                                            type="checkbox"
+                                            checked={isSelected}
+                                            onChange={() => toggleQuestionSelection(bank.id, q.id)}
+                                            className="mt-1 h-4 w-4 rounded border-paper-300 text-cyan-500 focus:ring-cyan-400"
+                                          />
+                                          <div className="flex-1">
+                                            <div className="flex items-center gap-2 mb-1">
+                                              <span className="text-xs font-mono text-slate-400">Q{idx + 1}</span>
+                                              {q.difficulty && (
+                                                <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                                                  q.difficulty === 'easy' ? 'bg-green-100 dark:bg-green-900/30 text-green-700' :
+                                                  q.difficulty === 'medium' ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700' :
+                                                  'bg-red-100 dark:bg-red-900/30 text-red-700'
+                                                }`}>
+                                                  {q.difficulty}
+                                                </span>
+                                              )}
+                                              <span className="text-[10px] text-slate-400">
+                                                Used {q.timesUsed} times
+                                              </span>
+                                            </div>
+                                            <p className="text-sm text-slate-700 dark:text-slate-300 line-clamp-2">
+                                              {q.question}
+                                            </p>
+                                          </div>
+                                        </label>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            onRemoveQuestion(bank.id, q.id);
+                                          }}
+                                          className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-slate-400 hover:text-red-500 transition-colors"
+                                        >
+                                          <Trash2 size={14} />
+                                        </button>
                                       </div>
-                                      <p className="text-sm text-slate-700 dark:text-slate-300 line-clamp-2">
-                                        {q.question}
-                                      </p>
-                                    </div>
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        onRemoveQuestion(bank.id, q.id);
-                                      }}
-                                      className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-slate-400 hover:text-red-500 transition-colors"
-                                    >
-                                      <Trash2 size={14} />
-                                    </button>
-                                  </div>
-                                ))}
-                                {bank.questions.length > 5 && (
-                                  <p className="text-xs text-slate-400 text-center py-2">
-                                    +{bank.questions.length - 5} {t.questionCount.replace('{count}', '')}
-                                  </p>
-                                )}
+                                    );
+                                  })}
+                                </div>
                               </div>
                             )}
 
@@ -441,6 +556,27 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
 
         {/* Footer */}
         <div className="px-6 py-4 border-t border-paper-200 dark:border-cyber-700 bg-paper-50 dark:bg-cyber-900/50 rounded-b-xl">
+          {selectedCount > 0 && (
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm text-slate-600 dark:text-slate-300">
+                {t.selectedQuestions?.replace('{count}', String(selectedCount)) || `Selected ${selectedCount} questions`}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={clearSelection}
+                  className="px-3 py-1.5 text-xs font-medium rounded-lg border border-paper-200 dark:border-cyber-700 text-slate-600 dark:text-slate-300 hover:bg-paper-100 dark:hover:bg-cyber-800 transition-colors"
+                >
+                  {t.clearSelection || 'Clear selection'}
+                </button>
+                <button
+                  onClick={handleCreateQuizFromSelection}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-cyan-500 hover:bg-cyan-600 text-white transition-colors"
+                >
+                  {t.startQuiz}
+                </button>
+              </div>
+            </div>
+          )}
           <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
             <span>{filteredBanks.length} of {banks.length} banks</span>
             <span>{t.questionBankManager}</span>
