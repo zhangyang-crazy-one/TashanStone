@@ -44,6 +44,17 @@ runs:
         sudo apt-get update
         sudo apt-get install -y rpm
 
+    - name: Cache Electron downloads
+      uses: actions/cache@v4
+      with:
+        path: |
+          ${{ github.workspace }}/.cache/electron
+          ${{ github.workspace }}/.cache/electron-builder
+        key: ${{ runner.os }}-electron-${{ inputs.os }}-${{ inputs.arch }}-${{ hashFiles('**/package.json', '**/bun.lock', '**/package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-electron-${{ inputs.os }}-${{ inputs.arch }}-
+          ${{ runner.os }}-electron-
+
     # Build Electron App
     - name: Build Electron for ${{ inputs.os }} ${{ inputs.arch }}
       shell: ${{ inputs.shell }}
@@ -52,6 +63,8 @@ runs:
         APPLE_TEAM_ID: ${{ env.APPLE_TEAM_ID }}
         APPLE_ID: ${{ env.APPLE_ID }}
         APPLE_ID_PASSWORD: ${{ env.APPLE_ID_PASSWORD }}
+        ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
+        ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
       run: |
         npm run build:electron
 
@@ -59,26 +72,41 @@ runs:
     - name: Package for Linux x64
       if: inputs.os == 'linux' && inputs.arch == 'x64'
       shell: ${{ inputs.shell }}
+      env:
+        ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
+        ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
       run: npm run dist:linux:x64
 
     - name: Package for Linux arm64
       if: inputs.os == 'linux' && inputs.arch == 'arm64'
       shell: ${{ inputs.shell }}
+      env:
+        ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
+        ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
       run: npm run dist:linux:arm64
 
     - name: Package for Windows x64
       if: inputs.os == 'windows' && inputs.arch == 'x64'
       shell: ${{ inputs.shell }}
+      env:
+        ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
+        ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
       run: npm run dist:win:x64
 
     - name: Package for Windows arm64
       if: inputs.os == 'windows' && inputs.arch == 'arm64'
       shell: ${{ inputs.shell }}
+      env:
+        ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
+        ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
       run: npm run dist:win:arm64
 
     - name: Package for macOS
       if: inputs.os == 'macos'
       shell: ${{ inputs.shell }}
+      env:
+        ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
+        ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
       run: npm run dist:mac
 
     # Prepare upload directory
