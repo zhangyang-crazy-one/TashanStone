@@ -61,7 +61,7 @@
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@ffprobe-installer/ffprobe": "^2.1.2",
     "@fontsource/ma-shan-zheng": "^5.2.8",
-    "@fontsource/noto-sans-sc": "^5.2.8",
+    "@fontsource/noto-sans-sc": "^5.2.9",
     "@fontsource/noto-serif-sc": "^5.2.8",
     "@google/genai": "^1.30.0",
     "@lancedb/lancedb": "^0.23.0",
