@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import type { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -8,12 +8,52 @@ interface MessageMarkdownProps {
   useCustomComponents?: boolean;
 }
 
+type InjectedMemoryCounts = {
+  auto?: number;
+  manual?: number;
+  total?: number;
+};
+
+type InjectedMessage = {
+  injectedBlock: string;
+  userQuery: string;
+  counts: InjectedMemoryCounts;
+};
+
+const INJECTION_PREFIX = '【系统提示】';
+const QUESTION_MARKERS = ['用户问题：', 'User question:'];
+
 const getTextFromNode = (node: React.ReactNode): string => {
   if (typeof node === 'string') return node;
   if (Array.isArray(node)) {
     return node.map(getTextFromNode).join('');
   }
   return '';
+};
+
+const parseInjectedMessage = (content: string): InjectedMessage | null => {
+  if (!content.startsWith(INJECTION_PREFIX)) return null;
+  const questionMarker = QUESTION_MARKERS.find(marker => content.includes(marker));
+  if (!questionMarker) return null;
+  const questionIndex = content.lastIndexOf(questionMarker);
+  if (questionIndex <= 0) return null;
+  const injectedBlock = content.slice(0, questionIndex).trim();
+  const userQuery = content.slice(questionIndex + questionMarker.length).trim();
+  if (!userQuery) return null;
+
+  const autoMatch = injectedBlock.match(/基于问题检索：\s*(\d+)/);
+  const manualMatch = injectedBlock.match(/手动添加：\s*(\d+)/);
+  const totalMatch = injectedBlock.match(/总计注入：\s*(\d+)/);
+
+  return {
+    injectedBlock,
+    userQuery,
+    counts: {
+      auto: autoMatch ? Number(autoMatch[1]) : undefined,
+      manual: manualMatch ? Number(manualMatch[1]) : undefined,
+      total: totalMatch ? Number(totalMatch[1]) : undefined
+    }
+  };
 };
 
 const markdownComponents: Components = {
@@ -114,16 +154,68 @@ const markdownComponents: Components = {
   ),
 };
 
+const InjectedMemoryCard: React.FC<InjectedMessage> = ({ injectedBlock, counts }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const summaryParts = [
+    counts.auto !== undefined ? `auto ${counts.auto}` : null,
+    counts.manual !== undefined ? `manual ${counts.manual}` : null,
+    counts.total !== undefined ? `total ${counts.total}` : null
+  ].filter(Boolean);
+  const summaryText = summaryParts.length > 0 ? summaryParts.join(' | ') : 'details';
+
+  return (
+    <div className="rounded-xl border border-amber-200 dark:border-amber-700/40 bg-amber-50 dark:bg-amber-900/20 p-3 text-xs text-amber-800 dark:text-amber-200">
+      <div className="flex items-center justify-between gap-2">
+        <div className="font-semibold">Memory injection</div>
+        <button
+          type="button"
+          onClick={() => setIsExpanded(prev => !prev)}
+          className="text-[11px] font-medium text-amber-700 dark:text-amber-300 hover:underline"
+        >
+          {isExpanded ? 'Hide details' : 'Show details'}
+        </button>
+      </div>
+      <div className="mt-1 text-[10px] uppercase tracking-wide text-amber-700/80 dark:text-amber-300/70">
+        {summaryText}
+      </div>
+      {isExpanded && (
+        <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded-lg bg-white/70 dark:bg-cyber-900/60 p-2 text-[10px] leading-relaxed text-amber-900 dark:text-amber-100">
+          {injectedBlock}
+        </pre>
+      )}
+    </div>
+  );
+};
+
+const renderMarkdown = (content: string, useCustomComponents: boolean) => (
+  <ReactMarkdown
+    remarkPlugins={[remarkGfm]}
+    components={useCustomComponents ? markdownComponents : undefined}
+  >
+    {content}
+  </ReactMarkdown>
+);
+
 export const MessageMarkdown: React.FC<MessageMarkdownProps> = ({
   content,
   useCustomComponents = false
-}) => (
-  <div className="chat-markdown-content">
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      components={useCustomComponents ? markdownComponents : undefined}
-    >
-      {content}
-    </ReactMarkdown>
-  </div>
-);
+}) => {
+  const injectedMessage = useMemo(() => parseInjectedMessage(content), [content]);
+
+  if (injectedMessage) {
+    return (
+      <div className="space-y-2">
+        <InjectedMemoryCard {...injectedMessage} />
+        <div className="chat-markdown-content">
+          {renderMarkdown(injectedMessage.userQuery, useCustomComponents)}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="chat-markdown-content">
+      {renderMarkdown(content, useCustomComponents)}
+    </div>
+  );
+};

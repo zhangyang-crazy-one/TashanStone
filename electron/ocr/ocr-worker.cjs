@@ -129,6 +129,77 @@ let modelPath = '';
 let ort = null;
 let currentBackend = 'cpu';  // 'directml' | 'cpu'
 
+const os = require('os');
+
+const DEFAULT_OCR_MAX_DIMENSION = 1600;
+const DEFAULT_OCR_MAX_PIXELS = 2500000;
+const DEFAULT_OCR_DET_RATIO = 1;
+const DEFAULT_GRAPH_OPT_LEVEL = 'all';
+const DEFAULT_INTER_THREADS = 1;
+const MAX_DEFAULT_INTRA_THREADS = 4;
+
+function parsePositiveInt(value, fallback) {
+    const parsed = Number.parseInt(String(value), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseRatio(value, fallback) {
+    const parsed = Number.parseFloat(String(value));
+    if (!Number.isFinite(parsed)) {
+        return fallback;
+    }
+    if (parsed <= 0 || parsed > 1) {
+        return fallback;
+    }
+    return parsed;
+}
+
+function parseThreadCount(value, fallback, max) {
+    const parsed = Number.parseInt(String(value), 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        return fallback;
+    }
+    return max ? Math.min(parsed, max) : parsed;
+}
+
+function parseGraphOptimizationLevel(value, fallback) {
+    const normalized = String(value || '').toLowerCase().trim();
+    const valid = new Set(['disabled', 'basic', 'extended', 'layout', 'all']);
+    return valid.has(normalized) ? normalized : fallback;
+}
+
+function getOcrResizeConfig() {
+    return {
+        maxDimension: parsePositiveInt(process.env.OCR_MAX_DIMENSION, DEFAULT_OCR_MAX_DIMENSION),
+        maxPixels: parsePositiveInt(process.env.OCR_MAX_PIXELS, DEFAULT_OCR_MAX_PIXELS)
+    };
+}
+
+function getOrtThreadConfig() {
+    const cpuCount = Math.max(1, os.cpus()?.length ?? 1);
+    const defaultIntra = Math.max(1, Math.min(MAX_DEFAULT_INTRA_THREADS, cpuCount - 1));
+
+    return {
+        intraOpNumThreads: parseThreadCount(process.env.OCR_INTRA_THREADS, defaultIntra, cpuCount),
+        interOpNumThreads: parseThreadCount(process.env.OCR_INTER_THREADS, DEFAULT_INTER_THREADS, cpuCount),
+        graphOptimizationLevel: parseGraphOptimizationLevel(process.env.OCR_GRAPH_OPT_LEVEL, DEFAULT_GRAPH_OPT_LEVEL)
+    };
+}
+
+function getScaledSize(width, height, maxDimension, maxPixels) {
+    const maxSide = Math.max(width, height);
+    const totalPixels = width * height;
+    const scaleByDimension = maxSide > 0 ? maxDimension / maxSide : 1;
+    const scaleByPixels = totalPixels > 0 ? Math.sqrt(maxPixels / totalPixels) : 1;
+    const scale = Math.min(1, scaleByDimension, scaleByPixels);
+    const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
+    return {
+        width: Math.max(1, Math.round(width * safeScale)),
+        height: Math.max(1, Math.round(height * safeScale)),
+        scale: safeScale
+    };
+}
+
 /**
  * Test if DirectML (GPU) is available
  */
@@ -206,7 +277,7 @@ async function initialize(config = {}) {
 
     try {
         // Load canvas for Node.js environment
-        const { createCanvas, loadImage, Image } = require('canvas');
+        const { createCanvas, loadImage, ImageData } = require('canvas');
 
         // Load modules
         const ocr = require('esearch-ocr');
@@ -216,7 +287,9 @@ async function initialize(config = {}) {
         ocr.setOCREnv({
             canvas: (w, h) => createCanvas(w, h),
             imageData: (data, w, h) => {
-                // Create ImageData-like object
+                if (typeof ImageData === 'function') {
+                    return new ImageData(data, w, h);
+                }
                 return { data, width: w, height: h };
             }
         });
@@ -247,6 +320,7 @@ async function initialize(config = {}) {
         // Build model file paths
         let detModelPath, recModelPath, dictPath;
         const imgh = 48;
+        const detRatio = parseRatio(process.env.OCR_DET_RATIO, DEFAULT_OCR_DET_RATIO);
 
         if (modelVersion === 'v5') {
             detModelPath = path.join(modelPath, 'PP-OCRv5_server_det_infer.onnx');
@@ -277,29 +351,39 @@ async function initialize(config = {}) {
         }
 
         // Build session options
+        const ortThreadConfig = getOrtThreadConfig();
         const ortOption = useDirectML ? {
             executionProviders: ['dml', 'cpu'],  // DirectML with CPU fallback
-            logSeverityLevel: 3
+            logSeverityLevel: 3,
+            ...ortThreadConfig
         } : {
             executionProviders: ['cpu'],
-            logSeverityLevel: 3
+            logSeverityLevel: 3,
+            ...ortThreadConfig
         };
+
+        console.error(
+            `[OCR Worker] ORT threads: intra=${ortThreadConfig.intraOpNumThreads}, inter=${ortThreadConfig.interOpNumThreads}, graphOpt=${ortThreadConfig.graphOptimizationLevel}`
+        );
 
         currentBackend = useDirectML ? 'directml' : 'cpu';
         console.error(`[OCR Worker] Using backend: ${currentBackend}`);
 
         // Initialize engine with execution providers
+        const recOptimize = modelVersion === 'v5' ? { space: false } : undefined;
+
         ocrEngine = await ocr.init({
             ort,
             ortOption,  // Pass session options to esearch-ocr
             det: {
                 input: detModelPath,
-                ratio: 1.0
+                ratio: detRatio
             },
             rec: {
                 input: recModelPath,
                 decodeDic: dictContent,
-                imgh: imgh
+                imgh: imgh,
+                ...(recOptimize ? { optimize: recOptimize } : {})
             }
         });
 
@@ -345,10 +429,12 @@ async function recognize(imageData) {
         // Load image using canvas
         const img = await loadImage(dataUrl);
 
-        // Create canvas and draw image
-        const canvas = createCanvas(img.width, img.height);
+        // Create canvas and draw image (downscale if needed)
+        const { maxDimension, maxPixels } = getOcrResizeConfig();
+        const target = getScaledSize(img.width, img.height, maxDimension, maxPixels);
+        const canvas = createCanvas(target.width, target.height);
         const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0);
+        ctx.drawImage(img, 0, 0, target.width, target.height);
 
         // Get ImageData from canvas (esearch-ocr in Node.js mode requires ImageData, not Canvas)
         const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);

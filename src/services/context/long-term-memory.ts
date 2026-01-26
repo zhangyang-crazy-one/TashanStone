@@ -1,4 +1,6 @@
 import { IndexedConversation } from './types';
+import { LANCEDB_CONTEXT_FILE_ID_PREFIX, stripLanceDbPrefix } from '@/utils/lanceDbPrefixes';
+import type { LanceDbVectorChunk } from '@/src/types/electronAPI';
 
 export interface LongTermMemoryStorage {
   saveConversation(conversation: IndexedConversation): Promise<void>;
@@ -12,6 +14,12 @@ export interface LanceDBStorageConfig {
   tableName?: string;
 }
 
+const getContextFileId = (sessionId: string): string =>
+  `${LANCEDB_CONTEXT_FILE_ID_PREFIX}${sessionId}`;
+
+const isContextFileId = (fileId: string): boolean =>
+  fileId.startsWith(LANCEDB_CONTEXT_FILE_ID_PREFIX);
+
 export class LanceDBMemoryStorage implements LongTermMemoryStorage {
   private tableName: string = 'context_memories';
   private isAvailable: boolean = false;
@@ -22,9 +30,9 @@ export class LanceDBMemoryStorage implements LongTermMemoryStorage {
 
   async initialize(): Promise<boolean> {
     try {
-      if (typeof window !== 'undefined' && (window as any).electronAPI) {
-        const result = await (window as any).electronAPI.lancedb.init();
-        this.isAvailable = result === undefined || result.success !== false;
+      if (typeof window !== 'undefined' && window.electronAPI) {
+        await window.electronAPI.lancedb.init();
+        this.isAvailable = true;
       }
     } catch {
       this.isAvailable = false;
@@ -45,20 +53,15 @@ export class LanceDBMemoryStorage implements LongTermMemoryStorage {
     try {
       const chunk = {
         id: conversation.id,
-        fileId: conversation.session_id,
-        text: conversation.content,
-        embedding: conversation.embedding,
-        chunkStart: 0,
-        chunkEnd: conversation.content.length,
-        fileName: `conversation-${conversation.session_id}`,
-        fileLastModified: conversation.metadata.date,
-        metadata: JSON.stringify({
-          topics: conversation.metadata.topics,
-          type: 'context_memory',
-        }),
+        fileId: getContextFileId(conversation.session_id),
+        fileName: `context-${conversation.session_id}`,
+        content: conversation.content,
+        vector: conversation.embedding,
+        chunkIndex: 0,
+        lastModified: conversation.metadata.date
       };
 
-      await (window as any).electronAPI.lancedb.add([chunk]);
+      await window.electronAPI.lancedb.add([chunk]);
     } catch (error) {
       console.error('[LanceDBMemoryStorage] Failed to save conversation:', error);
     }
@@ -74,25 +77,21 @@ export class LanceDBMemoryStorage implements LongTermMemoryStorage {
     }
 
     try {
-      const results = await (window as any).electronAPI.lancedb.search(queryEmbedding, limit);
+      const results = await window.electronAPI.lancedb.search(queryEmbedding, limit);
 
       return results
-        .filter((r: any) => {
+        .filter((result: LanceDbVectorChunk) => {
+          if (!isContextFileId(result.fileId)) return false;
           if (!sessionId) return true;
-          try {
-            const metadata = JSON.parse(r.metadata || '{}');
-            return metadata.type === 'context_memory' && r.file_id === sessionId;
-          } catch {
-            return r.file_id === sessionId;
-          }
+          return result.fileId === getContextFileId(sessionId);
         })
-        .map((r: any) => ({
-          id: r.id,
-          session_id: r.file_id,
-          embedding: r.embedding,
-          content: r.text,
+        .map((result: LanceDbVectorChunk) => ({
+          id: result.id,
+          session_id: stripLanceDbPrefix(result.fileId, LANCEDB_CONTEXT_FILE_ID_PREFIX),
+          embedding: result.vector,
+          content: result.content,
           metadata: {
-            date: r.file_last_modified,
+            date: result.lastModified,
             topics: [],
           },
         }));
@@ -106,17 +105,19 @@ export class LanceDBMemoryStorage implements LongTermMemoryStorage {
     if (!this.isAvailable) return null;
 
     try {
-      const all = await (window as any).electronAPI.lancedb.getAll();
-      const found = all.find((c: any) => c.id === id);
+      const all = await window.electronAPI.lancedb.getAll();
+      const found = all.find((chunk: LanceDbVectorChunk) =>
+        chunk.id === id && isContextFileId(chunk.fileId)
+      );
 
       if (found) {
         return {
           id: found.id,
-          session_id: found.file_id,
-          embedding: found.embedding,
-          content: found.text,
+          session_id: stripLanceDbPrefix(found.fileId, LANCEDB_CONTEXT_FILE_ID_PREFIX),
+          embedding: found.vector,
+          content: found.content,
           metadata: {
-            date: found.file_last_modified,
+            date: found.lastModified,
             topics: [],
           },
         };
@@ -133,11 +134,16 @@ export class LanceDBMemoryStorage implements LongTermMemoryStorage {
 
     try {
       if (sessionId) {
-        await (window as any).electronAPI.lancedb.deleteByFile(sessionId);
-      } else {
-        await (window as any).electronAPI.lancedb.clear();
+        await window.electronAPI.lancedb.deleteByFile(getContextFileId(sessionId));
+        return 1;
       }
-      return 1;
+      const all = await window.electronAPI.lancedb.getAll();
+      const contextFileIds = [...new Set(all.map((chunk: LanceDbVectorChunk) => chunk.fileId))]
+        .filter((fileId: string) => isContextFileId(fileId));
+      for (const fileId of contextFileIds) {
+        await window.electronAPI.lancedb.deleteByFile(fileId);
+      }
+      return contextFileIds.length;
     } catch (error) {
       console.error('[LanceDBMemoryStorage] Failed to clear conversations:', error);
       return 0;
@@ -150,10 +156,12 @@ export class LanceDBMemoryStorage implements LongTermMemoryStorage {
     }
 
     try {
-      const stats = await (window as any).electronAPI.lancedb.getStats();
+      const all = await window.electronAPI.lancedb.getAll();
+      const contextChunks = all.filter((chunk: LanceDbVectorChunk) => isContextFileId(chunk.fileId));
+      const totalSessions = new Set(contextChunks.map((chunk: LanceDbVectorChunk) => chunk.fileId)).size;
       return {
-        totalConversations: stats.totalChunks,
-        totalSessions: stats.totalFiles,
+        totalConversations: contextChunks.length,
+        totalSessions,
       };
     } catch {
       return { totalConversations: 0, totalSessions: 0 };

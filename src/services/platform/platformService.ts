@@ -15,6 +15,10 @@ export interface Platform {
     supportsNativeMenus: boolean;
 }
 
+interface WindowWithReactNativeWebView extends Window {
+    ReactNativeWebView?: { postMessage: (message: string) => void };
+}
+
 let cachedPlatform: Platform | null = null;
 
 /**
@@ -52,7 +56,7 @@ export function getPlatform(): Platform {
     }
 
     // Check for React Native WebView
-    if (typeof window !== 'undefined' && (window as any).ReactNativeWebView) {
+    if (typeof window !== 'undefined' && (window as WindowWithReactNativeWebView).ReactNativeWebView) {
         const isAndroid = navigator.userAgent.toLowerCase().includes('android');
 
         cachedPlatform = {

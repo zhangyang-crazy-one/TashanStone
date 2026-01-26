@@ -152,7 +152,7 @@ export const SidebarFilesTab: React.FC<SidebarFilesTabProps> = ({
   };
 
   return (
-    <div className={isActive ? 'flex flex-col flex-1' : 'hidden'}>
+    <div className={isActive ? 'flex flex-col flex-1 min-h-0' : 'hidden'}>
       <SidebarFileOverlays
         creationModal={creationModal}
         deleteConfirm={deleteConfirm}
@@ -191,7 +191,7 @@ export const SidebarFilesTab: React.FC<SidebarFilesTabProps> = ({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2">
+      <div className="flex-1 min-h-0 overflow-hidden p-3 space-y-2 flex flex-col">
         <SidebarFileActions
           onOpenCreation={(type) => handleOpenCreation(type)}
           onOpenFolder={onOpenFolder}
@@ -202,32 +202,36 @@ export const SidebarFilesTab: React.FC<SidebarFilesTabProps> = ({
           t={t}
         />
 
-        <SidebarFileTree
-          activeFileId={activeFileId}
-          visibleFlatNodes={visibleFlatNodes}
-          searchQuery={searchQuery}
-          onSelectFile={onSelectFile}
-          onDeleteRequest={handleDeleteRequest}
-          onToggleFolder={toggleFolder}
-          onOpenCreation={handleOpenCreation}
-          onMoveItem={onMoveItem}
-          onShowContextMenu={(fileId, fileName, x, y) => setContextMenu({ x, y, fileId, fileName })}
-          tooltips={{
-            newFileInside: t.tooltips?.newFileInside,
-            newFolderInside: t.tooltips?.newFolderInside,
-            readOnlySource: t.tooltips?.readOnlySource,
-            deleteFile: t.tooltips?.deleteFile
-          }}
-        />
+        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1">
+          <SidebarFileTree
+            activeFileId={activeFileId}
+            visibleFlatNodes={visibleFlatNodes}
+            searchQuery={searchQuery}
+            onSelectFile={onSelectFile}
+            onDeleteRequest={handleDeleteRequest}
+            onToggleFolder={toggleFolder}
+            onOpenCreation={handleOpenCreation}
+            onMoveItem={onMoveItem}
+            onShowContextMenu={(fileId, fileName, x, y) => setContextMenu({ x, y, fileId, fileName })}
+            tooltips={{
+              newFileInside: t.tooltips?.newFileInside,
+              newFolderInside: t.tooltips?.newFolderInside,
+              readOnlySource: t.tooltips?.readOnlySource,
+              deleteFile: t.tooltips?.deleteFile
+            }}
+          />
+        </div>
 
-        <SidebarTagsSection
-          files={files}
-          setFiles={setFiles}
-          language={language}
-          onSelectFile={onSelectFile}
-          onOpenTagSuggestion={onOpenTagSuggestion}
-          t={t}
-        />
+        <div className="max-h-56 overflow-y-auto custom-scrollbar pr-1">
+          <SidebarTagsSection
+            files={files}
+            setFiles={setFiles}
+            language={language}
+            onSelectFile={onSelectFile}
+            onOpenTagSuggestion={onOpenTagSuggestion}
+            t={t}
+          />
+        </div>
       </div>
     </div>
   );

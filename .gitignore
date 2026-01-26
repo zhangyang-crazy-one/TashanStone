@@ -77,3 +77,7 @@ TOOL_CALL_INTEGRATION.md
 VECTOR_PERSISTENCE.md
 metadata.json
 postcss.config.js
+
+# Local planning docs
+plan/
+planning/

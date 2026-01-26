@@ -408,13 +408,24 @@ describe('Memory System - Integration Tests', () => {
     });
 
     it('should transform result types', () => {
-      const input = { success: true, data: 'test' };
-      const output = input.success 
-        ? { type: 'success' as const, value: input.data }
-        : { type: 'error' as const, message: (input as any).error || '' };
-      
+      type Result<T> = { success: true; data: T } | { success: false; error: string };
+      const isErrorResult = <T,>(result: Result<T>): result is { success: false; error: string } =>
+        result.success === false;
+
+      const formatResult = <T,>(result: Result<T>) => {
+        if (isErrorResult(result)) {
+          return { type: 'error' as const, message: result.error };
+        }
+        return { type: 'success' as const, value: result.data };
+      };
+
+      const input: Result<string> = { success: true, data: 'test' };
+      const output = formatResult(input);
+
       expect(output.type).toBe('success');
-      expect((output as any).value).toBe('test');
+      if (output.type === 'success') {
+        expect(output.value).toBe('test');
+      }
     });
   });
 });

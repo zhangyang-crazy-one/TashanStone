@@ -34,15 +34,15 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   interimTranscript
 }) => (
   <div className="p-4 border-t border-paper-200 dark:border-cyber-700 bg-paper-50 dark:bg-cyber-900/50">
-    <form onSubmit={onSubmit} className="relative space-y-2">
-      <div className="relative flex items-center gap-2">
+    <form onSubmit={onSubmit} className="relative space-y-2 w-full">
+      <div className="relative flex items-center gap-2 w-full min-w-0">
         <input
           type="text"
           value={input}
           onChange={(e) => onInputChange(e.target.value)}
           disabled={aiState.isThinking}
           placeholder={t.typeMessage}
-          className="flex-1 pl-4 pr-4 py-3 rounded-xl bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-500 disabled:opacity-50 transition-all shadow-sm"
+          className="flex-1 min-w-0 pl-4 pr-4 py-3 rounded-xl bg-white dark:bg-cyber-800 border border-paper-200 dark:border-cyber-600 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-500 disabled:opacity-50 transition-all shadow-sm"
         />
 
         {/* Voice Input Button */}

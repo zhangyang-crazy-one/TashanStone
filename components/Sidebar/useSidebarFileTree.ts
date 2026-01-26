@@ -143,30 +143,37 @@ export const useSidebarFileTree = ({ files, activeFileId, searchQuery }: UseSide
           }
 
           const nodes: FileTreeNode[] = [];
+          const memoryFiles = (files || []).filter(file =>
+            Boolean(file.path) &&
+            file.name?.startsWith('memory_') &&
+            file.name.endsWith('.md')
+          );
+          const metadataList = await window.electronAPI.file.getBatchMetadata(
+            memoryFiles.map(file => file.path),
+            true
+          );
+          const metadataByPath = new Map(metadataList.map(item => [item.path, item]));
 
-          for (const file of files || []) {
-            if (file.name?.startsWith('memory_') && file.name.endsWith('.md')) {
-              let importance: 'low' | 'medium' | 'high' = 'medium';
-              try {
-                const content = await window.electronAPI.file.readFile(file.path);
-                const impMatch = content?.match(/importance:\s*(\w+)/);
-                if (impMatch) {
-                  importance = impMatch[1] as 'low' | 'medium' | 'high';
-                }
-              } catch (e) {
-                // Use default importance
+          for (const file of memoryFiles) {
+            let importance: 'low' | 'medium' | 'high' = 'medium';
+            const metadata = metadataByPath.get(file.path);
+            const content = metadata?.content || '';
+            if (content) {
+              const impMatch = content.match(/importance:\s*(\w+)/);
+              if (impMatch) {
+                importance = impMatch[1] as 'low' | 'medium' | 'high';
               }
-
-              nodes.push({
-                id: file.name.replace('.md', ''),
-                name: file.name.replace('.memories/', '').replace('.md', ''),
-                path: file.path,
-                type: 'file',
-                fileId: file.path,
-                isMemory: true,
-                memoryImportance: importance
-              });
             }
+
+            nodes.push({
+              id: file.name.replace('.md', ''),
+              name: file.name.replace('.memories/', '').replace('.md', ''),
+              path: file.path,
+              type: 'file',
+              fileId: file.path,
+              isMemory: true,
+              memoryImportance: importance
+            });
           }
 
           nodes.sort((a, b) => {

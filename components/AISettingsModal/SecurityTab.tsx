@@ -142,9 +142,12 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({
       {/* Open Data Directory Button */}
       <button
         onClick={async () => {
-          const memoriesDir = (window as any).electronAPI?.paths?.userData + '/.memories';
+          const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
+          const memoriesDir = electronAPI?.paths?.userData
+            ? `${electronAPI.paths.userData}/.memories`
+            : '';
           if (memoriesDir) {
-            await (window as any).electronAPI?.file?.openPath(memoriesDir);
+            await electronAPI?.file?.openPath(memoriesDir);
           }
         }}
         className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-[rgb(var(--bg-element))] hover:bg-[rgb(var(--border-main))] text-[rgb(var(--text-primary))] rounded-lg transition-colors font-medium font-[var(--font-primary)]"

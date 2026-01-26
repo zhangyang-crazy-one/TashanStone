@@ -433,6 +433,64 @@ interface ProcessPdfOptions {
   onProgress?: (current: number, total: number, isOcr: boolean) => void;
 }
 
+const OCR_TEXT_THRESHOLD = 50;
+const OCR_MAX_DIMENSION = 1600;
+const OCR_MAX_PIXELS = 2500000;
+
+const extractPdfPageText = (textContent: { items: Array<{ str?: string }> }): string =>
+  textContent.items.map((item) => item.str ?? '').join(' ');
+
+const shouldUseOcrForPage = (pageText: string): boolean =>
+  pageText.trim().length < OCR_TEXT_THRESHOLD;
+
+const choosePreferredText = (pageText: string, ocrText?: string): { text: string; usedOcr: boolean } => {
+  const normalizedPageText = pageText.trim();
+  const normalizedOcrText = ocrText?.trim() ?? '';
+
+  if (!normalizedOcrText) {
+    return { text: pageText, usedOcr: false };
+  }
+
+  if (!normalizedPageText) {
+    return { text: normalizedOcrText, usedOcr: true };
+  }
+
+  if (normalizedOcrText.length > normalizedPageText.length) {
+    return { text: normalizedOcrText, usedOcr: true };
+  }
+
+  return { text: pageText, usedOcr: false };
+};
+
+const formatPageBlock = (pageIndex: number, text: string, label?: string): string => {
+  const suffix = label ? ` (${label})` : '';
+  return `--- Page ${pageIndex}${suffix} ---\n${text}\n\n`;
+};
+
+const createOcrCanvas = async (
+  page: {
+    getViewport: (options: { scale: number }) => { width: number; height: number };
+    render: (params: {
+      canvasContext: CanvasRenderingContext2D;
+      viewport: { width: number; height: number };
+    }) => { promise: Promise<unknown> };
+  }
+): Promise<HTMLCanvasElement> => {
+  const baseViewport = page.getViewport({ scale: 1.0 });
+  const maxDimensionScale = OCR_MAX_DIMENSION / Math.max(baseViewport.width, baseViewport.height);
+  const maxPixelScale = Math.sqrt(OCR_MAX_PIXELS / (baseViewport.width * baseViewport.height));
+  const scale = Math.min(2.0, maxDimensionScale, maxPixelScale);
+
+  const viewport = page.getViewport({ scale: Number.isFinite(scale) && scale > 0 ? scale : 1.0 });
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  canvas.height = viewport.height;
+  canvas.width = viewport.width;
+
+  await page.render({ canvasContext: context!, viewport }).promise;
+  return canvas;
+};
+
 export const processPdfFile = async (
   file: File,
   apiKey?: string,
@@ -443,26 +501,31 @@ export const processPdfFile = async (
       const docInit = pdfjs.default?.getDocument ? pdfjs.default.getDocument : pdfjs.getDocument;
       const pdf = await docInit({ data: arrayBuffer }).promise;
 
-      let fullText = "";
-      let needsOcr = false;
+      const pageTexts: string[] = [];
+      const pagesNeedingOcr: boolean[] = [];
 
-      // 第一遍：检查是否需要 OCR
+      // 第一遍：提取文本并判断是否需要 OCR
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
+        const pageText = extractPdfPageText(textContent);
+        const needsOcr = shouldUseOcrForPage(pageText);
 
-        const pageText = textContent.items.map((item: any) => item.str).join(" ");
+        pageTexts[i - 1] = pageText;
+        pagesNeedingOcr[i - 1] = needsOcr;
 
-        if (pageText.trim().length < 50) {
-          needsOcr = true;
-          break;
-        }
-        fullText += `--- Page ${i} ---\n${pageText}\n\n`;
         options?.onProgress?.(i, pdf.numPages, false);
       }
 
+      const hasOcrPages = pagesNeedingOcr.some(Boolean);
+      if (!hasOcrPages) {
+        return pageTexts.map((text, index) => formatPageBlock(index + 1, text)).join('');
+      }
+
+      let fullText = '';
+
       // 如果需要 OCR，检查本地 OCR 是否可用
-      if (needsOcr) {
+      if (hasOcrPages) {
         // 使用渲染进程的 OCR 服务 (onnxruntime-web)
         let useLocalOcr = false;
         try {
@@ -472,42 +535,39 @@ export const processPdfFile = async (
           console.warn('[PDF] Local OCR check failed:', e);
         }
 
-        // 重新处理所有页面
-        fullText = "";
-
         if (useLocalOcr) {
           // 使用本地 PaddleOCR (渲染进程)
           console.log('[PDF] Using local PaddleOCR for OCR...');
           for (let i = 1; i <= pdf.numPages; i++) {
-            const page = await pdf.getPage(i);
-            const textContent = await page.getTextContent();
-            const pageText = textContent.items.map((item: any) => item.str).join(" ");
+            const pageText = pageTexts[i - 1] ?? '';
+            const needsOcr = pagesNeedingOcr[i - 1];
 
-            if (pageText.trim().length >= 50) {
-              // 文本够多，直接使用提取的文本
-              fullText += `--- Page ${i} ---\n${pageText}\n\n`;
+            if (!needsOcr) {
+              fullText += formatPageBlock(i, pageText);
+              options?.onProgress?.(i, pdf.numPages, false);
+              continue;
             } else {
               // 文本太少，使用 OCR
-              const viewport = page.getViewport({ scale: 2.0 });
-              const canvas = document.createElement('canvas');
-              const context = canvas.getContext('2d');
-              canvas.height = viewport.height;
-              canvas.width = viewport.width;
-
-              await page.render({ canvasContext: context!, viewport: viewport }).promise;
+              const page = await pdf.getPage(i);
+              const canvas = await createOcrCanvas(page);
 
               try {
                 // 使用渲染进程的 OCR 服务
                 const ocrResult = await ocrServiceRenderer.recognize(canvas);
                 if (ocrResult.success && ocrResult.text) {
-                  fullText += `--- Page ${i} (OCR) ---\n${ocrResult.text}\n\n`;
+                  const preferred = choosePreferredText(pageText, ocrResult.text);
+                  fullText += formatPageBlock(i, preferred.text, preferred.usedOcr ? 'OCR' : undefined);
                   console.log(`[PDF] Page ${i} OCR success, ${ocrResult.text.length} chars in ${ocrResult.duration}ms`);
                 } else {
-                  fullText += `--- Page ${i} ---\n[OCR failed: ${ocrResult.error || 'Unknown error'}]\n\n`;
+                  const fallback = pageText
+                    ? `${pageText}\n[OCR failed: ${ocrResult.error || 'Unknown error'}]`
+                    : `[OCR failed: ${ocrResult.error || 'Unknown error'}]`;
+                  fullText += formatPageBlock(i, fallback);
                   console.warn(`[PDF] Page ${i} OCR failed:`, ocrResult.error);
                 }
               } catch (e: any) {
-                fullText += `--- Page ${i} ---\n[OCR error: ${e.message}]\n\n`;
+                const fallback = pageText ? `${pageText}\n[OCR error: ${e.message}]` : `[OCR error: ${e.message}]`;
+                fullText += formatPageBlock(i, fallback);
                 console.error(`[PDF] Page ${i} OCR error:`, e);
               }
             }
@@ -516,16 +576,27 @@ export const processPdfFile = async (
         } else if (apiKey) {
           // 回退到 Gemini Vision API
           const ai = new GoogleGenAI({ apiKey });
+          const maxGeminiPages = Math.min(pdf.numPages, 10);
 
-          for (let i = 1; i <= Math.min(pdf.numPages, 10); i++) {
+          for (let i = 1; i <= pdf.numPages; i++) {
+            const pageText = pageTexts[i - 1] ?? '';
+            const needsOcr = pagesNeedingOcr[i - 1];
+
+            if (!needsOcr) {
+              fullText += formatPageBlock(i, pageText);
+              options?.onProgress?.(i, pdf.numPages, false);
+              continue;
+            }
+
+            if (i > maxGeminiPages) {
+              const fallback = pageText ? `${pageText}\n[AI OCR limit reached]` : '[AI OCR limit reached]';
+              fullText += formatPageBlock(i, fallback);
+              options?.onProgress?.(i, pdf.numPages, false);
+              continue;
+            }
+
             const page = await pdf.getPage(i);
-            const viewport = page.getViewport({ scale: 2.0 });
-            const canvas = document.createElement('canvas');
-            const context = canvas.getContext('2d');
-            canvas.height = viewport.height;
-            canvas.width = viewport.width;
-
-            await page.render({ canvasContext: context!, viewport: viewport }).promise;
+            const canvas = await createOcrCanvas(page);
             const base64Image = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
 
             try {
@@ -538,19 +609,21 @@ export const processPdfFile = async (
                   ]
                 }
               });
-              fullText += `--- Page ${i} (Gemini OCR) ---\n${response.text}\n\n`;
+              const preferred = choosePreferredText(pageText, response.text ?? '');
+              fullText += formatPageBlock(i, preferred.text, preferred.usedOcr ? 'Gemini OCR' : undefined);
             } catch (e) {
-              fullText += `[AI OCR Failed for Page ${i}]\n`;
+              const fallback = pageText ? `${pageText}\n[AI OCR Failed]` : '[AI OCR Failed]';
+              fullText += formatPageBlock(i, fallback);
             }
-            options?.onProgress?.(i, Math.min(pdf.numPages, 10), true);
+            options?.onProgress?.(i, pdf.numPages, true);
           }
         } else {
           // 没有 OCR 可用，返回原始提取的文本
           for (let i = 1; i <= pdf.numPages; i++) {
-            const page = await pdf.getPage(i);
-            const textContent = await page.getTextContent();
-            const pageText = textContent.items.map((item: any) => item.str).join(" ");
-            fullText += `--- Page ${i} ---\n${pageText}\n[OCR not available - text may be incomplete]\n\n`;
+            const pageText = pageTexts[i - 1] ?? '';
+            const needsOcr = pagesNeedingOcr[i - 1];
+            const warning = needsOcr ? `${pageText}\n[OCR not available - text may be incomplete]` : pageText;
+            fullText += formatPageBlock(i, warning);
             options?.onProgress?.(i, pdf.numPages, false);
           }
         }

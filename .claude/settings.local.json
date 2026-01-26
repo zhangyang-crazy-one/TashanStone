@@ -92,7 +92,9 @@
       "Bash(source:*)",
       "Bash(uv:*)",
       "Bash(python3:*)",
-      "Bash(notify-send:*)"
+      "Bash(notify-send:*)",
+      "Bash(wc:*)",
+      "Bash(sort:*)"
     ],
     "deny": [],
     "ask": []

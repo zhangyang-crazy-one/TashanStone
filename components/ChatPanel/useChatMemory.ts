@@ -219,7 +219,7 @@ ${memoryContents}
         });
         console.log('[Memory] update 返回值:', JSON.stringify(result));
 
-        if (result?.success) {
+        if (result.success) {
           console.log('[Memory] Saved:', memory.id);
 
           if (previewMemory?.id === memory.id) {
@@ -232,7 +232,8 @@ ${memoryContents}
 
           showToast?.(language === 'zh' ? '保存成功' : 'Saved successfully');
         } else {
-          console.error('[Memory] 保存失败:', result?.error);
+          const errorMessage = 'error' in result ? result.error : 'Unknown error';
+          console.error('[Memory] 保存失败:', errorMessage);
           showToast?.(language === 'zh' ? '保存失败' : 'Save failed', true);
         }
       } else {
@@ -253,7 +254,7 @@ ${memoryContents}
         const result = await memoryWindow.electronAPI.memory.star(memoryId, isStarred);
         console.log('[Memory] star 返回值:', JSON.stringify(result));
 
-        if (result?.success) {
+        if (result.success) {
           console.log('[Memory] Star toggled:', memoryId, isStarred);
           showToast?.(isStarred
             ? (language === 'zh' ? '已标星' : 'Starred')
@@ -263,7 +264,8 @@ ${memoryContents}
             setPreviewMemory(prev => prev ? { ...prev, isStarred } : null);
           }
         } else {
-          console.error('[Memory] 标星失败:', result?.error);
+          const errorMessage = 'error' in result ? result.error : 'Unknown error';
+          console.error('[Memory] 标星失败:', errorMessage);
         }
       } else {
         console.warn('[Memory] Star IPC not available');

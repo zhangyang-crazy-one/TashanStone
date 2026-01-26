@@ -6,9 +6,9 @@
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import ffprobeInstaller from '@ffprobe-installer/ffprobe';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
+import { access, constants, existsSync, readFileSync, unlinkSync } from 'fs';
+import { extname, join } from 'path';
+import { tmpdir } from 'os';
 import { app } from 'electron';
 
 // Configure ffmpeg and ffprobe paths for both development and production
@@ -18,13 +18,13 @@ const getFfmpegPath = (): string => {
     const resourcesPath = process.resourcesPath;
 
     // First try: explicit resources/ffmpeg folder
-    const ffmpegInResources = path.join(resourcesPath, 'ffmpeg', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
-    if (fs.existsSync(ffmpegInResources)) {
+    const ffmpegInResources = join(resourcesPath, 'ffmpeg', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
+    if (existsSync(ffmpegInResources)) {
       return ffmpegInResources;
     }
 
     // Second try: app.asar.unpacked path (due to asarUnpack in electron-builder.yml)
-    const ffmpegUnpacked = path.join(
+    const ffmpegUnpacked = join(
       resourcesPath,
       'app.asar.unpacked',
       'node_modules',
@@ -33,7 +33,7 @@ const getFfmpegPath = (): string => {
       process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
     );
     console.log('[AudioProcessor] Checking unpacked ffmpeg path:', ffmpegUnpacked);
-    if (fs.existsSync(ffmpegUnpacked)) {
+    if (existsSync(ffmpegUnpacked)) {
       return ffmpegUnpacked;
     }
 
@@ -49,13 +49,13 @@ const getFfprobePath = (): string => {
     const resourcesPath = process.resourcesPath;
 
     // First try: explicit resources/ffprobe folder
-    const ffprobeInResources = path.join(resourcesPath, 'ffprobe', process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe');
-    if (fs.existsSync(ffprobeInResources)) {
+    const ffprobeInResources = join(resourcesPath, 'ffprobe', process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe');
+    if (existsSync(ffprobeInResources)) {
       return ffprobeInResources;
     }
 
     // Second try: app.asar.unpacked path (due to asarUnpack in electron-builder.yml)
-    const ffprobeUnpacked = path.join(
+    const ffprobeUnpacked = join(
       resourcesPath,
       'app.asar.unpacked',
       'node_modules',
@@ -64,7 +64,7 @@ const getFfprobePath = (): string => {
       process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe'
     );
     console.log('[AudioProcessor] Checking unpacked ffprobe path:', ffprobeUnpacked);
-    if (fs.existsSync(ffprobeUnpacked)) {
+    if (existsSync(ffprobeUnpacked)) {
       return ffprobeUnpacked;
     }
 
@@ -107,8 +107,8 @@ export class AudioProcessor {
    * Convert any audio format to 16kHz mono WAV
    */
   static async convertToWav(inputPath: string): Promise<string> {
-    const tempDir = os.tmpdir();
-    const outputPath = path.join(tempDir, `sherpa_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.wav`);
+    const tempDir = tmpdir();
+    const outputPath = join(tempDir, `sherpa_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.wav`);
 
     return new Promise((resolve, reject) => {
       ffmpeg(inputPath)
@@ -170,7 +170,7 @@ export class AudioProcessor {
    * Read WAV file and return Float32Array samples
    */
   static readWavFile(wavPath: string): { samples: Float32Array; sampleRate: number } {
-    const buffer = fs.readFileSync(wavPath);
+    const buffer = readFileSync(wavPath);
 
     // Parse WAV header
     const riff = buffer.toString('ascii', 0, 4);
@@ -350,7 +350,7 @@ export class AudioProcessor {
     } finally {
       // 5. Clean up temp file
       try {
-        fs.unlinkSync(wavPath);
+        unlinkSync(wavPath);
         console.log('[AudioProcessor] Cleaned up temp file:', wavPath);
       } catch (e) {
         console.warn('[AudioProcessor] Failed to clean up temp file:', e);
@@ -362,7 +362,7 @@ export class AudioProcessor {
    * Check if a file is a supported audio format
    */
   static isSupportedFormat(filePath: string): boolean {
-    const ext = path.extname(filePath).toLowerCase();
+    const ext = extname(filePath).toLowerCase();
     const supportedFormats = ['.wav', '.mp3', '.m4a', '.flac', '.ogg', '.aac', '.wma', '.webm'];
     return supportedFormats.includes(ext);
   }
@@ -373,7 +373,7 @@ export class AudioProcessor {
   static async isFFmpegAvailable(): Promise<boolean> {
     return new Promise((resolve) => {
       const ffmpegPath = getFfmpegPath();
-      fs.access(ffmpegPath, fs.constants.X_OK, (err) => {
+      access(ffmpegPath, constants.X_OK, (err) => {
         if (err) {
           console.warn('[AudioProcessor] FFmpeg not found at:', ffmpegPath);
           resolve(false);

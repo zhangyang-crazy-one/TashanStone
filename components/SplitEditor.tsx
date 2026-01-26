@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { EditorPane, MarkdownFile, CodeMirrorEditorRef } from '../types';
+import { EditorPane, MarkdownFile, CodeMirrorEditorRef, ViewMode } from '../types';
 import { CodeMirrorEditor } from './CodeMirrorEditor';
 import { Preview } from './Preview';
 import Tooltip from './Tooltip';
@@ -17,6 +17,7 @@ interface SplitEditorProps {
   onToggleMode?: (paneId: string) => void;
   onSelectPane?: (paneId: string) => void;
   splitMode: 'none' | 'horizontal' | 'vertical';
+  viewMode?: ViewMode;
   language?: Language;
   codeMirrorRef?: React.RefObject<CodeMirrorEditorRef>;
 }
@@ -32,6 +33,7 @@ export const SplitEditor: React.FC<SplitEditorProps> = ({
   onToggleMode,
   onSelectPane,
   splitMode,
+  viewMode,
   language = 'en',
   codeMirrorRef,
 }) => {
@@ -43,11 +45,13 @@ export const SplitEditor: React.FC<SplitEditorProps> = ({
   // 获取当前活动面板
   const activeEditorPane = panes.find(p => p.id === activePane);
 
+  const effectiveSplitMode = viewMode === ViewMode.Preview ? 'none' : splitMode;
+
   // 计算可见面板列表
   // 修复问题：确保始终包含 activePane，修复选项卡显示错误文件的问题
   const getVisiblePanes = (): EditorPane[] => {
     // 无分屏模式：只显示活动面板
-    if (splitMode === 'none') {
+    if (effectiveSplitMode === 'none') {
       return activeEditorPane ? [activeEditorPane] : [];
     }
 
@@ -99,6 +103,8 @@ export const SplitEditor: React.FC<SplitEditorProps> = ({
 
   const visiblePanes = getVisiblePanes();
 
+  const forcedMode = viewMode === ViewMode.Preview ? 'preview' : undefined;
+
   const renderPane = (pane: EditorPane, isActiveEditorPane: boolean) => {
     const file = files.find(f => f.id === pane.fileId);
     if (!file) {
@@ -112,16 +118,18 @@ export const SplitEditor: React.FC<SplitEditorProps> = ({
       );
     }
 
-    const modeIcon = pane.mode === 'editor'
+    const effectiveMode = forcedMode ?? pane.mode;
+
+    const modeIcon = effectiveMode === 'editor'
       ? <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
       : <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>;
 
-    const modeLabel = pane.mode === 'editor' ? 'Editor' : 'Preview';
+    const modeLabel = effectiveMode === 'editor' ? 'Editor' : 'Preview';
 
     return (
       <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
         {/* Panel Title Bar - 只在分屏模式下显示，避免与 EditorTabs 重复 */}
-        {splitMode !== 'none' && (
+        {effectiveSplitMode !== 'none' && (
           <div className="h-9 px-4 flex items-center gap-2 border-b border-paper-200 dark:border-cyber-700 bg-paper-100 dark:bg-cyber-800 shrink-0">
             <Tooltip content={pane.mode === 'editor' ? t.preview : t.editor}>
               <button
@@ -144,7 +152,7 @@ export const SplitEditor: React.FC<SplitEditorProps> = ({
 
         {/* Content */}
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-          {pane.mode === 'editor' ? (
+          {effectiveMode === 'editor' ? (
             <CodeMirrorEditor
               key={`cm-editor-${file.id}-${pane.id}`}
               ref={isActiveEditorPane ? codeMirrorRef : undefined}
@@ -200,7 +208,7 @@ export const SplitEditor: React.FC<SplitEditorProps> = ({
       const rect = container.getBoundingClientRect();
 
       let newRatio: number;
-      if (splitMode === 'horizontal') {
+      if (effectiveSplitMode === 'horizontal') {
         const mouseX = e.clientX - rect.left;
         newRatio = (mouseX / rect.width) * 100;
       } else {
@@ -224,7 +232,7 @@ export const SplitEditor: React.FC<SplitEditorProps> = ({
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging, splitMode]);
+  }, [effectiveSplitMode, isDragging]);
 
   // 无文件打开的情况
   if (visiblePanes.length === 0) {
@@ -250,10 +258,10 @@ export const SplitEditor: React.FC<SplitEditorProps> = ({
   }
 
   // 统一渲染结构：避免切换模式时 DOM 结构变化导致组件重挂载
-  const isSplit = splitMode !== 'none' && visiblePanes.length >= 2;
-  const flexDirection = splitMode === 'horizontal' ? 'flex-row' : 'flex-col';
-  const cursorClass = splitMode === 'horizontal' ? 'cursor-col-resize' : 'cursor-row-resize';
-  const dividerClass = splitMode === 'horizontal' ? 'w-1' : 'h-1';
+  const isSplit = effectiveSplitMode !== 'none' && visiblePanes.length >= 2;
+  const flexDirection = effectiveSplitMode === 'horizontal' ? 'flex-row' : 'flex-col';
+  const cursorClass = effectiveSplitMode === 'horizontal' ? 'cursor-col-resize' : 'cursor-row-resize';
+  const dividerClass = effectiveSplitMode === 'horizontal' ? 'w-1' : 'h-1';
 
   return (
     <div
@@ -265,7 +273,7 @@ export const SplitEditor: React.FC<SplitEditorProps> = ({
       <div
         style={isSplit ? {
           flex: `0 0 ${splitRatio}%`,
-          [splitMode === 'horizontal' ? 'width' : 'height']: `${splitRatio}%`
+          [effectiveSplitMode === 'horizontal' ? 'width' : 'height']: `${splitRatio}%`
         } : {}}
         className="min-h-0 min-w-0 overflow-hidden flex flex-col"
       >
@@ -291,13 +299,13 @@ export const SplitEditor: React.FC<SplitEditorProps> = ({
           >
             {/* 拖动提示 */}
             <div className={`
-              absolute ${splitMode === 'horizontal' ? 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2' : 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2'}
+              absolute ${effectiveSplitMode === 'horizontal' ? 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2' : 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2'}
               w-8 h-8 rounded-full bg-cyan-500 dark:bg-cyan-400 shadow-lg
               flex items-center justify-center
               opacity-0 group-hover:opacity-100 transition-opacity duration-200
               ${isDragging ? 'opacity-100' : ''}
             `}>
-              <div className={`flex ${splitMode === 'horizontal' ? 'flex-col' : 'flex-row'} gap-0.5`}>
+              <div className={`flex ${effectiveSplitMode === 'horizontal' ? 'flex-col' : 'flex-row'} gap-0.5`}>
                 <div className="w-0.5 h-3 bg-white rounded"></div>
                 <div className="w-0.5 h-3 bg-white rounded"></div>
               </div>
@@ -308,7 +316,7 @@ export const SplitEditor: React.FC<SplitEditorProps> = ({
           <div
             style={{
               flex: `0 0 ${100 - splitRatio}%`,
-              [splitMode === 'horizontal' ? 'width' : 'height']: `${100 - splitRatio}%`
+              [effectiveSplitMode === 'horizontal' ? 'width' : 'height']: `${100 - splitRatio}%`
             }}
             className="min-h-0 min-w-0 overflow-hidden flex flex-col"
           >

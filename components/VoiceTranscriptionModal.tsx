@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { X, Mic, MicOff, FileAudio, Upload, Check, AlertTriangle, Loader2, Trash2, Save, Download, Clock, Activity, AudioWaveform, Volume2, FileText, ChevronRight } from 'lucide-react';
+import { X, Mic, MicOff, FileAudio, Upload, Check, AlertTriangle, Loader2, Save, Download, AudioWaveform, Volume2 } from 'lucide-react';
 import { MarkdownFile } from '../types';
 import { translations } from '../utils/translations';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
-
+import { TranscriptionResults } from './VoiceTranscriptionModal/TranscriptionResults';
 interface VoiceTranscriptionModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -12,9 +12,7 @@ interface VoiceTranscriptionModalProps {
   onCreateNewFile: (content: string) => void;
   language?: 'en' | 'zh';
 }
-
 type TabType = 'realtime' | 'file';
-
 export const VoiceTranscriptionModal: React.FC<VoiceTranscriptionModalProps> = ({
   isOpen,
   onClose,
@@ -228,21 +226,25 @@ export const VoiceTranscriptionModal: React.FC<VoiceTranscriptionModalProps> = (
     }
   };
 
-  // Get current text based on active tab
-  const getCurrentText = () => {
-    return activeTab === 'realtime' ? (realtimeText + (partialText ? ' ' + partialText : '')) : fileText;
-  };
+  const currentText = activeTab === 'realtime'
+    ? (realtimeText + (partialText ? ' ' + partialText : ''))
+    : fileText;
+  const wordCount = currentText.trim()
+    ? currentText.trim().split(/\s+/).filter(w => w.length > 0).length
+    : 0;
 
-  // Get word count
-  const getWordCount = () => {
-    const text = getCurrentText().trim();
-    if (!text) return 0;
-    return text.split(/\s+/).filter(w => w.length > 0).length;
-  };
+  const handleTranscriptChange = useCallback((value: string) => {
+    if (activeTab === 'realtime') {
+      setRealtimeText(value);
+      setPartialText('');
+    } else {
+      setFileText(value);
+    }
+  }, [activeTab]);
 
   // Save to file
   const handleSave = (mode: 'append' | 'replace') => {
-    const text = getCurrentText().trim();
+    const text = currentText.trim();
     if (!text) {
       setErrorMessage(t.noContent);
       return;
@@ -522,95 +524,27 @@ export const VoiceTranscriptionModal: React.FC<VoiceTranscriptionModalProps> = (
           </div>
 
           {/* Transcription Results Section */}
-          <div className="bg-[rgba(var(--bg-panel)/0.8)] backdrop-blur-lg rounded-xl p-4 border border-[rgb(var(--border-main))]">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[rgba(var(--success-500)/0.2)] to-[rgba(var(--primary-500)/0.2)] flex items-center justify-center">
-                  <FileText size={16} className="text-emerald-400" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-[rgb(var(--text-primary))] font-[var(--font-header)]">{t.transcriptPreview}</h3>
-                  <div className="flex items-center gap-3 text-xs text-[rgb(var(--text-secondary))]">
-                    <span className="flex items-center gap-1">
-                      <FileText size={10} />
-                      {getCurrentText().length} {language === 'zh' ? '字符' : 'chars'}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Activity size={10} />
-                      {getWordCount()} {language === 'zh' ? '词' : 'words'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <button
-                onClick={clearText}
-                disabled={!getCurrentText().trim()}
-                className={`
-                  flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors
-                  ${getCurrentText().trim()
-                    ? 'text-[rgb(var(--text-secondary))] hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20'
-                    : 'text-[rgb(var(--text-secondary))] opacity-50 cursor-not-allowed'
-                  }
-                `}
-              >
-                <Trash2 size={12} />
-                {t.clear}
-              </button>
-            </div>
-
-            <textarea
-              value={getCurrentText()}
-              onChange={(e) => {
-                if (activeTab === 'realtime') {
-                  setRealtimeText(e.target.value);
-                  setPartialText('');
-                } else {
-                  setFileText(e.target.value);
-                }
-              }}
-              placeholder={
-                isListening
-                  ? (language === 'zh' ? '正在聆听...' : 'Listening...')
-                  : (language === 'zh' ? '转录文本将显示在这里...' : 'Transcribed text will appear here...')
-              }
-              className="w-full h-28 p-3 rounded-lg border border-[rgb(var(--border-main))] bg-[rgb(var(--bg-element))] text-[rgb(var(--text-primary))] text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[rgb(var(--primary-500))] font-[var(--font-primary)] leading-relaxed custom-scrollbar"
-            />
-
-            {/* Target file selection */}
-            <div className="mt-3 pt-3 border-t border-[rgb(var(--border-main))]">
-              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                <span className="text-xs font-medium text-[rgb(var(--text-primary))] font-[var(--font-header)] whitespace-nowrap">
-                  {t.targetFile}
-                </span>
-                <select
-                  value={targetFileId}
-                  onChange={(e) => setTargetFileId(e.target.value)}
-                  className="flex-1 px-2 py-1.5 rounded-lg border border-[rgb(var(--border-main))] bg-[rgb(var(--bg-main))] text-[rgb(var(--text-primary))] text-xs focus:outline-none focus:ring-2 focus:ring-[rgb(var(--primary-500))] font-[var(--font-primary)]"
-                >
-                  <option value="">✨ {t.newFile}</option>
-                  {files.map(file => (
-                    <option key={file.id} value={file.id}>{file.name}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Error message */}
-            {errorMessage && (
-              <div className="mt-3 p-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 flex items-center gap-2 text-red-600 dark:text-red-400 text-xs">
-                <AlertTriangle size={14} />
-                <span>{errorMessage}</span>
-              </div>
-            )}
-
-            {/* Success message */}
-            {status === 'success' && !errorMessage && (
-              <div className="mt-3 p-2 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 flex items-center gap-2 text-green-600 dark:text-green-400 text-xs">
-                <Check size={14} />
-                <span>{t.transcriptionComplete}</span>
-              </div>
-            )}
-          </div>
+          <TranscriptionResults
+            activeTab={activeTab}
+            currentText={currentText}
+            wordCount={wordCount}
+            isListening={isListening}
+            language={language}
+            targetFileId={targetFileId}
+            files={files}
+            errorMessage={errorMessage}
+            status={status}
+            onClear={clearText}
+            onTextChange={handleTranscriptChange}
+            onTargetFileChange={(value) => setTargetFileId(value)}
+            t={{
+              transcriptPreview: t.transcriptPreview,
+              clear: t.clear,
+              targetFile: t.targetFile,
+              newFile: t.newFile,
+              transcriptionComplete: t.transcriptionComplete
+            }}
+          />
         </div>
 
         {/* Footer */}
@@ -630,10 +564,10 @@ export const VoiceTranscriptionModal: React.FC<VoiceTranscriptionModalProps> = (
             </button>
             <button
               onClick={() => handleSave('append')}
-              disabled={!getCurrentText().trim()}
+              disabled={!currentText.trim()}
               className={`
                 flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all text-sm font-medium font-[var(--font-primary)]
-                ${getCurrentText().trim()
+                ${currentText.trim()
                   ? 'bg-[rgb(var(--bg-element))] text-[rgb(var(--text-primary))] hover:bg-[rgba(var(--primary-500)/0.2)] border border-[rgb(var(--border-main))]'
                   : 'bg-[rgb(var(--bg-element))] text-[rgb(var(--text-secondary))] cursor-not-allowed opacity-50'
                 }
@@ -644,10 +578,10 @@ export const VoiceTranscriptionModal: React.FC<VoiceTranscriptionModalProps> = (
             </button>
             <button
               onClick={() => handleSave('replace')}
-              disabled={!getCurrentText().trim()}
+              disabled={!currentText.trim()}
               className={`
                 flex items-center gap-1.5 px-4 py-1.5 rounded-lg transition-all text-sm font-semibold font-[var(--font-primary)]
-                ${getCurrentText().trim()
+                ${currentText.trim()
                   ? 'bg-gradient-to-r from-[rgb(var(--primary-500))] to-[rgb(var(--secondary-500))] text-white hover:shadow-md hover:shadow-[rgba(var(--primary-500)/0.3)]'
                   : 'bg-[rgb(var(--bg-element))] text-[rgb(var(--text-secondary))] cursor-not-allowed opacity-50'
                 }

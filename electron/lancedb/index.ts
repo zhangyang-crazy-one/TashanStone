@@ -8,6 +8,10 @@ import Module from 'module';
 type LanceDBModule = typeof import('@lancedb/lancedb');
 type Connection = Awaited<ReturnType<LanceDBModule['connect']>>;
 type Table = Awaited<ReturnType<Connection['openTable']>>;
+type ModuleWithNodePaths = typeof Module & {
+  _nodeModulePaths?: ((from: string) => string[]) | string[];
+};
+type ProcessWithResourcesPath = NodeJS.Process & { resourcesPath?: string };
 
 /**
  * LanceDB 向量块数据结构
@@ -20,7 +24,7 @@ export interface VectorChunk {
   vector: number[];
   chunkIndex: number;
   lastModified?: number; // 文件的 lastModified 时间戳，用于增量索引判断
-  [key: string]: any; // 添加索引签名以满足 LanceDB 类型要求
+  [key: string]: unknown; // 添加索引签名以满足 LanceDB 类型要求
 }
 
 // LanceDB 模块实例（延迟加载）
@@ -42,7 +46,7 @@ function configureModulePaths(): void {
 
   try {
     // 获取 resources 路径（打包后为 app.asar 所在目录）
-    const resourcesPath = (process as any).resourcesPath;
+    const resourcesPath = (process as ProcessWithResourcesPath).resourcesPath;
 
     if (resourcesPath) {
       // 在打包环境中，添加 unpacked 目录到模块搜索路径
@@ -57,11 +61,11 @@ function configureModulePaths(): void {
 
       // 将 unpacked 目录添加到模块搜索路径的最前面
       // 这样 @lancedb 的原生模块在 require('apache-arrow') 时能找到它
-      const modulePaths = (Module as any)._nodeModulePaths || [];
-      if (typeof (Module as any)._nodeModulePaths === 'function') {
+      const moduleWithPaths = Module as ModuleWithNodePaths;
+      if (typeof moduleWithPaths._nodeModulePaths === 'function') {
         // 使用 monkey-patch 来添加路径
-        const originalPaths = (Module as any)._nodeModulePaths;
-        (Module as any)._nodeModulePaths = function(from: string) {
+        const originalPaths = moduleWithPaths._nodeModulePaths;
+        moduleWithPaths._nodeModulePaths = function(from: string) {
           const paths = originalPaths.call(this, from);
           // 在返回的路径数组前面添加 unpacked 目录
           if (!paths.includes(unpackedModules)) {
@@ -110,7 +114,7 @@ async function loadLanceDB(): Promise<LanceDBModule> {
     logger.error('[LanceDB] Failed to load module', {
       message: err.message,
       stack: err.stack,
-      resourcesPath: (process as any).resourcesPath,
+      resourcesPath: (process as ProcessWithResourcesPath).resourcesPath,
       modulePaths: module.paths.slice(0, 5)
     });
     initError = err;
@@ -218,10 +222,12 @@ export async function addVectors(chunks: VectorChunk[]): Promise<void> {
   try {
     if (!vectorTable) {
       // 首次创建表 - 使用正确的 API 签名
-      vectorTable = await db.createTable(TABLE_NAME, chunks as any);
+      const rows = chunks as Record<string, unknown>[];
+      vectorTable = await db.createTable(TABLE_NAME, rows);
       logger.info('[LanceDB] Created new table', { tableName: TABLE_NAME, chunkCount: chunks.length });
     } else {
-      await vectorTable.add(chunks as any);
+      const rows = chunks as Record<string, unknown>[];
+      await vectorTable.add(rows);
       logger.info('[LanceDB] Added chunks', { chunkCount: chunks.length });
     }
   } catch (error) {

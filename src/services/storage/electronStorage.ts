@@ -3,8 +3,6 @@ import { MarkdownFile, AIConfig, ChatMessage, AppTheme, MistakeRecord } from '..
 
 /**
  * Electron storage service - uses IPC to communicate with SQLite in main process
- * Note: Uses type assertions (as unknown as X) because preload.ts has inline type definitions
- * that may differ slightly from the main types.ts but are compatible at runtime.
  */
 export class ElectronStorageService implements StorageService {
     async initialize(): Promise<void> {
@@ -15,19 +13,19 @@ export class ElectronStorageService implements StorageService {
 
     // ===== Files =====
     async getFiles(): Promise<MarkdownFile[]> {
-        return await window.electronAPI.db.files.getAll() as unknown as MarkdownFile[];
+        return await window.electronAPI.db.files.getAll();
     }
 
     async getFile(id: string): Promise<MarkdownFile | null> {
-        return await window.electronAPI.db.files.get(id) as unknown as MarkdownFile | null;
+        return await window.electronAPI.db.files.get(id);
     }
 
     async createFile(file: MarkdownFile): Promise<MarkdownFile> {
-        return await window.electronAPI.db.files.create(file as any) as unknown as MarkdownFile;
+        return await window.electronAPI.db.files.create(file);
     }
 
     async updateFile(id: string, updates: Partial<MarkdownFile>): Promise<MarkdownFile | null> {
-        return await window.electronAPI.db.files.update(id, updates as any) as unknown as MarkdownFile | null;
+        return await window.electronAPI.db.files.update(id, updates);
     }
 
     async deleteFile(id: string): Promise<boolean> {
@@ -36,20 +34,20 @@ export class ElectronStorageService implements StorageService {
 
     // ===== AI Config =====
     async getAIConfig(): Promise<AIConfig> {
-        return await window.electronAPI.db.config.get() as unknown as AIConfig;
+        return await window.electronAPI.db.config.get();
     }
 
     async setAIConfig(config: AIConfig): Promise<AIConfig> {
-        return await window.electronAPI.db.config.set(config as any) as unknown as AIConfig;
+        return await window.electronAPI.db.config.set(config);
     }
 
     // ===== Chat =====
     async getChatMessages(conversationId?: string): Promise<ChatMessage[]> {
-        return await window.electronAPI.db.chat.getAll(conversationId) as unknown as ChatMessage[];
+        return await window.electronAPI.db.chat.getAll(conversationId);
     }
 
     async addChatMessage(message: ChatMessage, conversationId?: string): Promise<ChatMessage> {
-        return await window.electronAPI.db.chat.add(message as any, conversationId) as unknown as ChatMessage;
+        return await window.electronAPI.db.chat.add(message, conversationId);
     }
 
     async clearChatMessages(conversationId?: string): Promise<void> {
@@ -58,11 +56,11 @@ export class ElectronStorageService implements StorageService {
 
     // ===== Themes =====
     async getThemes(): Promise<AppTheme[]> {
-        return await window.electronAPI.db.themes.getAll() as unknown as AppTheme[];
+        return await window.electronAPI.db.themes.getAll();
     }
 
     async saveTheme(theme: AppTheme): Promise<AppTheme> {
-        return await window.electronAPI.db.themes.save(theme as any) as unknown as AppTheme;
+        return await window.electronAPI.db.themes.save(theme);
     }
 
     async deleteTheme(id: string): Promise<boolean> {
@@ -89,11 +87,11 @@ export class ElectronStorageService implements StorageService {
 
     // ===== Mistakes =====
     async getMistakes(): Promise<MistakeRecord[]> {
-        return await window.electronAPI.db.mistakes.getAll() as unknown as MistakeRecord[];
+        return await window.electronAPI.db.mistakes.getAll();
     }
 
     async addMistake(record: MistakeRecord): Promise<MistakeRecord> {
-        return await window.electronAPI.db.mistakes.add(record as any) as unknown as MistakeRecord;
+        return await window.electronAPI.db.mistakes.add(record);
     }
 
     async deleteMistake(id: string): Promise<boolean> {

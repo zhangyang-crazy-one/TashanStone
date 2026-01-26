@@ -102,8 +102,12 @@ class MCPManager {
             }
 
             // 连接所有服务器
+            type ConnectionResult =
+                | { name: string; success: true }
+                | { name: string; success: false; error: string };
+
             const connectionPromises = Object.entries(config.mcpServers).map(
-                async ([name, serverConfig]) => {
+                async ([name, serverConfig]): Promise<ConnectionResult> => {
                     try {
                         logger.info(`Attempting to connect MCP server: ${name}`, {
                             command: serverConfig.command,
@@ -154,8 +158,8 @@ class MCPManager {
 
             if (failCount > 0) {
                 const failedServers = results
-                    .filter(r => !r.success)
-                    .map(r => `${r.name}: ${(r as any).error}`)
+                    .filter((r): r is { name: string; success: false; error: string } => !r.success)
+                    .map(r => `${r.name}: ${r.error}`)
                     .join('; ');
                 logger.warn('Some MCP servers failed to connect:', failedServers);
             }

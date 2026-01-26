@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useListRef } from 'react-window';
 
 import type { AIState, ChatMessage } from '../types';
 import { ChatHeader } from './ChatPanel/ChatHeader';
@@ -68,9 +69,9 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   const [interimTranscript, setInterimTranscript] = useState('');
   const [compactMode, setCompactMode] = useState(false);
   const [showCheckpointDrawer, setShowCheckpointDrawer] = useState(false);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const listRef = useListRef(null);
   const shouldAutoScrollRef = useRef(true);
+  const forceAutoScrollRef = useRef(false);
   const t = translations[language];
   const {
     showMemorySearch,
@@ -120,16 +121,53 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
 
   const scrollToBottom = useCallback((behavior?: ScrollBehavior) => {
     const scrollBehavior = behavior ?? (isStreaming ? 'auto' : 'smooth');
-    messagesEndRef.current?.scrollIntoView({ behavior: scrollBehavior });
-  }, [isStreaming]);
+    const lastIndex = messages.length + (aiState.isThinking ? 1 : 0) - 1;
+    if (lastIndex < 0) return;
+    shouldAutoScrollRef.current = true;
+    forceAutoScrollRef.current = true;
+    listRef.current?.scrollToRow({
+      index: lastIndex,
+      align: 'end',
+      behavior: scrollBehavior === 'smooth' ? 'smooth' : 'auto'
+    });
+  }, [aiState.isThinking, isStreaming, listRef, messages.length]);
 
-  const handleScroll = useCallback(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-    const { scrollTop, scrollHeight, clientHeight } = container;
-    const distanceToBottom = scrollHeight - scrollTop - clientHeight;
-    shouldAutoScrollRef.current = distanceToBottom < 120;
-  }, []);
+  const rowCount = messages.length + (aiState.isThinking ? 1 : 0);
+
+  const handleRowsRendered = useCallback((visibleRows: { startIndex: number; stopIndex: number }) => {
+    if (forceAutoScrollRef.current) {
+      shouldAutoScrollRef.current = true;
+      if (visibleRows.stopIndex >= rowCount - 1) {
+        forceAutoScrollRef.current = false;
+      }
+      return;
+    }
+    shouldAutoScrollRef.current = visibleRows.stopIndex >= rowCount - 1;
+  }, [rowCount]);
+
+  useEffect(() => {
+    if (!isOpen || typeof ResizeObserver === 'undefined') return;
+    const listElement = listRef.current?.element;
+    if (!listElement) return;
+    const sizingElement = listElement.lastElementChild;
+    if (!(sizingElement instanceof HTMLElement)) return;
+
+    let rafId: number | null = null;
+    const observer = new ResizeObserver(() => {
+      if (!shouldAutoScrollRef.current) return;
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        scrollToBottom('auto');
+      });
+    });
+
+    observer.observe(sizingElement);
+
+    return () => {
+      observer.disconnect();
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  }, [isOpen, aiState.isThinking, messages.length, scrollToBottom]);
 
   const handleToggleCompactMode = useCallback(() => {
     setCompactMode(prev => !prev);
@@ -153,6 +191,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     const userQuery = input.trim();
     const messageContent = await buildInjectedMessage(userQuery);
 
+    shouldAutoScrollRef.current = true;
+    forceAutoScrollRef.current = true;
     onSendMessage(messageContent);
     setInput('');
   }, [input, aiState.isThinking, buildInjectedMessage, onSendMessage]);
@@ -198,9 +238,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           compactMode={compactMode}
           language={language}
           onStopStreaming={onStopStreaming}
-          scrollContainerRef={scrollContainerRef}
-          messagesEndRef={messagesEndRef}
-          onScroll={handleScroll}
+          listRef={listRef}
+          onRowsRendered={handleRowsRendered}
         />
 
         <ChatInput

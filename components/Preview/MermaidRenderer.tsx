@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Maximize, ZoomIn, ZoomOut } from 'lucide-react';
 import mermaid from 'mermaid';
+import { sanitizeHtml } from '../../utils/sanitizeHtml';
 
 interface MermaidRendererProps {
   code: string;
@@ -50,7 +51,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = ({ code, isDark }
 
         const id = `mermaid-embed-${Math.random().toString(36).substr(2, 9)}`;
         const { svg: generatedSvg } = await mermaid.render(id, code);
-        setSvg(generatedSvg);
+        setSvg(sanitizeHtml(generatedSvg));
       } catch (err) {
         console.error('Mermaid Render Error:', err);
         const message = err instanceof Error ? err.message : 'Syntax Error';

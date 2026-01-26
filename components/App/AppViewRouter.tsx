@@ -192,6 +192,7 @@ export const AppViewRouter = memo((props: AppViewRouterProps) => {
           onToggleMode={onTogglePaneMode}
           onSelectPane={onSelectPane}
           splitMode={splitMode}
+          viewMode={viewMode}
           language={language}
           codeMirrorRef={codeMirrorRef}
         />

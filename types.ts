@@ -432,9 +432,9 @@ export interface SearchResult {
 // Editor Types
 // ========================
 
-// CodeMirror Editor Ref Interface (view is typed as any to avoid CodeMirror dependency)
+// CodeMirror Editor Ref Interface (view kept as unknown to avoid CodeMirror dependency)
 export interface CodeMirrorEditorRef {
-  view: any;
+  view: unknown;
   insertText: (text: string) => void;
   getSelection: () => string;
 }
@@ -564,6 +564,6 @@ declare global {
   interface Window {
     SpeechRecognition: { new (): SpeechRecognition };
     webkitSpeechRecognition: { new (): SpeechRecognition };
-    jspdf: any;
+    jspdf: unknown;
   }
 }

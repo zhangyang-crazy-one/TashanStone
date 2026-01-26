@@ -1,5 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Search, Plus, Trash2, Edit2, Sparkles, X, Filter, SortAsc, SortDesc, Brain, RefreshCw, AlertCircle } from 'lucide-react';
+import { List, type RowComponentProps, useDynamicRowHeight } from 'react-window';
+import { AutoSizer } from 'react-virtualized-auto-sizer';
 import Tooltip from './Tooltip';
 
 interface MemoryDocument {
@@ -11,6 +13,37 @@ interface MemoryDocument {
   importance: 'low' | 'medium' | 'high';
   sourceSessions: string[];
   content: string;
+}
+
+type MemorySortBy = 'updated' | 'created' | 'importance';
+type MemoryImportanceFilter = 'all' | 'low' | 'medium' | 'high';
+
+const IMPORTANCE_FILTERS: Record<MemoryImportanceFilter, true> = {
+  all: true,
+  low: true,
+  medium: true,
+  high: true
+};
+
+const SORT_BY_OPTIONS: Record<MemorySortBy, true> = {
+  updated: true,
+  created: true,
+  importance: true
+};
+
+const isImportanceFilter = (value: string): value is MemoryImportanceFilter => value in IMPORTANCE_FILTERS;
+const isSortByOption = (value: string): value is MemorySortBy => value in SORT_BY_OPTIONS;
+
+const DEFAULT_ROW_HEIGHT = 88;
+
+interface MemoryIndexEntry {
+  id: string;
+  filePath: string;
+  created: string;
+  updated: string;
+  topics?: string[];
+  importance?: 'low' | 'medium' | 'high';
+  sourceSessions?: string[];
 }
 
 interface MemoryPanelProps {
@@ -33,9 +66,9 @@ const MemoryPanel: React.FC<MemoryPanelProps> = ({
   const [memories, setMemories] = useState<MemoryDocument[]>([]);
   const [filteredMemories, setFilteredMemories] = useState<MemoryDocument[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<'updated' | 'created' | 'importance'>('updated');
+  const [sortBy, setSortBy] = useState<MemorySortBy>('updated');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  const [importanceFilter, setImportanceFilter] = useState<'all' | 'low' | 'medium' | 'high'>('all');
+  const [importanceFilter, setImportanceFilter] = useState<MemoryImportanceFilter>('all');
   const [isLoading, setIsLoading] = useState(false);
   const [expandedMemory, setExpandedMemory] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<{ needsSync: boolean; outdatedFiles: string[] }>({ needsSync: false, outdatedFiles: [] });
@@ -52,22 +85,41 @@ const MemoryPanel: React.FC<MemoryPanelProps> = ({
     filterAndSortMemories();
   }, [memories, searchQuery, sortBy, sortOrder, importanceFilter]);
 
+  const rowHeightKey = useMemo(() => (
+    `${filteredMemories.length}-${sortBy}-${sortOrder}-${importanceFilter}-${searchQuery}`
+  ), [filteredMemories.length, sortBy, sortOrder, importanceFilter, searchQuery]);
+  const dynamicRowHeight = useDynamicRowHeight({ defaultRowHeight: DEFAULT_ROW_HEIGHT, key: rowHeightKey });
+
   const loadMemories = async () => {
     setIsLoading(true);
     try {
-      if (typeof window !== 'undefined' && (window as any).electronAPI?.file?.readFile) {
+      const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
+      if (electronAPI?.file?.readFile) {
         const indexPath = '.memories/_memories_index.json';
-        const indexData = await (window as any).electronAPI.file.readFile(indexPath);
+        const indexData = await electronAPI.file.readFile(indexPath);
         if (indexData) {
-          const index = JSON.parse(indexData);
+          const index = JSON.parse(indexData) as { memories?: MemoryIndexEntry[] };
           const loadedMemories: MemoryDocument[] = [];
 
-          for (const memoryInfo of index.memories || []) {
+          const indexMemories = Array.isArray(index.memories) ? index.memories : [];
+          const metadataList = electronAPI.file.getBatchMetadata
+            ? await electronAPI.file.getBatchMetadata(indexMemories.map(m => m.filePath), true)
+            : [];
+          const metadataByPath = new Map(metadataList.map(item => [item.path, item]));
+
+          for (const memoryInfo of indexMemories) {
             try {
-              const content = await (window as any).electronAPI.file.readFile(memoryInfo.filePath);
+              const metadata = metadataByPath.get(memoryInfo.filePath);
+              const content = metadata?.content;
               if (content) {
                 const memory = parseMarkdownToMemory(content, memoryInfo);
                 loadedMemories.push(memory);
+              } else if (!electronAPI.file.getBatchMetadata) {
+                const fallbackContent = await electronAPI.file.readFile(memoryInfo.filePath);
+                if (fallbackContent) {
+                  const memory = parseMarkdownToMemory(fallbackContent, memoryInfo);
+                  loadedMemories.push(memory);
+                }
               }
             } catch {
               console.warn(`[MemoryPanel] Failed to read memory: ${memoryInfo.filePath}`);
@@ -87,8 +139,9 @@ const MemoryPanel: React.FC<MemoryPanelProps> = ({
   const checkSyncStatus = async () => {
     setIsCheckingSync(true);
     try {
-      if (typeof window !== 'undefined' && (window as any).electronAPI?.lancedb) {
-        const status = await (window as any).electronAPI.lancedb.checkSyncStatus();
+      const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
+      if (electronAPI?.memory?.checkSyncStatus) {
+        const status = await electronAPI.memory.checkSyncStatus();
         setSyncStatus(status || { needsSync: false, outdatedFiles: [] });
       }
     } catch (error) {
@@ -103,7 +156,7 @@ const MemoryPanel: React.FC<MemoryPanelProps> = ({
     await checkSyncStatus();
   };
 
-  const parseMarkdownToMemory = (content: string, metadata: any): MemoryDocument => {
+  const parseMarkdownToMemory = (content: string, metadata: MemoryIndexEntry): MemoryDocument => {
     const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
     let topics: string[] = [];
     let parsedContent = content;
@@ -195,7 +248,7 @@ const MemoryPanel: React.FC<MemoryPanelProps> = ({
 
   if (!isOpen) return null;
 
-  const t = {
+  const t = useMemo(() => ({
     title: language === 'zh' ? '🧠 AI 记忆库' : '🧠 Memory Library',
     searchPlaceholder: language === 'zh' ? '搜索记忆...' : 'Search memories...',
     noMemories: language === 'zh' ? '暂无记忆' : 'No memories',
@@ -216,6 +269,94 @@ const MemoryPanel: React.FC<MemoryPanelProps> = ({
     confirmDelete: language === 'zh' ? '确定要删除这个记忆吗？' : 'Are you sure you want to delete this memory?',
     outOfSync: language === 'zh' ? '部分记忆可能已过期' : 'Some memories may be outdated',
     refresh: language === 'zh' ? '刷新' : 'Refresh',
+  }), [language]);
+
+  type MemoryRowProps = {
+    memories: MemoryDocument[];
+    expandedMemory: string | null;
+    onToggleExpanded: (id: string) => void;
+    onEditMemory?: (memory: MemoryDocument) => void;
+    onDeleteMemory?: (id: string) => Promise<void>;
+    handleDelete: (id: string) => void;
+    t: typeof t;
+  };
+
+  const MemoryRow = ({ index, style, ariaAttributes, ...rowProps }: RowComponentProps<MemoryRowProps>) => {
+    const memory = rowProps.memories[index];
+    if (!memory) return null;
+
+    return (
+      <div style={style} className="pb-2" {...ariaAttributes}>
+        <div className="bg-paper-50 dark:bg-cyber-900/50 rounded-lg border border-paper-200 dark:border-cyber-700 overflow-hidden transition-colors hover:border-violet-300 dark:hover:border-violet-700">
+          <div
+            className="flex items-center gap-2 px-3 py-2 cursor-pointer"
+            onClick={() => rowProps.onToggleExpanded(memory.id)}
+          >
+            <Sparkles size={12} className="text-violet-400 shrink-0" />
+            <span className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate flex-1">
+              {memory.filePath?.split('/').pop()?.replace('.md', '') || memory.id}
+            </span>
+            <span className={`text-[9px] px-1.5 py-0.5 rounded ${getImportanceColor(memory.importance)}`}>
+              {memory.importance}
+            </span>
+          </div>
+
+          {rowProps.expandedMemory === memory.id && (
+            <div className="px-3 pb-3 space-y-2">
+              {memory.topics.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {memory.topics.map((topic, i) => (
+                    <span key={i} className="text-[9px] px-1.5 py-0.5 bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 rounded">
+                      {topic}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              <p className="text-[10px] text-slate-500 line-clamp-3 dark:text-slate-400">
+                {memory.content}
+              </p>
+
+              <div className="flex items-center justify-between pt-2 border-t border-paper-200 dark:border-cyber-700">
+                <span className="text-[9px] text-slate-400">
+                  {rowProps.t.updated}: {formatDate(memory.updated)}
+                </span>
+                <div className="flex items-center gap-1">
+                  {rowProps.onEditMemory && (
+                    <Tooltip content={rowProps.t.edit}>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          rowProps.onEditMemory?.(memory);
+                        }}
+                        className="p-1 hover:bg-violet-100 dark:hover:bg-violet-900/30 rounded transition-colors"
+                        aria-label={rowProps.t.edit}
+                      >
+                        <Edit2 size={12} className="text-violet-500" />
+                      </button>
+                    </Tooltip>
+                  )}
+                  {rowProps.onDeleteMemory && (
+                    <Tooltip content={rowProps.t.delete}>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          rowProps.handleDelete(memory.id);
+                        }}
+                        className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
+                        aria-label={rowProps.t.delete}
+                      >
+                        <Trash2 size={12} className="text-red-500" />
+                      </button>
+                    </Tooltip>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -292,7 +433,10 @@ const MemoryPanel: React.FC<MemoryPanelProps> = ({
         <div className="flex items-center gap-2">
           <select
             value={importanceFilter}
-            onChange={(e) => setImportanceFilter(e.target.value as any)}
+            onChange={(e) => {
+              const value = e.target.value;
+              setImportanceFilter(isImportanceFilter(value) ? value : 'all');
+            }}
             className="flex-1 px-2 py-1.5 text-xs bg-paper-100 dark:bg-cyber-900 border border-paper-200 dark:border-cyber-600 rounded focus:outline-none focus:border-violet-500 text-slate-700 dark:text-slate-300"
           >
             <option value="all">{t.filterAll}</option>
@@ -303,7 +447,10 @@ const MemoryPanel: React.FC<MemoryPanelProps> = ({
 
           <select
             value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as any)}
+            onChange={(e) => {
+              const value = e.target.value;
+              setSortBy(isSortByOption(value) ? value : 'updated');
+            }}
             className="flex-1 px-2 py-1.5 text-xs bg-paper-100 dark:bg-cyber-900 border border-paper-200 dark:border-cyber-600 rounded focus:outline-none focus:border-violet-500 text-slate-700 dark:text-slate-300"
           >
             <option value="updated">{t.updated}</option>
@@ -321,7 +468,7 @@ const MemoryPanel: React.FC<MemoryPanelProps> = ({
       </div>
 
       {/* Memory List */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-2">
+      <div className="flex-1 overflow-hidden p-3">
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-violet-500" />
@@ -333,79 +480,29 @@ const MemoryPanel: React.FC<MemoryPanelProps> = ({
             <p className="text-[10px] text-slate-400 mt-1">{t.noMemoriesDesc}</p>
           </div>
         ) : (
-          filteredMemories.map((memory) => (
-            <div
-              key={memory.id}
-              className="bg-paper-50 dark:bg-cyber-900/50 rounded-lg border border-paper-200 dark:border-cyber-700 overflow-hidden transition-colors hover:border-violet-300 dark:hover:border-violet-700"
-            >
-              <div
-                className="flex items-center gap-2 px-3 py-2 cursor-pointer"
-                onClick={() => setExpandedMemory(prev => prev === memory.id ? null : memory.id)}
-              >
-                <Sparkles size={12} className="text-violet-400 shrink-0" />
-                <span className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate flex-1">
-                  {memory.filePath?.split('/').pop()?.replace('.md', '') || memory.id}
-                </span>
-                <span className={`text-[9px] px-1.5 py-0.5 rounded ${getImportanceColor(memory.importance)}`}>
-                  {memory.importance}
-                </span>
-              </div>
-
-              {expandedMemory === memory.id && (
-                <div className="px-3 pb-3 space-y-2">
-                  {memory.topics.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {memory.topics.map((topic, i) => (
-                        <span key={i} className="text-[9px] px-1.5 py-0.5 bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 rounded">
-                          {topic}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  <p className="text-[10px] text-slate-500 line-clamp-3 dark:text-slate-400">
-                    {memory.content}
-                  </p>
-
-                  <div className="flex items-center justify-between pt-2 border-t border-paper-200 dark:border-cyber-700">
-                    <span className="text-[9px] text-slate-400">
-                      {t.updated}: {formatDate(memory.updated)}
-                    </span>
-                    <div className="flex items-center gap-1">
-                      {onEditMemory && (
-                        <Tooltip content={t.edit}>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onEditMemory(memory);
-                            }}
-                            className="p-1 hover:bg-violet-100 dark:hover:bg-violet-900/30 rounded transition-colors"
-                            aria-label={t.edit}
-                          >
-                            <Edit2 size={12} className="text-violet-500" />
-                          </button>
-                        </Tooltip>
-                      )}
-                      {onDeleteMemory && (
-                        <Tooltip content={t.delete}>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDelete(memory.id);
-                            }}
-                            className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
-                            aria-label={t.delete}
-                          >
-                            <Trash2 size={12} className="text-red-500" />
-                          </button>
-                        </Tooltip>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          ))
+          <AutoSizer
+            renderProp={({ height, width }) => {
+              if (!height || !width) return null;
+              return (
+                <List
+                  rowCount={filteredMemories.length}
+                  rowHeight={dynamicRowHeight}
+                  rowComponent={MemoryRow}
+                  rowProps={{
+                    memories: filteredMemories,
+                    expandedMemory,
+                    onToggleExpanded: (id: string) => setExpandedMemory(prev => prev === id ? null : id),
+                    onEditMemory,
+                    onDeleteMemory,
+                    handleDelete,
+                    t
+                  }}
+                  overscanCount={4}
+                  style={{ height, width }}
+                />
+              );
+            }}
+          />
         )}
       </div>
     </div>

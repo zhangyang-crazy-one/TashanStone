@@ -176,7 +176,7 @@ export class WebStorageService implements StorageService {
     private saveFiles(files: MarkdownFile[]): void {
         // Filter out handle property which cannot be serialized
         const toSave = files.map(f => {
-            const { handle, ...rest } = f as any;
+            const { handle: _handle, ...rest } = f;
             return rest;
         });
         localStorage.setItem(KEYS.FILES, JSON.stringify(toSave));

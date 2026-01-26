@@ -11,6 +11,7 @@ import '@fontsource/noto-serif-sc/400.css';
 import '@fontsource/noto-serif-sc/700.css';
 import '@fontsource/ma-shan-zheng/400.css';
 import App from './App';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -20,6 +21,8 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </React.StrictMode>
 );

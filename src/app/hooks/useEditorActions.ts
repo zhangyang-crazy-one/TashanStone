@@ -1,6 +1,7 @@
 import { useCallback, useEffect } from 'react';
 import type { Dispatch, MutableRefObject, RefObject, SetStateAction } from 'react';
 import { undo as codeMirrorUndo, redo as codeMirrorRedo } from '@codemirror/commands';
+import type { EditorView } from '@codemirror/view';
 
 import type {
   CodeMirrorEditorRef,
@@ -59,6 +60,12 @@ interface UseEditorActionsResult {
   selectPane: (paneId: string) => void;
   handlePaneContentChange: (fileId: string, content: string) => void;
 }
+
+const isEditorView = (view: unknown): view is EditorView => {
+  if (typeof view !== 'object' || view === null) return false;
+  const maybeView = view as { state?: unknown; dispatch?: unknown; focus?: unknown };
+  return typeof maybeView.dispatch === 'function';
+};
 
 export const useEditorActions = ({
   files,
@@ -180,7 +187,7 @@ export const useEditorActions = ({
 
   const handleUndo = useCallback(() => {
     const view = codeMirrorRef.current?.view;
-    if (view && codeMirrorUndo(view)) return;
+    if (isEditorView(view) && codeMirrorUndo(view)) return;
 
     const fileHist = history[activeFileId];
     if (!fileHist || fileHist.past.length === 0) return;
@@ -202,7 +209,7 @@ export const useEditorActions = ({
 
   const handleRedo = useCallback(() => {
     const view = codeMirrorRef.current?.view;
-    if (view && codeMirrorRedo(view)) return;
+    if (isEditorView(view) && codeMirrorRedo(view)) return;
 
     const fileHist = history[activeFileId];
     if (!fileHist || fileHist.future.length === 0) return;
@@ -328,7 +335,7 @@ export const useEditorActions = ({
 
   const handleTextFormat = useCallback((startTag: string, endTag: string) => {
     const view = codeMirrorRef.current?.view;
-    if (view) {
+    if (isEditorView(view)) {
       const { from, to } = view.state.selection.main;
       const selectedText = view.state.sliceDoc(from, to);
       const insertText = `${startTag}${selectedText}${endTag}`;

@@ -2,6 +2,7 @@
 
 import { MarkdownFile, AIConfig, RAGStats } from "../types";
 import { getEmbedding } from "./aiService";
+import { LANCEDB_CONTEXT_FILE_ID_PREFIX, LANCEDB_MEMORY_FILE_ID_PREFIX } from "../utils/lanceDbPrefixes";
 
 export interface Chunk {
   id: string;
@@ -33,6 +34,10 @@ const CHUNK_SIZE = 800;
 const CHUNK_OVERLAP = 100;
 const MAX_CHUNKS_PER_QUERY = 15; // Number of chunks to retrieve
 const MIN_SIMILARITY_THRESHOLD = 0.3; // Only return chunks above this score
+
+const isMemoryFileId = (fileId: string): boolean =>
+    fileId.startsWith(LANCEDB_CONTEXT_FILE_ID_PREFIX) ||
+    fileId.startsWith(LANCEDB_MEMORY_FILE_ID_PREFIX);
 
 // --- Helper: Text Splitter ---
 export const splitTextIntoChunks = (file: MarkdownFile): Chunk[] => {
@@ -132,9 +137,10 @@ export class VectorStore {
 
                 // 加载所有向量块
                 const chunks = await window.electronAPI.lancedb.getAll();
+                const vectorChunks = chunks.filter((chunk: any) => !isMemoryFileId(chunk.fileId));
 
                 // 转换 LanceDB 格式到内存格式
-                this.chunks = chunks.map((lanceChunk: any) => ({
+                this.chunks = vectorChunks.map((lanceChunk: any) => ({
                     id: lanceChunk.id,
                     fileId: lanceChunk.fileId,
                     text: lanceChunk.content,
@@ -149,7 +155,9 @@ export class VectorStore {
                 // 从 LanceDB 获取 fileId -> lastModified 映射，用于增量索引判断
                 const fileMetadata = await window.electronAPI.lancedb.getFileMetadata();
                 for (const [fileId, lastModified] of Object.entries(fileMetadata)) {
-                    this.fileSignatures.set(fileId, lastModified);
+                    if (!isMemoryFileId(fileId)) {
+                        this.fileSignatures.set(fileId, lastModified);
+                    }
                 }
             } catch (e) {
                 // 出错时继续,使用空的内存存储
@@ -281,9 +289,10 @@ export class VectorStore {
                 try {
                     // 使用 LanceDB 的向量搜索 (返回的 score 是距离,需要转换为相似度)
                     const lanceResults = await window.electronAPI.lancedb.search(queryEmbedding, topK);
+                    const vectorResults = lanceResults.filter((lanceChunk: any) => !isMemoryFileId(lanceChunk.fileId));
 
                     // 转换 LanceDB 结果为内部格式
-                    scored = lanceResults.map((lanceChunk: any) => {
+                    scored = vectorResults.map((lanceChunk: any) => {
                         // LanceDB 返回 L2 距离,转换为相似度分数 (距离越小越相似)
                         // 使用简单的反比转换: score = 1 / (1 + distance)
                         const distance = lanceChunk._distance || 0;
@@ -377,11 +386,13 @@ export class VectorStore {
     async getStatsFromDB(): Promise<RAGStats> {
         if (this.isElectron()) {
             try {
-                const stats = await window.electronAPI.lancedb.getStats();
+                const all = await window.electronAPI.lancedb.getAll();
+                const vectorChunks = all.filter((chunk: any) => !isMemoryFileId(chunk.fileId));
+                const totalFiles = new Set(vectorChunks.map((chunk: any) => chunk.fileId)).size;
                 return {
-                    totalFiles: stats.totalFiles,
-                    indexedFiles: stats.totalFiles,
-                    totalChunks: stats.totalChunks,
+                    totalFiles,
+                    indexedFiles: totalFiles,
+                    totalChunks: vectorChunks.length,
                     isIndexing: this.isProcessing
                 };
             } catch (e) {
@@ -422,8 +433,12 @@ export class VectorStore {
         // 清空 LanceDB (Electron 模式)
         if (this.isElectron()) {
             try {
-                await window.electronAPI.lancedb.clear();
-                console.log('[VectorStore] LanceDB vectors cleared');
+                const fileIds = await window.electronAPI.lancedb.getFileIds();
+                const vectorFileIds = fileIds.filter((id: string) => !isMemoryFileId(id));
+                for (const fileId of vectorFileIds) {
+                    await window.electronAPI.lancedb.deleteByFile(fileId);
+                }
+                console.log('[VectorStore] LanceDB vectors cleared', { count: vectorFileIds.length });
             } catch (e) {
                 console.error('[VectorStore] Failed to clear LanceDB vectors:', e);
             }
@@ -455,7 +470,8 @@ export class VectorStore {
 
             // Step 1: 清理不存在于文件系统的 fileId
             const lanceFileIds = await window.electronAPI.lancedb.getFileIds();
-            const staleFileIds = lanceFileIds.filter((id: string) => !currentFileIds.includes(id));
+            const vectorFileIds = lanceFileIds.filter((id: string) => !isMemoryFileId(id));
+            const staleFileIds = vectorFileIds.filter((id: string) => !currentFileIds.includes(id));
 
             if (staleFileIds.length > 0) {
                 console.log(`[VectorStore] Found ${staleFileIds.length} stale fileIds in LanceDB, cleaning...`);
@@ -479,10 +495,17 @@ export class VectorStore {
 
             // 获取 LanceDB 中的 fileName → fileId[] 映射
             const lanceFileNameMapping = await window.electronAPI.lancedb.getFileNameMapping();
+            const filteredFileNameMapping: Record<string, string[]> = {};
+            for (const [fileName, fileIds] of Object.entries(lanceFileNameMapping)) {
+                const filteredIds = fileIds.filter((id: string) => !isMemoryFileId(id));
+                if (filteredIds.length > 0) {
+                    filteredFileNameMapping[fileName] = filteredIds;
+                }
+            }
 
             // 找出需要清理的重复文件名
             const duplicatesToClean: Record<string, string> = {};
-            for (const [fileName, fileIds] of Object.entries(lanceFileNameMapping)) {
+            for (const [fileName, fileIds] of Object.entries(filteredFileNameMapping)) {
                 if (fileIds.length > 1) {
                     // 有重复，需要保留当前文件系统中的版本
                     const keepId = currentFileNameToId[fileName];

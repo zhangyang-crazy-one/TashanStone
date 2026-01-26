@@ -4,6 +4,7 @@ import mermaid from 'mermaid';
 import { ZoomIn, ZoomOut, Maximize, AlertTriangle, Download } from 'lucide-react';
 import { Theme } from '../types';
 import Tooltip from './Tooltip';
+import { sanitizeHtml } from '../utils/sanitizeHtml';
 import { translations, Language } from '../utils/translations';
 
 interface MindMapProps {
@@ -69,7 +70,7 @@ export const MindMap: React.FC<MindMapProps> = ({ content, theme, language = 'en
           .replace(/height:[^;]+;/g, '')
           .replace(/style="[^"]*"/, 'style="overflow: visible;"');
 
-        setSvg(cleanSvg);
+        setSvg(sanitizeHtml(cleanSvg));
         // Reset view on new content
         setScale(1.0);
         setPosition({ x: 0, y: 0 });

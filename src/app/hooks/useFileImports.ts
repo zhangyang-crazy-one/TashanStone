@@ -78,7 +78,7 @@ export const useFileImports = ({
 
     setOcrStats({
       isProcessing: true,
-      totalPages: supportedFiles.length,
+      totalPages: 0,
       processedPages: 0,
       currentFile: supportedFiles[0]?.name || ''
     });
@@ -90,7 +90,8 @@ export const useFileImports = ({
 
         setOcrStats(prev => ({
           ...prev,
-          processedPages: i,
+          processedPages: 0,
+          totalPages: isPdf ? 0 : 1,
           currentFile: isPdf ? `${file.name} (OCR)` : file.name
         }));
 
@@ -100,7 +101,9 @@ export const useFileImports = ({
             onProgress: (current, total, isOcr) => {
               setOcrStats(prev => ({
                 ...prev,
-                currentFile: isOcr ? `${file.name} (OCR ${current}/${total})` : `${file.name} (${current}/${total})`
+                processedPages: current,
+                totalPages: total,
+                currentFile: isOcr ? `${file.name} (OCR) ${current}/${total}` : `${file.name} (${current}/${total})`
               }));
             }
           });
@@ -122,10 +125,12 @@ export const useFileImports = ({
           path
         });
 
-        setOcrStats(prev => ({
-          ...prev,
-          processedPages: i + 1
-        }));
+        if (!isPdf) {
+          setOcrStats(prev => ({
+            ...prev,
+            processedPages: prev.totalPages > 0 ? prev.totalPages : 1
+          }));
+        }
       }
 
       if (newFiles.length > 0) {

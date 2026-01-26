@@ -219,9 +219,22 @@ export const instantSearch = (
   return results.slice(0, maxResults);
 };
 
-export const highlightMatch = (text: string, query: string): string => {
-  if (!query.trim()) return text;
+const escapeHtml = (value: string): string => (
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+);
 
-  const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-  return text.replace(regex, '<mark>$1</mark>');
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+export const highlightMatch = (text: string, query: string): string => {
+  const safeText = escapeHtml(text);
+  const safeQuery = escapeHtml(query);
+  if (!safeQuery.trim()) return safeText;
+
+  const regex = new RegExp(`(${escapeRegExp(safeQuery)})`, 'gi');
+  return safeText.replace(regex, '<mark>$1</mark>');
 };

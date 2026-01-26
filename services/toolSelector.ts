@@ -15,8 +15,8 @@
 export interface GenericTool {
   name?: string;
   description?: string;
-  parameters?: any;
-  inputSchema?: any;
+  parameters?: unknown;
+  inputSchema?: unknown;
 }
 
 /**

@@ -214,8 +214,9 @@ export class MemoryAutoUpgradeService {
     }
 
     try {
-      if ((window as any).electronAPI?.ai?.generateSummary) {
-        const result = await (window as any).electronAPI.ai.generateSummary({
+      const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
+      if (electronAPI?.ai?.generateSummary) {
+        const result = await electronAPI.ai.generateSummary({
           content,
           maxLength: 200,
           language: this.detectLanguage(content),
@@ -283,13 +284,14 @@ export class MemoryAutoUpgradeService {
 
   private async getMidTermMemories(): Promise<MidTermMemoryRecord[]> {
     try {
-      if ((window as any).electronAPI?.memory?.getMidTermMemories) {
-        const memories = await (window as any).electronAPI.memory.getMidTermMemories();
+      const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
+      if (electronAPI?.memory?.getMidTermMemories) {
+        const memories = await electronAPI.memory.getMidTermMemories();
         
         // 🔧 修复: 更新每个记忆的访问信息
         for (const memory of memories) {
           try {
-            await (window as any).electronAPI.memory.updateMemoryAccess(memory.sessionId);
+            await electronAPI.memory.updateMemoryAccess(memory.sessionId);
           } catch (updateError) {
             console.warn('[MemoryAutoUpgrade] Failed to update access for:', memory.sessionId, updateError);
           }
@@ -305,13 +307,14 @@ export class MemoryAutoUpgradeService {
 
   private async getStarredMemories(): Promise<MidTermMemoryRecord[]> {
     try {
-      if ((window as any).electronAPI?.memory?.getStarredMemories) {
-        const memories = await (window as any).electronAPI.memory.getStarredMemories();
+      const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
+      if (electronAPI?.memory?.getStarredMemories) {
+        const memories = await electronAPI.memory.getStarredMemories();
         
         // 🔧 修复: 更新每个记忆的访问信息
         for (const memory of memories) {
           try {
-            await (window as any).electronAPI.memory.updateMemoryAccess(memory.sessionId);
+            await electronAPI.memory.updateMemoryAccess(memory.sessionId);
           } catch (updateError) {
             console.warn('[MemoryAutoUpgrade] Failed to update access for:', memory.sessionId, updateError);
           }
@@ -327,8 +330,9 @@ export class MemoryAutoUpgradeService {
 
   private async saveToPermanent(memory: PermanentMemoryTemplate): Promise<void> {
     try {
-      if ((window as any).electronAPI?.memory?.savePermanent) {
-        await (window as any).electronAPI.memory.savePermanent(memory);
+      const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
+      if (electronAPI?.memory?.savePermanent) {
+        await electronAPI.memory.savePermanent(memory);
         console.log('[MemoryAutoUpgrade] Saved to permanent:', memory.id);
       } else {
         console.warn('[MemoryAutoUpgrade] savePermanent IPC not available');
@@ -341,19 +345,21 @@ export class MemoryAutoUpgradeService {
 
   private async markAsPromoted(memoryId: string): Promise<boolean> {
     try {
-      if ((window as any).electronAPI?.memory?.markAsPromoted) {
-        const result = await (window as any).electronAPI.memory.markAsPromoted(memoryId);
+      const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
+      if (electronAPI?.memory?.markAsPromoted) {
+        const result = await electronAPI.memory.markAsPromoted(memoryId);
         
         // 检查响应格式
-        if (result && result.success) {
+        if (result.success) {
           console.log('[MemoryAutoUpgrade] Memory marked as promoted:', {
             memoryId,
-            newTier: result.newTier,
-            promotedAt: result.promotedAt
+            newTier: result.data.newTier,
+            promotedAt: result.data.promotedAt
           });
           return true;
         } else {
-          console.warn('[MemoryAutoUpgrade] Mark as promoted returned failure:', result);
+          const errorMessage = 'error' in result ? result.error : 'Unknown error';
+          console.warn('[MemoryAutoUpgrade] Mark as promoted returned failure:', errorMessage);
           return false;
         }
       }
@@ -370,8 +376,9 @@ export class MemoryAutoUpgradeService {
 
   private async unstarMemory(memoryId: string): Promise<void> {
     try {
-      if ((window as any).electronAPI?.memory?.star) {
-        await (window as any).electronAPI.memory.star(memoryId, false);
+      const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
+      if (electronAPI?.memory?.star) {
+        await electronAPI.memory.star(memoryId, false);
       }
     } catch (error) {
       console.warn('[MemoryAutoUpgrade] Failed to unstar memory:', error);

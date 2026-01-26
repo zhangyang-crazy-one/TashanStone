@@ -37,7 +37,14 @@ export const SmartOrganizeModal: React.FC<SmartOrganizeModalProps> = ({
   language = 'en'
 }) => {
   const t = translations[language];
-  const [activeTab, setActiveTab] = useState<'analyze' | 'tags' | 'classify' | 'links'>('analyze');
+  const tabs = [
+    { id: 'analyze', label: 'Analyze', icon: BarChart2 },
+    { id: 'tags', label: 'Tags', icon: Tag },
+    { id: 'classify', label: 'Classify', icon: FolderTree },
+    { id: 'links', label: 'Links', icon: Link2 }
+  ] as const;
+  type TabId = (typeof tabs)[number]['id'];
+  const [activeTab, setActiveTab] = useState<TabId>('analyze');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [suggestions, setSuggestions] = useState<OrganizeSuggestions>({
     importance: file.importance || 5,
@@ -108,13 +115,6 @@ export const SmartOrganizeModal: React.FC<SmartOrganizeModalProps> = ({
 
   if (!isOpen) return null;
 
-  const tabs = [
-    { id: 'analyze', label: 'Analyze', icon: BarChart2 },
-    { id: 'tags', label: 'Tags', icon: Tag },
-    { id: 'classify', label: 'Classify', icon: FolderTree },
-    { id: 'links', label: 'Links', icon: Link2 }
-  ];
-
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center backdrop-blur-sm">
       <div className="bg-white dark:bg-cyber-800 rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col animate-slideDown">
@@ -140,7 +140,7 @@ export const SmartOrganizeModal: React.FC<SmartOrganizeModalProps> = ({
           {tabs.map(tab => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => setActiveTab(tab.id)}
               className={`flex-1 px-4 py-3 text-sm font-medium transition-colors border-b-2 flex items-center justify-center gap-2 ${
                 activeTab === tab.id
                   ? 'border-amber-500 text-amber-600 dark:text-amber-400'

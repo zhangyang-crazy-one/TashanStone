@@ -4,6 +4,7 @@ import { Check, Copy, FileCode, WrapText } from 'lucide-react';
 import Tooltip from '../Tooltip';
 import { MermaidRenderer } from './MermaidRenderer';
 import { extractText } from './markdownUtils';
+import { sanitizeHtml } from '../../utils/sanitizeHtml';
 
 interface EnhancedCodeBlockTooltips {
   copyCode: string;
@@ -50,7 +51,7 @@ export const createEnhancedCodeBlock = (
     }
 
     if (renderHtml && language === 'html') {
-      const htmlContent = extractText(children);
+      const htmlContent = sanitizeHtml(extractText(children));
       return (
         <div className="my-6 rounded-xl border border-paper-200 dark:border-cyber-700 overflow-hidden shadow-lg">
           <div className="flex items-center justify-between px-4 py-2.5 bg-gradient-to-r from-cyan-500/10 to-purple-500/10 border-b border-paper-200 dark:border-cyber-700">

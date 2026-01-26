@@ -116,7 +116,7 @@ export const StreamToolCard: React.FC<StreamToolCardProps> = memo(({
   return (
     <div
       className={`
-        my-4 rounded-2xl overflow-hidden
+        my-4 rounded-2xl overflow-hidden max-w-full min-w-0
         ${config.bg}
         border ${config.border}
         backdrop-blur-xl
@@ -126,7 +126,7 @@ export const StreamToolCard: React.FC<StreamToolCardProps> = memo(({
     >
       <div className={`h-1 bg-gradient-to-r ${config.gradient}`} />
       <div
-        className="flex items-center justify-between px-4 py-3 cursor-pointer select-none group"
+        className="flex items-center justify-between px-4 py-3 cursor-pointer select-none group min-w-0"
         onClick={handleToggle}
         onKeyDown={handleKeyDown}
         role="button"
@@ -157,13 +157,15 @@ export const StreamToolCard: React.FC<StreamToolCardProps> = memo(({
           </div>
 
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0">
               <Terminal size={12} className="text-slate-400 dark:text-slate-500 shrink-0" />
-              <Tooltip content={toolName}>
-                <span className={`font-mono text-sm font-bold ${config.text} truncate`} aria-label={toolName}>
-                  {toolName}
-                </span>
-              </Tooltip>
+              <div className="min-w-0">
+                <Tooltip content={toolName}>
+                  <span className={`font-mono text-sm font-bold ${config.text} truncate`} aria-label={toolName}>
+                    {toolName}
+                  </span>
+                </Tooltip>
+              </div>
               {isStreaming && actualStatus === 'executing' && (
                 <span className="text-[10px] uppercase tracking-widest text-slate-400 dark:text-slate-500">
                   streaming

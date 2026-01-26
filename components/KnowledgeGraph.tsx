@@ -1,9 +1,9 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import * as d3 from 'd3';
-import { ZoomIn, ZoomOut, RotateCcw, Download, X, FileJson, Image, ChevronDown } from 'lucide-react';
+import { ZoomIn, ZoomOut, RotateCcw, Download, X, FileJson, Image as ImageIcon, ChevronDown } from 'lucide-react';
 import { GraphData, Theme } from '../types';
 import Tooltip from './Tooltip';
+import { useKnowledgeGraphSimulation, type SelectedNode } from './KnowledgeGraph/useKnowledgeGraphSimulation';
 import { translations, Language } from '../utils/translations';
 
 interface KnowledgeGraphProps {
@@ -13,14 +13,6 @@ interface KnowledgeGraphProps {
   language?: Language;
 }
 
-interface SelectedNode {
-  id: string;
-  label: string;
-  group: number;
-  val: number;
-  connections: { label: string; type: 'source' | 'target' }[];
-}
-
 export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = React.memo(({ data, theme, onNodeClick, language = 'en' }) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -28,14 +20,21 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = React.memo(({ data,
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [focusedNodeIndex, setFocusedNodeIndex] = useState<number>(-1);
   const t = translations[language];
-
-  // CRITICAL FIX: Use ref for callback to avoid restarting simulation when parent re-renders (e.g. toast notification)
-  const onNodeClickRef = useRef(onNodeClick);
-
-  // Keep ref in sync with prop
-  useEffect(() => {
-    onNodeClickRef.current = onNodeClick;
-  }, [onNodeClick]);
+  const {
+    handleZoom,
+    handleReset,
+    highlightNodeAtIndex,
+    selectNodeByIndex,
+    clearHighlights,
+  } = useKnowledgeGraphSimulation({
+    data,
+    theme,
+    svgRef,
+    containerRef,
+    onNodeSelect: setSelectedNode,
+    onClearSelection: () => setSelectedNode(null),
+    onNodeClick,
+  });
 
   // Keyboard navigation handler
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -88,330 +87,20 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = React.memo(({ data,
         handleReset();
         break;
     }
-  }, [data, focusedNodeIndex]);
-
-  // Helper to highlight node at index (simplified version)
-  const highlightNodeAtIndex = (index: number, highlight: boolean) => {
-    if (!svgRef.current || !data?.nodes?.[index]) return;
-    // Note: Full D3 highlight implementation would require storing refs to D3 selections
-    // For now, we just track the focused index visually
-  };
-
-  // Helper to select node by index
-  const selectNodeByIndex = (index: number) => {
-    if (!data?.nodes?.[index]) return;
-    const node = data.nodes[index];
-
-    // Find connections
-    const connections: { label: string; type: 'source' | 'target' }[] = [];
-    data.links.forEach((l: any) => {
-      const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
-      const targetId = typeof l.target === 'object' ? l.target.id : l.target;
-      if (sourceId === node.id) {
-        const targetNode = data.nodes.find((n: any) => n.id === targetId);
-        if (targetNode) connections.push({ label: (targetNode as any).label, type: 'target' });
-      }
-      if (targetId === node.id) {
-        const sourceNode = data.nodes.find((n: any) => n.id === sourceId);
-        if (sourceNode) connections.push({ label: (sourceNode as any).label, type: 'source' });
-      }
-    });
-
-    setSelectedNode({
-      id: node.id,
-      label: node.label,
-      group: node.group,
-      val: node.val || 1,
-      connections
-    });
-
-    if (onNodeClickRef.current) onNodeClickRef.current(node.id);
-  };
-
-  // Clear all highlights
-  const clearHighlights = () => {
-    // Reset any D3 highlights here
-  };
+  }, [data, focusedNodeIndex, highlightNodeAtIndex, selectNodeByIndex, clearHighlights, handleZoom, handleReset]);
 
   // Attach keyboard event listener
   useEffect(() => {
     const container = containerRef.current;
     if (container) {
-      container.addEventListener('keydown', handleKeyDown as any);
+      const onKeyDown = (event: KeyboardEvent) => handleKeyDown(event);
+      container.addEventListener('keydown', onKeyDown);
       container.setAttribute('tabindex', '0');
       container.setAttribute('role', 'application');
       container.setAttribute('aria-label', 'Knowledge graph. Use arrow keys to navigate between nodes, Enter to select, Escape to deselect, +/- to zoom, 0 to reset.');
-      return () => container.removeEventListener('keydown', handleKeyDown as any);
+      return () => container.removeEventListener('keydown', onKeyDown);
     }
   }, [handleKeyDown]);
-
-  // Use CSS Variables for Theme Support
-  const isDark = theme === 'dark';
-
-  // Get computed color values
-  const getColor = (cssVar: string, fallback: string): string => {
-    if (typeof document === 'undefined') return fallback;
-    const value = getComputedStyle(document.documentElement).getPropertyValue(cssVar).trim();
-    if (value && value.includes(' ')) {
-      // Convert space-separated RGB to comma-separated
-      return `rgb(${value.split(' ').join(', ')})`;
-    }
-    return value || fallback;
-  };
-
-  useEffect(() => {
-    // Safety check for data
-    if (!data || !data.nodes || data.nodes.length === 0 || !svgRef.current || !containerRef.current) {
-        if (svgRef.current) d3.select(svgRef.current).selectAll("*").remove();
-        return;
-    }
-
-    const width = containerRef.current.clientWidth;
-    const height = containerRef.current.clientHeight;
-
-    // Deep clone data to avoid D3 mutation issues
-    const nodes = data.nodes.map(d => ({ ...d }));
-    const links = data.links.map(d => ({ ...d }));
-
-    // Get theme colors
-    const primaryColor = getColor('--primary-500', '#06b6d4');
-    const secondaryColor = getColor('--secondary-500', '#8b5cf6');
-    const textColor = getColor('--text-primary', isDark ? '#f8fafc' : '#1e293b');
-    const neutralColor = getColor('--neutral-500', '#64748b');
-    const bgPanelColor = getColor('--bg-panel', isDark ? '#1e293b' : '#f1f5f9');
-
-    const svg = d3.select(svgRef.current);
-    svg.selectAll("*").remove();
-
-    // Create a container group for zoom/pan
-    const g = svg.append("g");
-
-    // Setup Force Simulation
-    // Optimization: Increased alphaDecay to 0.05 to make the graph settle faster
-    const simulation = d3.forceSimulation(nodes as any)
-      .force("link", d3.forceLink(links).id((d: any) => d.id).distance(120))
-      .force("charge", d3.forceManyBody().strength(-300))
-      .force("center", d3.forceCenter(width / 2, height / 2))
-      .force("collide", d3.forceCollide().radius((d: any) => (d.val || 5) * 3 + 20).iterations(2))
-      .alphaDecay(0.05);
-
-    // --- RENDER ELEMENTS ---
-
-    // Define Arrowhead
-    svg.append("defs").append("marker")
-      .attr("id", "arrowhead")
-      .attr("viewBox", "0 -5 10 10")
-      .attr("refX", 25)
-      .attr("refY", 0)
-      .attr("markerWidth", 6)
-      .attr("markerHeight", 6)
-      .attr("orient", "auto")
-      .append("path")
-      .attr("d", "M0,-5L10,0L0,5")
-      .attr("fill", neutralColor)
-      .style("opacity", 0.6);
-
-    // Links
-    const link = g.append("g")
-      .attr("class", "links")
-      .selectAll("line")
-      .data(links)
-      .join("line")
-      .attr("stroke", neutralColor)
-      .attr("stroke-opacity", 0.4)
-      .attr("stroke-width", 1.5);
-
-    // Node Groups
-    const node = g.append("g")
-      .attr("class", "nodes")
-      .selectAll("g")
-      .data(nodes)
-      .join("g")
-      .attr("cursor", "pointer")
-      .call(d3.drag<any, any>()
-        .on("start", dragstarted)
-        .on("drag", dragged)
-        .on("end", dragended)
-      );
-
-    // Node Circles with glow effect
-    node.append("circle")
-      .attr("class", "node-glow")
-      .attr("r", (d: any) => 12 + Math.sqrt(d.val || 1) * 3)
-      .attr("fill", (d: any) => d.group === 1 ? secondaryColor : primaryColor)
-      .attr("opacity", 0.3)
-      .attr("filter", "blur(4px)");
-
-    // Main Node Circles
-    node.append("circle")
-      .attr("class", "node-circle")
-      .attr("r", (d: any) => 8 + Math.sqrt(d.val || 1) * 3)
-      .attr("fill", (d: any) => d.group === 1 ? secondaryColor : primaryColor)
-      .attr("stroke", bgPanelColor)
-      .attr("stroke-width", 2)
-      .attr("fill-opacity", 0.9);
-
-    // Node Labels
-    node.append("text")
-      .text((d: any) => d.label)
-      .attr("x", 14)
-      .attr("y", 4)
-      .style("font-family", "Inter, sans-serif")
-      .style("font-size", "11px")
-      .style("font-weight", "600")
-      .style("fill", textColor)
-      .style("pointer-events", "none")
-      .style("text-shadow", isDark ? "0 1px 4px rgba(0,0,0,0.9)" : "0 1px 4px rgba(255,255,255,0.9)")
-      .style("opacity", 0)
-      .transition().duration(800).style("opacity", 1);
-
-    // Highlight connected nodes on hover
-    const highlightConnections = (d: any, highlight: boolean) => {
-      const connectedNodeIds = new Set<string>();
-      connectedNodeIds.add(d.id);
-
-      links.forEach((l: any) => {
-        const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
-        const targetId = typeof l.target === 'object' ? l.target.id : l.target;
-        if (sourceId === d.id) connectedNodeIds.add(targetId);
-        if (targetId === d.id) connectedNodeIds.add(sourceId);
-      });
-
-      // Update link opacity
-      link.attr("stroke-opacity", (l: any) => {
-        const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
-        const targetId = typeof l.target === 'object' ? l.target.id : l.target;
-        if (!highlight) return 0.4;
-        return (sourceId === d.id || targetId === d.id) ? 1 : 0.1;
-      }).attr("stroke-width", (l: any) => {
-        const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
-        const targetId = typeof l.target === 'object' ? l.target.id : l.target;
-        if (!highlight) return 1.5;
-        return (sourceId === d.id || targetId === d.id) ? 3 : 1;
-      });
-
-      // Update node opacity
-      node.select(".node-circle")
-        .attr("fill-opacity", (n: any) => {
-          if (!highlight) return 0.9;
-          return connectedNodeIds.has(n.id) ? 1 : 0.3;
-        });
-
-      node.select(".node-glow")
-        .attr("opacity", (n: any) => {
-          if (!highlight) return 0.3;
-          return connectedNodeIds.has(n.id) ? 0.5 : 0.1;
-        });
-
-      node.select("text")
-        .style("opacity", (n: any) => {
-          if (!highlight) return 1;
-          return connectedNodeIds.has(n.id) ? 1 : 0.3;
-        });
-    };
-
-    // Hover interactions
-    node.on("mouseenter", (event, d: any) => {
-      highlightConnections(d, true);
-    }).on("mouseleave", (event, d: any) => {
-      highlightConnections(d, false);
-    });
-
-    // Click interaction - show node details
-    node.on("click", (event, d: any) => {
-      event.stopPropagation();
-
-      // Find connections
-      const connections: { label: string; type: 'source' | 'target' }[] = [];
-      links.forEach((l: any) => {
-        const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
-        const targetId = typeof l.target === 'object' ? l.target.id : l.target;
-        if (sourceId === d.id) {
-          const targetNode = nodes.find((n: any) => n.id === targetId);
-          if (targetNode) connections.push({ label: (targetNode as any).label, type: 'target' });
-        }
-        if (targetId === d.id) {
-          const sourceNode = nodes.find((n: any) => n.id === sourceId);
-          if (sourceNode) connections.push({ label: (sourceNode as any).label, type: 'source' });
-        }
-      });
-
-      setSelectedNode({
-        id: d.id,
-        label: d.label,
-        group: d.group,
-        val: d.val || 1,
-        connections
-      });
-
-      // Keep highlight on selected node
-      highlightConnections(d, true);
-
-      // Safe invocation via ref prevents useEffect re-trigger logic
-      if (onNodeClickRef.current) onNodeClickRef.current(d.id);
-    });
-
-    // Click on background to deselect
-    svg.on("click", () => {
-      setSelectedNode(null);
-    });
-
-    node.append("title").text((d: any) => d.label);
-
-    // Tick Update
-    simulation.on("tick", () => {
-      link
-        .attr("x1", (d: any) => d.source.x)
-        .attr("y1", (d: any) => d.source.y)
-        .attr("x2", (d: any) => d.target.x)
-        .attr("y2", (d: any) => d.target.y);
-
-      node
-        .attr("transform", (d: any) => `translate(${d.x},${d.y})`);
-    });
-
-    // Zoom
-    const zoom = d3.zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.1, 8])
-      .on("zoom", (event) => {
-        g.attr("transform", event.transform);
-      });
-
-    svg.call(zoom);
-
-    function dragstarted(event: any, d: any) {
-      if (!event.active) simulation.alphaTarget(0.3).restart();
-      d.fx = d.x;
-      d.fy = d.y;
-    }
-
-    function dragged(event: any, d: any) {
-      d.fx = event.x;
-      d.fy = event.y;
-    }
-
-    function dragended(event: any, d: any) {
-      if (!event.active) simulation.alphaTarget(0);
-      d.fx = null;
-      d.fy = null;
-    }
-
-    return () => {
-      simulation.stop();
-    };
-  }, [data, theme, isDark]); // onNodeClick REMOVED from dependency array
-
-  const handleZoom = (factor: number) => {
-    if (svgRef.current) {
-      d3.select(svgRef.current).transition().duration(300).call(d3.zoom<SVGSVGElement, unknown>().scaleBy, factor);
-    }
-  };
-
-  const handleReset = () => {
-    if (svgRef.current && containerRef.current) {
-        d3.select(svgRef.current).transition().duration(750).call(d3.zoom<SVGSVGElement, unknown>().transform, d3.zoomIdentity);
-    }
-  };
 
   const handleDownload = () => {
     if (!svgRef.current || !containerRef.current) return;
@@ -492,7 +181,7 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = React.memo(({ data,
     const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
     const svgUrl = URL.createObjectURL(svgBlob);
     
-    const img = new (window.Image || (window as any).HTMLImageElement)();
+    const img = new window.Image();
     img.onload = () => {
       const canvas = document.createElement('canvas');
       canvas.width = width * 2;
@@ -527,8 +216,8 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = React.memo(({ data,
         value: n.val
       })),
       links: data.links.map(l => ({
-        source: (l.source as any)?.id || l.source,
-        target: (l.target as any)?.id || l.target,
+        source: l.source,
+        target: l.target,
         relationship: l.relationship
       })),
       exportedAt: new Date().toISOString(),
@@ -659,7 +348,7 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = React.memo(({ data,
                 onClick={handleDownloadPNG}
                 className="w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 flex items-center gap-2 text-slate-700 dark:text-slate-200"
               >
-                <Image size={16} className="text-cyan-500" />
+                <ImageIcon size={16} className="text-cyan-500" />
                 Export PNG
               </button>
               <button

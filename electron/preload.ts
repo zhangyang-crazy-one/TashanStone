@@ -269,6 +269,8 @@ try {
             ipcRenderer.invoke('fs:ensureDir', dirPath),
         listFiles: (dirPath: string): Promise<Array<{ name: string; path: string; size: number; lastModified: number }>> =>
             ipcRenderer.invoke('fs:listFiles', dirPath),
+        getBatchMetadata: (paths: string[], includeContent?: boolean): Promise<Array<{ path: string; size: number; lastModified: number; content?: string; error?: string }>> =>
+            ipcRenderer.invoke('fs:getBatchMetadata', paths, includeContent),
         openPath: (filePath: string): Promise<boolean> =>
             ipcRenderer.invoke('fs:openPath', filePath)
     },
@@ -601,6 +603,7 @@ declare global {
                 deleteFile: (path: string) => Promise<boolean>;
                 ensureDir: (dirPath: string) => Promise<boolean>;
                 listFiles: (dirPath: string) => Promise<Array<{ name: string; path: string; size: number; lastModified: number }>>;
+                getBatchMetadata: (paths: string[], includeContent?: boolean) => Promise<Array<{ path: string; size: number; lastModified: number; content?: string; error?: string }>>;
                 openPath: (filePath: string) => Promise<boolean>;
             };
             ai: {

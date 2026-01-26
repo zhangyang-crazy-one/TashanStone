@@ -32,6 +32,7 @@
   ],
   "exclude": [
     "New_Features",
+    "electron",
     "node_modules",
     "dist",
     "dist-electron"

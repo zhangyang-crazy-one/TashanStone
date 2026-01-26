@@ -121,9 +121,10 @@ export const MemoryPreviewModal: React.FC<MemoryPreviewModalProps> = ({
   };
 
   const openSourceFile = () => {
-    if (memory.filePath && (window as any).electronAPI?.file?.openFile) {
-      (window as any).electronAPI.file.openFile(memory.filePath);
-    }
+    if (!memory.filePath) return;
+    const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
+    if (!electronAPI?.file?.openPath) return;
+    void electronAPI.file.openPath(memory.filePath);
   };
 
   return (

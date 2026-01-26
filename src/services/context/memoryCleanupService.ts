@@ -36,8 +36,9 @@ export class MemoryCleanupService {
      */
     async runCleanup(): Promise<CleanupReport> {
         try {
-            if ((window as any).electronAPI?.memory?.runCleanup) {
-                const result = await (window as any).electronAPI.memory.runCleanup();
+            const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
+            if (electronAPI?.memory?.runCleanup) {
+                const result = await electronAPI.memory.runCleanup();
                 console.log('[MemoryCleanupService] Cleanup completed:', result);
                 return result;
             } else {
@@ -67,10 +68,15 @@ export class MemoryCleanupService {
      */
     async getCleanupStats(): Promise<CleanupStats> {
         try {
-            if ((window as any).electronAPI?.memory?.getCleanupStats) {
-                const stats = await (window as any).electronAPI.memory.getCleanupStats();
-                console.log('[MemoryCleanupService] Stats:', stats);
-                return stats;
+            const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
+            if (electronAPI?.memory?.getCleanupStats) {
+                const stats = await electronAPI.memory.getCleanupStats();
+                const normalized: CleanupStats = {
+                    ...stats,
+                    persistentFiles: stats.persistentFiles ?? 0,
+                };
+                console.log('[MemoryCleanupService] Stats:', normalized);
+                return normalized;
             } else {
                 console.warn('[MemoryCleanupService] IPC handler not available');
                 return {
@@ -100,8 +106,9 @@ export class MemoryCleanupService {
      */
     async cleanupOrphanedVectors(): Promise<{ deleted: number; errors: string[] }> {
         try {
-            if ((window as any).electronAPI?.memory?.cleanupOrphanedVectors) {
-                const result = await (window as any).electronAPI.memory.cleanupOrphanedVectors();
+            const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
+            if (electronAPI?.memory?.cleanupOrphanedVectors) {
+                const result = await electronAPI.memory.cleanupOrphanedVectors();
                 console.log('[MemoryCleanupService] Cleaned orphaned vectors:', result);
                 return result;
             } else {

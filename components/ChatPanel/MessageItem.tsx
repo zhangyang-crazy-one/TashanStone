@@ -25,10 +25,11 @@ export const ChatMessageRow = memo(function ChatMessageRow({
 }: ChatMessageRowProps) {
   const t = translations[language];
   const msg = message;
+  const spacingClass = compactMode ? 'pb-2' : 'pb-4';
 
   return (
-    <div className="px-4">
-      <div className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'} ${compactMode ? 'mb-2' : 'mb-4'}`}>
+    <div className={`px-4 ${spacingClass}`}>
+      <div className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
         {!msg.ragResults && !compactMode && (
           <div
             className={`
@@ -55,7 +56,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
         ) : isStreamingMessage ? (
           <div
             className={`
-              max-w-[85%] rounded-2xl text-sm leading-relaxed
+              max-w-[85%] min-w-0 rounded-2xl text-sm leading-relaxed
               ${compactMode ? 'p-2' : 'p-3'}
               bg-white dark:bg-cyber-800/50 border border-paper-200 dark:border-cyber-700 text-slate-700 dark:text-slate-300 rounded-tl-none
             `}
@@ -108,7 +109,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
         ) : (
           <div
             className={`
-              max-w-[85%] rounded-2xl text-sm leading-relaxed
+              max-w-[85%] min-w-0 rounded-2xl text-sm leading-relaxed
               ${compactMode ? 'p-2' : 'p-3'}
               ${msg.role === 'user'
                 ? 'bg-cyan-50 dark:bg-cyber-800 text-slate-800 dark:text-slate-200 rounded-tr-none'
@@ -166,10 +167,11 @@ function MessageItemComponent(props: MessageItemProps): React.ReactElement {
   const msg = messages[index];
   const isLastMessage = index === messages.length - 1;
   const isStreamingMessage = msg.role === 'assistant' && isLastMessage && isStreaming;
+  const spacingClass = compactMode ? 'pb-2' : 'pb-4';
 
   return (
-    <div style={style} className="px-4">
-      <div className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'} ${compactMode ? 'mb-2' : 'mb-4'}`}>
+    <div style={style} className={`px-4 ${spacingClass}`}>
+      <div className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
         {!msg.ragResults && !compactMode && (
           <div
             className={`
@@ -196,7 +198,7 @@ function MessageItemComponent(props: MessageItemProps): React.ReactElement {
         ) : isStreamingMessage ? (
           <div
             className={`
-              max-w-[85%] rounded-2xl text-sm leading-relaxed
+              max-w-[85%] min-w-0 rounded-2xl text-sm leading-relaxed
               ${compactMode ? 'p-2' : 'p-3'}
               bg-white dark:bg-cyber-800/50 border border-paper-200 dark:border-cyber-700 text-slate-700 dark:text-slate-300 rounded-tl-none
             `}
@@ -249,7 +251,7 @@ function MessageItemComponent(props: MessageItemProps): React.ReactElement {
         ) : (
           <div
             className={`
-              max-w-[85%] rounded-2xl text-sm leading-relaxed
+              max-w-[85%] min-w-0 rounded-2xl text-sm leading-relaxed
               ${compactMode ? 'p-2' : 'p-3'}
               ${msg.role === 'user'
                 ? 'bg-cyan-50 dark:bg-cyber-800 text-slate-800 dark:text-slate-200 rounded-tr-none'

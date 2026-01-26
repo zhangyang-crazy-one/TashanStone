@@ -1,4 +1,15 @@
 import { MemoryDocument, IndexedConversation } from './types';
+import {
+  calculateMemoryImportance,
+  extractDecisions,
+  extractKeyFindings,
+  extractTopics,
+  generateSessionSummary,
+  type MemoryChatMessage,
+  shouldPromoteToPermanentMemory
+} from './persistentMemoryPromotion';
+import { LANCEDB_MEMORY_FILE_ID_PREFIX } from '@/utils/lanceDbPrefixes';
+import type { LanceDbVectorChunk } from '@/src/types/electronAPI';
 
 export type { MemoryDocument } from './types';
 
@@ -29,7 +40,7 @@ export class FileMemoryStorage implements MemoryFileStorage {
   }
 
   private getMemoriesDir(): string {
-    const electronAPI = (window as any).electronAPI;
+    const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
     if (electronAPI?.paths?.userData) {
       return electronAPI.paths.userData + '/.memories';
     }
@@ -46,8 +57,8 @@ export class FileMemoryStorage implements MemoryFileStorage {
 
   async saveMemory(memory: MemoryDocument): Promise<void> {
     try {
-      const electronAPI = (window as any).electronAPI;
-      const fsAPI = electronAPI?.fs || electronAPI?.file;
+      const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
+      const fsAPI = electronAPI?.file ?? electronAPI?.fs;
 
       if (fsAPI?.writeFile) {
         const fileName = this.generateFileName(memory);
@@ -55,7 +66,7 @@ export class FileMemoryStorage implements MemoryFileStorage {
 
         // 确保目录存在 - 先用 ensureDir，如果不存在就尝试 writeFile（handler 会自动创建）
         const dirPath = fullPath.substring(0, fullPath.lastIndexOf('/'));
-        if (fsAPI.ensureDir) {
+        if (fsAPI && 'ensureDir' in fsAPI && fsAPI.ensureDir) {
           try {
             await fsAPI.ensureDir(dirPath);
           } catch (ensureDirError) {
@@ -83,8 +94,8 @@ export class FileMemoryStorage implements MemoryFileStorage {
     if (cached) return cached;
 
     try {
-      const electronAPI = (window as any).electronAPI;
-      const fsAPI = electronAPI?.fs || electronAPI?.file;
+      const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
+      const fsAPI = electronAPI?.file ?? electronAPI?.fs;
       
       if (fsAPI?.readFile) {
         const indexPath = this.getIndexFilePath();
@@ -111,7 +122,7 @@ export class FileMemoryStorage implements MemoryFileStorage {
 
   async getAllMemories(): Promise<MemoryDocument[]> {
     try {
-      const electronAPI = (window as any).electronAPI;
+      const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
       console.log('[FileMemoryStorage] electronAPI keys:', electronAPI ? Object.keys(electronAPI).join(', ') : 'null');
       console.log('[FileMemoryStorage] electronAPI.fs exists:', !!electronAPI?.fs);
       console.log('[FileMemoryStorage] electronAPI.file exists:', !!electronAPI?.file);
@@ -154,10 +165,10 @@ export class FileMemoryStorage implements MemoryFileStorage {
       const memory = this.memoriesCache.get(id);
       if (!memory) return false;
 
-      const electronAPI = (window as any).electronAPI;
+      const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
       const fsAPI = electronAPI?.fs || electronAPI?.file;
       
-      if (fsAPI?.deleteFile) {
+      if (fsAPI && 'deleteFile' in fsAPI && fsAPI.deleteFile) {
         await fsAPI.deleteFile(memory.filePath);
         this.memoriesCache.delete(id);
         await this.updateIndex();
@@ -184,7 +195,7 @@ export class FileMemoryStorage implements MemoryFileStorage {
       };
 
       const content = this.formatMemoryAsMarkdown(updatedMemory);
-      const electronAPI = (window as any).electronAPI;
+      const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
       const fsAPI = electronAPI?.fs || electronAPI?.file;
       
       if (fsAPI?.writeFile) {
@@ -285,7 +296,7 @@ source_sessions: ${JSON.stringify(memory.sourceSessions)}
         memories,
       };
 
-      const electronAPI = (window as any).electronAPI;
+      const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
       const fsAPI = electronAPI?.fs || electronAPI?.file;
       
       if (fsAPI?.writeFile) {
@@ -311,9 +322,9 @@ export class PersistentMemoryService {
     if (this.initialized) return;
 
     try {
-      if (typeof window !== 'undefined' && (window as any).electronAPI) {
+      if (typeof window !== 'undefined' && window.electronAPI) {
         const memoriesFolder = this.fileStorage['memoriesFolder'];
-        await (window as any).electronAPI.file.ensureDir(memoriesFolder);
+        await window.electronAPI.file.ensureDir(memoriesFolder);
         this.initialized = true;
       }
     } catch (error) {
@@ -345,7 +356,7 @@ export class PersistentMemoryService {
       created: Date.now(),
       updated: Date.now(),
       topics,
-      importance: this.calculateImportance(topics, decisions, keyFindings),
+      importance: calculateMemoryImportance(topics, decisions, keyFindings),
       sourceSessions: [sessionId],
       content,
     };
@@ -379,33 +390,25 @@ export class PersistentMemoryService {
 
     try {
       const embedding = await this.embeddingService(query);
-      
-      if (typeof window !== 'undefined' && (window as any).electronAPI?.lancedb) {
+
+      const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
+      if (electronAPI?.lancedb) {
         console.log('[PersistentMemoryService] Using LanceDB vector search');
-        const results = await (window as any).electronAPI.lancedb.search(embedding, limit);
-        
+        const results = await electronAPI.lancedb.search(embedding, limit);
+        const memoryResults = results.filter((result: LanceDbVectorChunk) =>
+          result.fileId.startsWith(LANCEDB_MEMORY_FILE_ID_PREFIX)
+        );
+
         const memories: MemoryDocument[] = [];
         const missingIds: string[] = [];
-        
-        for (const result of results) {
-          try {
-            const metadata = JSON.parse(result.metadata || '{}');
-            
-            // 🔧 修复: 放宽类型检查，支持旧数据
-            const isMemoryDoc = metadata.type === 'memory_document' || !metadata.type;
-            
-            if (isMemoryDoc) {
-              const memory = await this.fileStorage.getMemory(result.id);
-              if (memory) {
-                memories.push(memory);
-              } else {
-                missingIds.push(result.id);
-                console.warn('[PersistentMemoryService] Memory file not found:', result.id);
-              }
-            }
-          } catch (parseError) {
-            console.warn('[PersistentMemoryService] Failed to parse result metadata:', parseError);
-            continue;
+
+        for (const result of memoryResults) {
+          const memory = await this.fileStorage.getMemory(result.id);
+          if (memory) {
+            memories.push(memory);
+          } else {
+            missingIds.push(result.id);
+            console.warn('[PersistentMemoryService] Memory file not found:', result.id);
           }
         }
         
@@ -417,7 +420,7 @@ export class PersistentMemoryService {
         }
         
         // 🔧 修复: 如果 LanceDB 结果为空，回退到关键词搜索
-        if (memories.length === 0 && results.length === 0) {
+        if (memories.length === 0 && memoryResults.length === 0) {
           console.log('[PersistentMemoryService] LanceDB returned empty, using keyword search');
           return await this.keywordSearchFallback(query, limit);
         }
@@ -481,10 +484,11 @@ export class PersistentMemoryService {
       let deleteSuccess = false;
 
       try {
-        if (typeof window !== 'undefined' && (window as any).electronAPI?.lancedb) {
+        const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
+        if (electronAPI?.lancedb) {
           // Step 1: Delete old index entry
           try {
-            await (window as any).electronAPI.lancedb.deleteById(id);
+            await electronAPI.lancedb.deleteById(id);
             deleteSuccess = true;
           } catch (deleteError) {
             // Continue even if delete fails - the entry might not exist
@@ -497,8 +501,10 @@ export class PersistentMemoryService {
 
           // Step 3: Verify the index was created successfully
           try {
-            const searchResults = await (window as any).electronAPI.lancedb.search(embedding, 1);
-            indexUpdateSuccess = searchResults?.some((r: any) => r.id === id);
+            const searchResults = await electronAPI.lancedb.search(embedding, 5);
+            indexUpdateSuccess = searchResults.some((result: LanceDbVectorChunk) =>
+              result.id === id && result.fileId.startsWith(LANCEDB_MEMORY_FILE_ID_PREFIX)
+            );
           } catch (verifyError) {
             // Assume success if verification fails but indexing didn't throw
             indexUpdateSuccess = true;
@@ -592,46 +598,22 @@ export class PersistentMemoryService {
     return content;
   }
 
-  private calculateImportance(
-    topics: string[],
-    decisions: string[],
-    keyFindings: string[]
-  ): 'low' | 'medium' | 'high' {
-    let score = 0;
-    score += decisions.length * 2;
-    score += keyFindings.length * 1.5;
-    score += topics.length * 0.5;
-
-    const highImportanceKeywords = ['bug', 'fix', '修复', '问题', 'error', '优化', '性能', '安全'];
-    if (topics.some(t => highImportanceKeywords.some(k => t.toLowerCase().includes(k)))) {
-      score += 3;
-    }
-
-    if (score >= 5) return 'high';
-    if (score >= 2) return 'medium';
-    return 'low';
-  }
-
   private async indexMemoryToLanceDB(memory: MemoryDocument, embedding: number[]): Promise<void> {
     try {
-      if (typeof window !== 'undefined' && (window as any).electronAPI?.lancedb) {
-        const chunk = {
+      const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
+      if (electronAPI?.lancedb) {
+        const fileName = memory.filePath ? memory.filePath.split('/').pop() || memory.id : memory.id;
+        const chunk: LanceDbVectorChunk = {
           id: memory.id,
-          fileId: memory.id,
-          text: memory.content,
-          embedding,
-          chunkStart: 0,
-          chunkEnd: memory.content.length,
-          fileName: memory.filePath.split('/').pop() || memory.id,
-          fileLastModified: memory.updated,
-          metadata: JSON.stringify({
-            topics: memory.topics,
-            type: 'memory_document',
-            importance: memory.importance,
-          }),
+          fileId: `${LANCEDB_MEMORY_FILE_ID_PREFIX}${memory.id}`,
+          fileName,
+          content: memory.content,
+          vector: embedding,
+          chunkIndex: 0,
+          lastModified: memory.updated
         };
 
-        await (window as any).electronAPI.lancedb.add([chunk]);
+        await electronAPI.lancedb.add([chunk]);
       }
     } catch (error) {
       console.error('[PersistentMemoryService] Failed to index memory:', error);
@@ -643,50 +625,10 @@ export function createPersistentMemoryService(config?: Partial<PersistentMemoryC
   return new PersistentMemoryService(config);
 }
 
-export interface PromotionCriteria {
-  hasCodeFix: boolean;
-  hasLearning: boolean;
-  hasTechStack: boolean;
-  userMarkedImportant: boolean;
-  mentionCount: number;
-  sessionLength: number;
-}
-
-export function shouldPromoteToPermanentMemory(
-  decisions: string[],
-  keyFindings: string[],
-  topics: string[],
-  sessionLength: number,
-  criteria?: Partial<PromotionCriteria>
-): boolean {
-  const {
-    hasCodeFix = decisions.some(d =>
-      /\b(fix|bug|error|issue|repair|solve|resolve)\b/i.test(d)
-    ),
-    hasLearning = keyFindings.some(f =>
-      /\b(learn|discover|understand|realize|notice)\b/i.test(f)
-    ),
-    hasTechStack = topics.some(t =>
-      /\b(react|typescript|electron|node|python|api|database|server|client)\b/i.test(t)
-    ),
-    userMarkedImportant = false,
-    mentionCount = 0,
-    sessionLength: minSessionLength = 10,
-  } = criteria || {};
-
-  const score = (hasCodeFix ? 3 : 0) +
-                (hasLearning ? 2 : 0) +
-                (hasTechStack ? 1 : 0) +
-                (userMarkedImportant ? 5 : 0) +
-                Math.min(mentionCount, 3);
-
-  return score >= 3 || sessionLength >= minSessionLength;
-}
-
 export async function autoCreateMemoryFromSession(
   service: PersistentMemoryService,
   sessionId: string,
-  messages: any[],
+  messages: MemoryChatMessage[],
   embeddingService: (text: string) => Promise<number[]>
 ): Promise<MemoryDocument | null> {
   if (!embeddingService) {
@@ -722,83 +664,5 @@ export async function autoCreateMemoryFromSession(
   return service.createMemoryFromSession(sessionId, summary, topics, decisions, keyFindings);
 }
 
-function generateSessionSummary(messages: any[]): string {
-  const userMsgs = messages.filter(m => m.role === 'user').slice(-5);
-  const assistantMsgs = messages.filter(m => m.role === 'assistant').slice(-5);
-
-  const recentConversation = userMsgs.map((u, i) => {
-    const a = assistantMsgs[i];
-    return `User: ${u.content.substring(0, 200)}...\nAssistant: ${a?.content?.substring(0, 200) || 'N/A'}...`;
-  }).join('\n\n---\n\n');
-
-  return `会话包含 ${messages.length} 条消息。\n\n最近对话：\n${recentConversation}`;
-}
-
-function extractTopics(messages: any[]): string[] {
-  const topics: Set<string> = new Set();
-  const topicKeywords = [
-    'React', 'TypeScript', 'Electron', 'Node.js', 'API', 'Database',
-    'AI', 'Claude', 'MCP', 'RAG', '向量数据库', 'Context',
-    'Bug', 'Fix', 'Error', '性能', '优化', '架构', '设计',
-    '组件', '状态管理', '内存', '存储', '文件', '搜索',
-  ];
-
-  for (const msg of messages) {
-    const content = typeof msg.content === 'string' ? msg.content : '';
-    for (const keyword of topicKeywords) {
-      if (content.toLowerCase().includes(keyword.toLowerCase())) {
-        topics.add(keyword);
-      }
-    }
-  }
-
-  return Array.from(topics).slice(0, 5);
-}
-
-function extractDecisions(messages: any[]): string[] {
-  const decisions: string[] = [];
-
-  for (const msg of messages) {
-    if (msg.role === 'assistant') {
-      const content = typeof msg.content === 'string' ? msg.content : '';
-      const decisionPatterns = [
-        /(?:we decided|decided to|decision was|chose to|will use|using)\s+([^.]+)/gi,
-        /(?:解决方案|solution|方法|approach)[:\s]+([^.]+)/gi,
-      ];
-
-      for (const pattern of decisionPatterns) {
-        const matches = content.matchAll(pattern);
-        for (const match of matches) {
-          if (match[1]) {
-            decisions.push(match[1].trim().substring(0, 150));
-          }
-        }
-      }
-    }
-  }
-
-  return [...new Set(decisions)].slice(0, 5);
-}
-
-function extractKeyFindings(messages: any[]): string[] {
-  const findings: string[] = [];
-
-  for (const msg of messages) {
-    const content = typeof msg.content === 'string' ? msg.content : '';
-    const findingPatterns = [
-      /(?:found|discovered|learned|noticed|realized|important|critical|key)[s]?[:\s]+([^.]+)/gi,
-      /(?:发现|重要|关键|注意)[:\s]+([^.]+)/gi,
-    ];
-
-    for (const pattern of findingPatterns) {
-      const matches = content.matchAll(pattern);
-      for (const match of matches) {
-        if (match[1]) {
-          findings.push(match[1].trim().substring(0, 200));
-        }
-      }
-    }
-  }
-
-  return [...new Set(findings)].slice(0, 5);
-}
+export type { PromotionCriteria } from './persistentMemoryPromotion';
+export { shouldPromoteToPermanentMemory } from './persistentMemoryPromotion';

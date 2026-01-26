@@ -73,6 +73,14 @@ export interface FileFilter {
     extensions: string[];
 }
 
+export interface BatchFileMetadata {
+    path: string;
+    size: number;
+    lastModified: number;
+    content?: string;
+    error?: string;
+}
+
 export function registerFileHandlers(): void {
     logger.info('Registering file system IPC handlers');
 
@@ -201,6 +209,52 @@ export function registerFileHandlers(): void {
             logger.error('fs:listFiles failed', error);
             throw error;
         }
+    });
+
+    // Read metadata (and optionally content) for multiple files in one IPC call
+    ipcMain.handle('fs:getBatchMetadata', async (_event, paths: string[], includeContent: boolean = false): Promise<BatchFileMetadata[]> => {
+        if (!Array.isArray(paths) || paths.length === 0) {
+            return [];
+        }
+
+        const results: BatchFileMetadata[] = [];
+
+        for (const filePath of paths) {
+            try {
+                if (!validateFilePath(filePath)) {
+                    results.push({
+                        path: filePath,
+                        size: 0,
+                        lastModified: 0,
+                        error: 'Access denied: file path outside allowed directory'
+                    });
+                    continue;
+                }
+
+                const stats = fs.statSync(filePath);
+                const entry: BatchFileMetadata = {
+                    path: filePath,
+                    size: stats.size,
+                    lastModified: stats.mtimeMs
+                };
+
+                if (includeContent) {
+                    entry.content = fs.readFileSync(filePath, 'utf-8');
+                }
+
+                results.push(entry);
+            } catch (error) {
+                const message = error instanceof Error ? error.message : 'Unknown error';
+                results.push({
+                    path: filePath,
+                    size: 0,
+                    lastModified: 0,
+                    error: message
+                });
+            }
+        }
+
+        return results;
     });
 
     // Select a file with optional filters

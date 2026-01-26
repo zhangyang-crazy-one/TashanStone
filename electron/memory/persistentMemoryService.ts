@@ -1,6 +1,6 @@
 import { app } from 'electron';
-import * as fs from 'fs';
-import * as path from 'path';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs';
+import { basename, join } from 'path';
 import { logger } from '../utils/logger.js';
 
 export interface MemoryDocument {
@@ -23,6 +23,7 @@ export interface MemoryDocument {
   sourcePath?: string;
   sourceType?: 'file' | 'conversation' | 'manual';
   lastAccessedAt?: number;
+  _matchType?: 'content' | 'topics' | null;
 }
 
 interface MemoryIndex {
@@ -44,23 +45,23 @@ export class MainProcessMemoryService {
   private initialized: boolean = false;
 
   constructor() {
-    this.memoriesDir = path.join(app.getPath('userData'), '.memories');
-    this.indexPath = path.join(this.memoriesDir, '_memories_index.json');
+    this.memoriesDir = join(app.getPath('userData'), '.memories');
+    this.indexPath = join(this.memoriesDir, '_memories_index.json');
   }
 
   async initialize(): Promise<void> {
     if (this.initialized) return;
 
     try {
-      if (!fs.existsSync(this.memoriesDir)) {
-        fs.mkdirSync(this.memoriesDir, { recursive: true });
+      if (!existsSync(this.memoriesDir)) {
+        mkdirSync(this.memoriesDir, { recursive: true });
         logger.info('[MainProcessMemoryService] Created memories directory:', this.memoriesDir);
 
         // 开发模式：从项目目录复制测试记忆
         const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
         if (isDev) {
-          const projectMemoriesDir = path.join(process.cwd(), '.memories');
-          if (fs.existsSync(projectMemoriesDir)) {
+          const projectMemoriesDir = join(process.cwd(), '.memories');
+          if (existsSync(projectMemoriesDir)) {
             logger.info('[MainProcessMemoryService] Dev mode: Copying memories from project directory');
             await this.copyMemoriesFromProject(projectMemoriesDir);
           }
@@ -83,13 +84,13 @@ export class MainProcessMemoryService {
     };
 
     try {
-      const files = fs.readdirSync(this.memoriesDir);
+      const files = readdirSync(this.memoriesDir);
       const mdFiles = files.filter(f => f.endsWith('.md') && f !== '_memories_index.json');
 
       for (const fileName of mdFiles) {
         try {
-          const filePath = path.join(this.memoriesDir, fileName);
-          const content = fs.readFileSync(filePath, 'utf-8');
+          const filePath = join(this.memoriesDir, fileName);
+          const content = readFileSync(filePath, 'utf-8');
 
           const memoryInfo = this.parseFileToIndexEntry(fileName, content);
           if (memoryInfo) {
@@ -101,7 +102,7 @@ export class MainProcessMemoryService {
       }
 
       // 保存恢复后的索引
-      fs.writeFileSync(this.indexPath, JSON.stringify(index, null, 2), 'utf-8');
+      writeFileSync(this.indexPath, JSON.stringify(index, null, 2), 'utf-8');
       logger.info('[MainProcessMemoryService] Index recovered successfully', { memoryCount: index.memories.length });
 
       return index;
@@ -134,7 +135,7 @@ export class MainProcessMemoryService {
 
       return {
         id: idMatch[1].trim(),
-        filePath: path.join(this.memoriesDir, fileName),
+        filePath: join(this.memoriesDir, fileName),
         created: createdMatch ? createdMatch[1].trim() : new Date().toISOString(),
         updated: updatedMatch ? updatedMatch[1].trim() : new Date().toISOString(),
         topics,
@@ -159,25 +160,25 @@ export class MainProcessMemoryService {
 
   private async copyMemoriesFromProject(projectDir: string): Promise<void> {
     try {
-      const projectIndexPath = path.join(projectDir, '_memories_index.json');
+      const projectIndexPath = join(projectDir, '_memories_index.json');
 
-      if (!fs.existsSync(projectIndexPath)) {
+      if (!existsSync(projectIndexPath)) {
         logger.info('[MainProcessMemoryService] No project memories index found');
         return;
       }
 
-      const projectIndexData = fs.readFileSync(projectIndexPath, 'utf-8');
+      const projectIndexData = readFileSync(projectIndexPath, 'utf-8');
       const projectIndex = JSON.parse(projectIndexData);
 
       for (const memoryInfo of projectIndex.memories || []) {
-        if (fs.existsSync(memoryInfo.filePath)) {
-          const content = fs.readFileSync(memoryInfo.filePath, 'utf-8');
-          // 修复 Windows 路径问题：直接用 path.sep 分隔符获取最后一部分
+        if (existsSync(memoryInfo.filePath)) {
+          const content = readFileSync(memoryInfo.filePath, 'utf-8');
+          // 修复 Windows 路径问题：同时支持两种分隔符获取文件名
           const pathParts = memoryInfo.filePath.split(/[\\/]/);
           const fileName = pathParts[pathParts.length - 1];
-          const targetPath = path.join(this.memoriesDir, fileName);
+          const targetPath = join(this.memoriesDir, fileName);
 
-          fs.writeFileSync(targetPath, content, 'utf-8');
+          writeFileSync(targetPath, content, 'utf-8');
           logger.info('[MainProcessMemoryService] Copied memory:', fileName);
 
           // 更新索引中的路径
@@ -187,7 +188,7 @@ export class MainProcessMemoryService {
 
       // 保存更新后的索引
       projectIndex.updated = new Date().toISOString();
-      fs.writeFileSync(this.indexPath, JSON.stringify(projectIndex, null, 2), 'utf-8');
+      writeFileSync(this.indexPath, JSON.stringify(projectIndex, null, 2), 'utf-8');
       logger.info('[MainProcessMemoryService] Memories copied and index updated');
     } catch (error) {
       logger.error('[MainProcessMemoryService] Failed to copy memories:', error);
@@ -199,21 +200,21 @@ export class MainProcessMemoryService {
 
     // Use existing filePath if available (for updates), otherwise generate new
     let filePath: string;
-    if (memory.filePath && fs.existsSync(memory.filePath)) {
+    if (memory.filePath && existsSync(memory.filePath)) {
       filePath = memory.filePath;
-      logger.info('[MainProcessMemoryService] Updating existing memory file:', path.basename(filePath));
+      logger.info('[MainProcessMemoryService] Updating existing memory file:', basename(filePath));
     } else {
       const fileName = this.generateFileName(memory);
-      filePath = path.join(this.memoriesDir, fileName);
-      logger.info('[MainProcessMemoryService] Creating new memory file:', path.basename(filePath));
+      filePath = join(this.memoriesDir, fileName);
+      logger.info('[MainProcessMemoryService] Creating new memory file:', basename(filePath));
     }
 
     const content = this.formatAsMarkdown(memory);
 
-    fs.writeFileSync(filePath, content, 'utf-8');
+    writeFileSync(filePath, content, 'utf-8');
 
     // Verify write
-    const written = fs.readFileSync(filePath, 'utf-8');
+    const written = readFileSync(filePath, 'utf-8');
 
     logger.debug('[MainProcessMemoryService] Verified written content', {
       writtenLength: written.length,
@@ -223,13 +224,13 @@ export class MainProcessMemoryService {
     memory.filePath = filePath;
     await this.updateIndex(memory);
 
-    logger.info('[MainProcessMemoryService] Saved memory:', path.basename(filePath));
+    logger.info('[MainProcessMemoryService] Saved memory:', basename(filePath));
   }
 
   async searchMemories(query: string, limit: number = 5): Promise<MemoryDocument[]> {
     await this.initialize();
 
-    if (!fs.existsSync(this.indexPath)) {
+    if (!existsSync(this.indexPath)) {
       logger.info('[MainProcessMemoryService] No index file found');
       return [];
     }
@@ -237,7 +238,7 @@ export class MainProcessMemoryService {
     let index: MemoryIndex;
 
     try {
-      const indexData = fs.readFileSync(this.indexPath, 'utf-8');
+      const indexData = readFileSync(this.indexPath, 'utf-8');
       index = this.parseIndexFile(indexData) || await this.recoverIndexFromFiles();
     } catch (error) {
       logger.error('[MainProcessMemoryService] Failed to read index file:', error);
@@ -256,7 +257,7 @@ export class MainProcessMemoryService {
 
       try {
         // 🔧 修复: 同时搜索 topics 和 content
-        const content = fs.readFileSync(memoryInfo.filePath, 'utf-8');
+        const content = readFileSync(memoryInfo.filePath, 'utf-8');
         
         // 1. 搜索内容（更全面）
         if (content.toLowerCase().includes(queryLower)) {
@@ -276,7 +277,7 @@ export class MainProcessMemoryService {
 
         if (matched) {
           const memory = this.parseMarkdownToMemory(content, memoryInfo);
-          (memory as any)._matchType = matchType; // 记录匹配类型用于调试
+          memory._matchType = matchType; // 记录匹配类型用于调试
           results.push(memory);
           seenIds.add(memoryInfo.id);
           logger.debug('[MainProcessMemoryService] Memory matched:', { 
@@ -303,12 +304,12 @@ export class MainProcessMemoryService {
   async getAllMemories(): Promise<MemoryDocument[]> {
     await this.initialize();
 
-    if (!fs.existsSync(this.indexPath)) return [];
+    if (!existsSync(this.indexPath)) return [];
 
     let index: MemoryIndex;
 
     try {
-      const indexData = fs.readFileSync(this.indexPath, 'utf-8');
+      const indexData = readFileSync(this.indexPath, 'utf-8');
       index = this.parseIndexFile(indexData) || await this.recoverIndexFromFiles();
     } catch (error) {
       logger.error('[MainProcessMemoryService] Failed to read index file:', error);
@@ -319,7 +320,7 @@ export class MainProcessMemoryService {
 
     for (const memoryInfo of index.memories) {
       try {
-        const content = fs.readFileSync(memoryInfo.filePath, 'utf-8');
+        const content = readFileSync(memoryInfo.filePath, 'utf-8');
         memories.push(this.parseMarkdownToMemory(content, memoryInfo));
       } catch {
         continue;
@@ -332,12 +333,12 @@ export class MainProcessMemoryService {
   async getMemoryById(id: string): Promise<MemoryDocument | null> {
     await this.initialize();
 
-    if (!fs.existsSync(this.indexPath)) return null;
+    if (!existsSync(this.indexPath)) return null;
 
     let index: MemoryIndex;
 
     try {
-      const indexData = fs.readFileSync(this.indexPath, 'utf-8');
+      const indexData = readFileSync(this.indexPath, 'utf-8');
       index = this.parseIndexFile(indexData) || await this.recoverIndexFromFiles();
     } catch (error) {
       logger.error('[MainProcessMemoryService] Failed to read index file:', error);
@@ -350,7 +351,7 @@ export class MainProcessMemoryService {
       return null;
     }
 
-    const content = fs.readFileSync(memoryInfo.filePath, 'utf-8');
+    const content = readFileSync(memoryInfo.filePath, 'utf-8');
     const memory = this.parseMarkdownToMemory(content, memoryInfo);
 
     logger.debug('[MainProcessMemoryService] Retrieved memory by id:', id);
@@ -411,8 +412,8 @@ ${memory.content}`;
     let index: MemoryIndex;
 
     try {
-      if (fs.existsSync(this.indexPath)) {
-        const data = fs.readFileSync(this.indexPath, 'utf-8');
+      if (existsSync(this.indexPath)) {
+        const data = readFileSync(this.indexPath, 'utf-8');
         index = JSON.parse(data);
       } else {
         index = { version: '1.0', updated: '', memories: [] };
@@ -440,7 +441,7 @@ ${memory.content}`;
 
     index.updated = new Date().toISOString();
 
-    fs.writeFileSync(this.indexPath, JSON.stringify(index, null, 2), 'utf-8');
+    writeFileSync(this.indexPath, JSON.stringify(index, null, 2), 'utf-8');
   }
 }
 

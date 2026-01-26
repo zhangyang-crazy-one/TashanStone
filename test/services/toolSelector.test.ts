@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ToolAnalyzer, createToolAnalyzer } from '../../services/toolSelector';
+import { ToolAnalyzer, createToolAnalyzer, GenericTool } from '../../services/toolSelector';
 
 describe('ToolAnalyzer Intent Classification', () => {
   const analyzer = createToolAnalyzer();
@@ -137,44 +137,44 @@ describe('ToolAnalyzer Intent Classification', () => {
 describe('ToolAnalyzer Tool Selection', () => {
   const analyzer = createToolAnalyzer();
 
-  const mockTools = [
+  const mockTools: GenericTool[] = [
     { name: 'click', description: 'Click on an element' },
     { name: 'navigate', description: 'Navigate to a URL' },
     { name: 'read_file', description: 'Read a file from disk' }
   ];
 
   it('should return empty array for analysis intent', () => {
-    const result = analyzer.selectByIntent(mockTools as any, 'analysis');
+    const result = analyzer.selectByIntent(mockTools, 'analysis');
     expect(result).toEqual([]);
   });
 
   it('should return empty array for unknown intent', () => {
-    const result = analyzer.selectByIntent(mockTools as any, 'unknown');
+    const result = analyzer.selectByIntent(mockTools, 'unknown');
     expect(result).toEqual([]);
   });
 
   it('should return empty array for calculation intent', () => {
-    const result = analyzer.selectByIntent(mockTools as any, 'calculation');
+    const result = analyzer.selectByIntent(mockTools, 'calculation');
     expect(result).toEqual([]);
   });
 
   it('should return all tools for navigation intent', () => {
-    const result = analyzer.selectByIntent(mockTools as any, 'navigation');
+    const result = analyzer.selectByIntent(mockTools, 'navigation');
     expect(result).toEqual(mockTools);
   });
 
   it('should return all tools for file_operation intent', () => {
-    const result = analyzer.selectByIntent(mockTools as any, 'file_operation');
+    const result = analyzer.selectByIntent(mockTools, 'file_operation');
     expect(result).toEqual(mockTools);
   });
 
   it('should return all tools for search intent', () => {
-    const result = analyzer.selectByIntent(mockTools as any, 'search');
+    const result = analyzer.selectByIntent(mockTools, 'search');
     expect(result).toEqual(mockTools);
   });
 
   it('should return all tools for code intent', () => {
-    const result = analyzer.selectByIntent(mockTools as any, 'code');
+    const result = analyzer.selectByIntent(mockTools, 'code');
     expect(result).toEqual(mockTools);
   });
 });
@@ -182,19 +182,19 @@ describe('ToolAnalyzer Tool Selection', () => {
 describe('ToolAnalyzer analyzeAndSelect', () => {
   const analyzer = createToolAnalyzer();
 
-  const mockTools = [
+  const mockTools: GenericTool[] = [
     { name: 'click', description: 'Click on an element' },
     { name: 'navigate', description: 'Navigate to a URL' }
   ];
 
   it('should analyze and return empty tools for summarization', () => {
-    const { result, tools } = analyzer.analyzeAndSelect(mockTools as any, 'summarize the conversation');
+    const { result, tools } = analyzer.analyzeAndSelect(mockTools, 'summarize the conversation');
     expect(result.intent).toBe('analysis');
     expect(tools).toEqual([]);
   });
 
   it('should analyze and return all tools for navigation', () => {
-    const { result, tools } = analyzer.analyzeAndSelect(mockTools as any, 'navigate to a page');
+    const { result, tools } = analyzer.analyzeAndSelect(mockTools, 'navigate to a page');
     expect(result.intent).toBe('navigation');
     expect(tools).toEqual(mockTools);
   });
@@ -204,21 +204,21 @@ describe('ToolAnalyzer Token Estimation', () => {
   const analyzer = createToolAnalyzer();
 
   it('should estimate tokens for a single tool', () => {
-    const tool = {
+    const tool: GenericTool = {
       name: 'test_tool',
       description: 'This is a test tool description',
       parameters: { type: 'object', properties: { param1: { type: 'string' } } }
     };
-    const tokens = analyzer.estimateToolTokens(tool as any);
+    const tokens = analyzer.estimateToolTokens(tool);
     expect(tokens).toBeGreaterThan(0);
   });
 
   it('should estimate total tokens for multiple tools', () => {
-    const tools = [
+    const tools: GenericTool[] = [
       { name: 'tool1', description: 'description 1', parameters: {} },
       { name: 'tool2', description: 'description 2', parameters: {} }
     ];
-    const totalTokens = analyzer.estimateTotalTokens(tools as any);
+    const totalTokens = analyzer.estimateTotalTokens(tools);
     expect(totalTokens).toBeGreaterThan(0);
   });
 });
