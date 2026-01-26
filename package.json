@@ -63,7 +63,7 @@
     "@fontsource/ma-shan-zheng": "^5.2.8",
     "@fontsource/noto-sans-sc": "^5.2.8",
     "@fontsource/noto-serif-sc": "^5.2.8",
-    "@google/genai": "^1.30.0",
+    "@google/genai": "^1.38.0",
     "@lancedb/lancedb": "^0.23.0",
     "@paddlejs-models/ocr": "^1.2.4",
     "@paddlejs/paddlejs-core": "^2.2.0",
