@@ -81,3 +81,8 @@ postcss.config.js
 # Local planning docs
 plan/
 planning/
+
+# Local AI tooling/config
+.claude/
+.opencode/
+.tmp-release-*/
