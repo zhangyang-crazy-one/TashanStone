@@ -32,6 +32,8 @@ const defaultProps = {
   onBuildGraph: vi.fn(),
   onSynthesize: vi.fn(),
   onGenerateMindMap: vi.fn(),
+  mindMapDetailLevel: 'compact' as const,
+  onMindMapDetailLevelChange: vi.fn(),
   onGenerateQuiz: vi.fn(),
   onFormatBold: vi.fn(),
   onFormatItalic: vi.fn(),

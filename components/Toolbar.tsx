@@ -40,7 +40,7 @@ import {
   Mic,
   Code2
 } from 'lucide-react';
-import { ViewMode, Theme, AIProvider } from '../types';
+import { ViewMode, Theme, AIProvider, MindMapDetailLevel } from '../types';
 import Tooltip from './Tooltip';
 import { translations, Language } from '../utils/translations';
 
@@ -55,6 +55,8 @@ interface ToolbarProps {
   onBuildGraph: (useActiveFileOnly?: boolean, graphType?: 'concept' | 'filelink') => void;
   onSynthesize: () => void;
   onGenerateMindMap: () => void;
+  mindMapDetailLevel: MindMapDetailLevel;
+  onMindMapDetailLevelChange: (level: MindMapDetailLevel) => void;
   onGenerateQuiz: () => void;
   onOpenQuestionBank?: () => void;
   onFormatBold: () => void;
@@ -87,6 +89,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onBuildGraph,
   onSynthesize,
   onGenerateMindMap,
+  mindMapDetailLevel,
+  onMindMapDetailLevelChange,
   onGenerateQuiz,
   onOpenQuestionBank,
   onFormatBold,
@@ -420,6 +424,36 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                 >
                   <BrainCircuit size={14} className="text-emerald-500" /> {t.mindMap}
                 </button>
+                <div className="px-3 py-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    {t.mindMapDetailLevel || 'Detail Level'}
+                  </div>
+                  <div className="mt-2 flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => onMindMapDetailLevelChange('compact')}
+                      aria-pressed={mindMapDetailLevel === 'compact'}
+                      className={`flex-1 px-2 py-1 rounded-md text-xs font-medium transition-colors ${mindMapDetailLevel === 'compact'
+                        ? 'bg-cyan-50 text-cyan-700 dark:bg-cyber-700 dark:text-cyan-200'
+                        : 'text-slate-600 dark:text-slate-300 hover:bg-paper-100 dark:hover:bg-cyber-700'}`}
+                    >
+                      {t.mindMapDetailCompact || 'Compact'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onMindMapDetailLevelChange('detailed')}
+                      aria-pressed={mindMapDetailLevel === 'detailed'}
+                      className={`flex-1 px-2 py-1 rounded-md text-xs font-medium transition-colors ${mindMapDetailLevel === 'detailed'
+                        ? 'bg-cyan-50 text-cyan-700 dark:bg-cyber-700 dark:text-cyan-200'
+                        : 'text-slate-600 dark:text-slate-300 hover:bg-paper-100 dark:hover:bg-cyber-700'}`}
+                    >
+                      {t.mindMapDetailDetailed || 'Detailed'}
+                    </button>
+                  </div>
+                  <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
+                    {t.mindMapDetailHint || 'Detailed adds summaries to nodes.'}
+                  </p>
+                </div>
                 <button
                   onClick={() => { onGenerateQuiz(); setShowAIMenu(false); }}
                   className="w-full px-3 py-2 text-left text-sm hover:bg-paper-100 dark:hover:bg-cyber-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"

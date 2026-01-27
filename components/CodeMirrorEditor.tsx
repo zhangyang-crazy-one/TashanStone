@@ -80,7 +80,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorRef, EditorProps>(({
   const linkTargetExistsRef = useRef(linkTargetExists);
 
   // Monitor resize to force refresh
-  // 🔍 调试日志：组件卸载前保存光标
+  // 调试日志：组件卸载前保存光标
   useEffect(() => {
     if (!containerRef.current || !viewRef.current) return;
     

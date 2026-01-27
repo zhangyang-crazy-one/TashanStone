@@ -11,6 +11,8 @@ import { QuizMistakeCollection } from './QuizPanel/QuizMistakeCollection';
 import { QuizQuestionCard } from './QuizPanel/QuizQuestionCard';
 import { formatAnswer, getQuestionType, isAnswerCorrect, isAnswerEmpty, isOptionCorrect, isOptionSelected, normalizeSelection } from './QuizPanel/quizAnswerUtils';
 import { useQuizMistakes } from './QuizPanel/useQuizMistakes';
+import { Skeleton } from './ui/Skeleton';
+import { Button } from './ui/Button';
 
 interface QuizPanelProps {
   quiz: Quiz;
@@ -192,13 +194,47 @@ export const QuizPanel: React.FC<QuizPanelProps> = ({
     );
   }
 
+  const isGenerating = currentQuiz.status === 'in_progress' && currentQuiz.questions.length === 0;
+  if (isGenerating) {
+    return (
+      <div className="w-full h-full bg-paper-50 dark:bg-cyber-900 flex flex-col overflow-hidden">
+        <div className="h-16 border-b border-paper-200 dark:border-cyber-700 px-6 md:px-12 flex items-center">
+          <Skeleton className="h-5 w-40" />
+        </div>
+        <div className="flex-1 overflow-y-auto p-6 md:p-12 flex justify-center">
+          <div className="w-full max-w-3xl space-y-6">
+            <div className="space-y-2">
+              <Skeleton className="h-6 w-2/3" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-5/6" />
+            </div>
+            <div className="space-y-3">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div
+                  key={`quiz-skeleton-${index}`}
+                  className="flex items-center gap-3 border border-paper-200 dark:border-cyber-700 rounded-xl p-4 bg-white/70 dark:bg-cyber-800/60"
+                >
+                  <Skeleton rounded="full" className="h-6 w-6" />
+                  <Skeleton className="h-4 w-3/4" />
+                </div>
+              ))}
+            </div>
+            <p className="text-sm text-slate-500">{t.generatingQuiz}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!currentQuiz || !currentQuiz.questions || currentQuiz.questions.length === 0) {
     return (
       <div className="w-full h-full p-6 flex items-center justify-center text-slate-500">
         <div className="text-center">
           <AlertTriangle size={48} className="mx-auto mb-4 text-amber-500" />
           <p>No questions generated for this quiz.</p>
-          <button onClick={onClose} className="mt-4 text-cyan-500 underline">{t.close}</button>
+          <Button onClick={onClose} variant="ghost" size="sm" className="mt-4 text-cyan-500">
+            {t.close}
+          </Button>
         </div>
       </div>
     );

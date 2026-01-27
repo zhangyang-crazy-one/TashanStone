@@ -3,6 +3,7 @@ import { Bookmark, Plus, X } from 'lucide-react';
 
 import type { QuestionBank, Quiz } from '../../types';
 import { translations, Language } from '../../utils/translations';
+import { Button } from '../ui/Button';
 import Tooltip from '../Tooltip';
 import { prepareQuizQuestionsForBank } from './quizBankUtils';
 
@@ -170,13 +171,15 @@ export const QuizBankLink: React.FC<QuizBankLinkProps> = ({
                       </option>
                     ))}
                   </select>
-                  <button
+                  <Button
                     onClick={handleSaveExisting}
                     disabled={isSaving}
-                    className="w-full py-2 bg-violet-500 hover:bg-violet-600 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
+                    fullWidth
+                    isLoading={isSaving}
+                    className="bg-violet-500 hover:bg-violet-600"
                   >
                     {t.saveQuizQuestions || 'Save Quiz Questions'}
-                  </button>
+                  </Button>
                 </div>
               ) : (
                 <p className="text-sm text-slate-500">{t.createFirstBank || 'Create your first question bank to start generating quizzes'}</p>
@@ -193,14 +196,16 @@ export const QuizBankLink: React.FC<QuizBankLinkProps> = ({
                   placeholder={t.bankName || 'Bank Name'}
                   className="w-full px-3 py-2 bg-paper-100 dark:bg-cyber-900 border border-paper-200 dark:border-cyber-700 rounded-lg focus:outline-none focus:border-violet-500 transition-colors"
                 />
-                <button
+                <Button
                   onClick={handleCreateAndSave}
                   disabled={isSaving}
-                  className="w-full py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                  fullWidth
+                  isLoading={isSaving}
+                  leftIcon={<Plus size={16} />}
+                  className="bg-cyan-500 hover:bg-cyan-600"
                 >
-                  <Plus size={16} />
                   {t.createAndSave || 'Create & Save'}
-                </button>
+                </Button>
               </div>
 
               {error && (

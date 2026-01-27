@@ -3,6 +3,7 @@ import { BookOpen, CheckCircle2, CheckSquare, Loader2, Sparkles, XCircle } from 
 
 import type { QuizQuestion } from '../../types';
 import { translations, Language } from '../../utils/translations';
+import { Button } from '../ui/Button';
 
 interface QuizQuestionCardProps {
   question: QuizQuestion;
@@ -205,14 +206,17 @@ export const QuizQuestionCard: React.FC<QuizQuestionCardProps> = ({
                 </p>
               ) : (
                 <div className="mt-3">
-                  <button
+                  <Button
                     onClick={onExplain}
                     disabled={isExplaining}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-cyber-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-violet-600 dark:text-violet-400 hover:border-violet-400 hover:shadow-sm transition-all"
+                    isLoading={isExplaining}
+                    size="sm"
+                    leftIcon={!isExplaining ? <Sparkles size={14} /> : undefined}
+                    variant="secondary"
+                    className="bg-white dark:bg-cyber-800 border-slate-200 dark:border-slate-700 text-violet-600 dark:text-violet-400 hover:border-violet-400 hover:shadow-sm"
                   >
-                    {isExplaining ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
                     {isExplaining ? 'AI is thinking...' : 'Ask AI for Explanation'}
-                  </button>
+                  </Button>
                 </div>
               )}
             </div>

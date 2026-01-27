@@ -235,6 +235,8 @@ const App: React.FC = () => {
     currentQuiz,
     quizContext,
     mindMapContent,
+    mindMapDetailLevel,
+    setMindMapDetailLevel,
     diffOriginal,
     diffModified,
     examHistory,
@@ -521,6 +523,8 @@ const App: React.FC = () => {
     onBuildGraph: performGraph,
     onSynthesize: performSynthesize,
     onGenerateMindMap: handleGenerateMindMap,
+    mindMapDetailLevel,
+    onMindMapDetailLevelChange: setMindMapDetailLevel,
     onGenerateQuiz: handleGenerateQuiz,
     onFormatBold: handleFormatBold,
     onFormatItalic: handleFormatItalic,
@@ -658,10 +662,19 @@ const App: React.FC = () => {
 
   // Main Application
   return (
-    <div className="flex w-full h-screen bg-paper-50 dark:bg-cyber-900 text-slate-800 dark:text-slate-200 overflow-hidden transition-colors duration-300">
-      <AppShell {...appShellProps} />
-      <AppOverlaysContainer overlays={overlays} />
-    </div>
+    <>
+      <a href="#main-content" className="skip-link app-no-drag">
+        {t.skipToContent || 'Skip to content'}
+      </a>
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className="flex w-full h-screen bg-paper-50 dark:bg-cyber-900 text-slate-800 dark:text-slate-200 overflow-hidden transition-colors duration-300"
+      >
+        <AppShell {...appShellProps} />
+        <AppOverlaysContainer overlays={overlays} />
+      </main>
+    </>
   );
 };
 

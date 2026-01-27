@@ -43,6 +43,8 @@ export interface EditorPane {
   mode: 'editor' | 'preview';
 }
 
+export type MindMapDetailLevel = 'compact' | 'detailed';
+
 // 3D Note Space Layout
 export interface NoteLayoutItem {
   id: string; // matches file.id

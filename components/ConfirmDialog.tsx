@@ -1,6 +1,7 @@
 
 import React, { useEffect } from 'react';
 import { AlertCircle, AlertTriangle, Info, X } from 'lucide-react';
+import { Button } from './ui/Button';
 
 export interface ConfirmDialogProps {
   isOpen: boolean;
@@ -51,16 +52,12 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
     }
   };
 
-  const getButtonClasses = () => {
-    switch (type) {
-      case 'danger':
-        return 'bg-red-500 hover:bg-red-600 text-white';
-      case 'warning':
-        return 'bg-amber-500 hover:bg-amber-600 text-white';
-      case 'info':
-        return 'bg-cyan-500 hover:bg-cyan-600 text-white';
-    }
-  };
+  const confirmVariant = type === 'danger' ? 'danger' : 'primary';
+  const confirmClassName = type === 'warning'
+    ? 'bg-amber-500 hover:bg-amber-600'
+    : type === 'info'
+      ? 'bg-cyan-500 hover:bg-cyan-600'
+      : undefined;
 
   return (
     <div
@@ -98,18 +95,21 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
 
         {/* Actions */}
         <div className="flex items-center justify-end gap-3 p-6 border-t border-paper-200 dark:border-cyber-700">
-          <button
+          <Button
+            variant="secondary"
             onClick={onCancel}
-            className="px-4 py-2 rounded-lg bg-paper-100 dark:bg-cyber-700 border border-paper-200 dark:border-cyber-600 text-slate-700 dark:text-slate-200 hover:bg-paper-200 dark:hover:bg-cyber-600 transition-all font-medium"
+            size="md"
           >
             {cancelText}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant={confirmVariant}
             onClick={onConfirm}
-            className={`px-4 py-2 rounded-lg transition-all font-medium ${getButtonClasses()}`}
+            size="md"
+            className={confirmClassName}
           >
             {confirmText}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

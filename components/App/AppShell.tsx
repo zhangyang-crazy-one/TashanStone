@@ -8,6 +8,7 @@ import type {
   EditorPane,
   LinkInsertResult,
   MarkdownFile,
+  MindMapDetailLevel,
   OCRStats,
   RAGStats,
   Snippet,
@@ -55,6 +56,8 @@ export interface AppShellProps {
   onBuildGraph: (useActiveFileOnly?: boolean, graphType?: 'concept' | 'filelink') => void;
   onSynthesize: () => void;
   onGenerateMindMap: () => void;
+  mindMapDetailLevel: MindMapDetailLevel;
+  onMindMapDetailLevelChange: (level: MindMapDetailLevel) => void;
   onGenerateQuiz: () => void;
   onFormatBold: () => void;
   onFormatItalic: () => void;
@@ -138,6 +141,8 @@ export const AppShell = memo((props: AppShellProps) => {
     onBuildGraph,
     onSynthesize,
     onGenerateMindMap,
+    mindMapDetailLevel,
+    onMindMapDetailLevelChange,
     onGenerateQuiz,
     onFormatBold,
     onFormatItalic,
@@ -212,7 +217,7 @@ export const AppShell = memo((props: AppShellProps) => {
         onOpenReview={onOpenReview}
       />
 
-      <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+      <div className="flex-1 flex flex-col h-full overflow-hidden relative min-w-0 min-h-0">
         <MemoToolbar
           viewMode={viewMode}
           setViewMode={setViewMode}
@@ -223,6 +228,8 @@ export const AppShell = memo((props: AppShellProps) => {
           onBuildGraph={onBuildGraph}
           onSynthesize={onSynthesize}
           onGenerateMindMap={onGenerateMindMap}
+          mindMapDetailLevel={mindMapDetailLevel}
+          onMindMapDetailLevelChange={onMindMapDetailLevelChange}
           onGenerateQuiz={onGenerateQuiz}
           onFormatBold={onFormatBold}
           onFormatItalic={onFormatItalic}

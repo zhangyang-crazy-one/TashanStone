@@ -3,6 +3,7 @@ import { X, Plus, Trash2, GraduationCap, BookOpen, Sparkles, Search, ChevronDown
 import { DifficultyLevel, MarkdownFile, QuestionBank, QuestionBankStats, Quiz, QuizQuestion } from '../types';
 import { translations } from '../utils/translations';
 import { Language } from '../utils/translations';
+import { Button } from './ui/Button';
 
 interface QuestionBankModalProps {
   isOpen: boolean;
@@ -305,13 +306,14 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
                     className="w-full px-4 py-2 bg-paper-100 dark:bg-cyber-900 border border-paper-200 dark:border-cyber-700 rounded-lg focus:outline-none focus:border-violet-500 transition-colors resize-none"
                   />
                 </div>
-                <button
+                <Button
                   onClick={handleCreateBank}
-                  className="w-full py-2 bg-violet-500 hover:bg-violet-600 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                  fullWidth
+                  leftIcon={<Plus size={18} />}
+                  className="bg-violet-500 hover:bg-violet-600"
                 >
-                  <Plus size={18} />
                   {t.createQuestionBank}
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -434,14 +436,15 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
                                 </div>
                               </div>
 
-                              <button
+                              <Button
                                 onClick={() => handleCreateQuiz(bank.id)}
                                 disabled={bank.questions.length === 0}
-                                className="w-full py-2 bg-cyan-500 hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                                fullWidth
+                                leftIcon={<GraduationCap size={16} />}
+                                className="bg-cyan-500 hover:bg-cyan-600"
                               >
-                                <GraduationCap size={16} />
                                 {t.startQuiz}
-                              </button>
+                              </Button>
                             </div>
 
                             {/* AI Question Generation */}
@@ -460,14 +463,16 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
                                 ))}
                               </select>
 
-                              <button
+                              <Button
                                 onClick={() => handleGenerateQuestions(bank.id)}
                                 disabled={isGenerating || !selectedFileId}
-                                className="w-full py-2 bg-violet-500 hover:bg-violet-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                                fullWidth
+                                isLoading={isGenerating}
+                                leftIcon={<Sparkles size={16} />}
+                                className="bg-violet-500 hover:bg-violet-600"
                               >
-                                <Sparkles size={16} />
                                 {isGenerating ? t.analyzingContent : `${t.generateQuestions || 'Generate Questions'} ${t.questionCount.replace('{count}', String(questionCount))}`}
-                              </button>
+                              </Button>
                             </div>
 
                             {/* Questions List */}
@@ -535,13 +540,16 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
 
                             {/* Actions */}
                             <div className="flex gap-2 mt-4 pt-4 border-t border-paper-100 dark:border-cyber-700">
-                              <button
+                              <Button
                                 onClick={() => onDeleteBank(bank.id)}
-                                className="flex-1 py-2 bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                                fullWidth
+                                size="sm"
+                                variant="secondary"
+                                leftIcon={<Trash2 size={14} />}
+                                className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 border border-red-200 dark:border-red-800"
                               >
-                                <Trash2 size={14} />
                                 {t.delete}
-                              </button>
+                              </Button>
                             </div>
                           </div>
                         )}
@@ -562,18 +570,21 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
                 {t.selectedQuestions?.replace('{count}', String(selectedCount)) || `Selected ${selectedCount} questions`}
               </span>
               <div className="flex items-center gap-2">
-                <button
+                <Button
                   onClick={clearSelection}
-                  className="px-3 py-1.5 text-xs font-medium rounded-lg border border-paper-200 dark:border-cyber-700 text-slate-600 dark:text-slate-300 hover:bg-paper-100 dark:hover:bg-cyber-800 transition-colors"
+                  variant="secondary"
+                  size="sm"
+                  className="text-slate-600 dark:text-slate-300 hover:bg-paper-100 dark:hover:bg-cyber-800"
                 >
                   {t.clearSelection || 'Clear selection'}
-                </button>
-                <button
+                </Button>
+                <Button
                   onClick={handleCreateQuizFromSelection}
-                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-cyan-500 hover:bg-cyan-600 text-white transition-colors"
+                  size="sm"
+                  className="bg-cyan-500 hover:bg-cyan-600"
                 >
                   {t.startQuiz}
-                </button>
+                </Button>
               </div>
             </div>
           )}

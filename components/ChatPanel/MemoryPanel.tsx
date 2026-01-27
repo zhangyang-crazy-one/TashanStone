@@ -1,5 +1,5 @@
 import React from 'react';
-import { Brain, FileText, Loader2, Search, X } from 'lucide-react';
+import { Brain, FileText, Info, Loader2, Search, X } from 'lucide-react';
 import type { Language } from '../../utils/translations';
 
 export interface MemorySearchResult {
@@ -69,10 +69,13 @@ export const MemoryPanel: React.FC<MemoryPanelProps> = ({
       </div>
 
       {/* Auto-injected notice */}
-      <div className="mb-3 p-2 bg-amber-50 dark:bg-amber-900/20 rounded text-xs text-amber-700 dark:text-amber-400">
-        💡 {language === 'zh'
-          ? 'AI 会自动根据对话内容注入相关记忆'
-          : 'AI automatically injects relevant memories based on your messages'}
+      <div className="mb-3 p-2 bg-amber-50 dark:bg-amber-900/20 rounded text-xs text-amber-700 dark:text-amber-400 flex items-start gap-1.5">
+        <Info size={12} className="mt-0.5 text-amber-500 shrink-0" />
+        <span>
+          {language === 'zh'
+            ? 'AI 会自动根据对话内容注入相关记忆'
+            : 'AI automatically injects relevant memories based on your messages'}
+        </span>
       </div>
 
       {/* Search to add memories */}

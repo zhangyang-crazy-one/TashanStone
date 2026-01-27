@@ -68,7 +68,7 @@ export const AppWorkspace = memo((props: AppWorkspaceProps) => {
   );
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden relative">
+    <div className="flex-1 flex flex-col overflow-hidden relative min-w-0 min-h-0">
       <AppViewRouter {...viewRouterProps} />
 
       <LinkInsertModal

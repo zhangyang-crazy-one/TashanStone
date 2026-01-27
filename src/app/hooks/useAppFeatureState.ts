@@ -8,6 +8,7 @@ import type {
   GraphData,
   KnowledgePointStat,
   MarkdownFile,
+  MindMapDetailLevel,
   QuestionBank,
   DifficultyLevel,
   Quiz,
@@ -54,6 +55,8 @@ interface UseAppFeatureStateResult {
   currentQuiz: Quiz | null;
   quizContext: string;
   mindMapContent: string;
+  mindMapDetailLevel: MindMapDetailLevel;
+  setMindMapDetailLevel: Dispatch<SetStateAction<MindMapDetailLevel>>;
   diffOriginal: string;
   diffModified: string;
   examHistory: ExamResult[];
@@ -110,6 +113,7 @@ export const useAppFeatureState = ({
   const [currentQuiz, setCurrentQuiz] = useState<Quiz | null>(null);
   const [quizContext, setQuizContext] = useState<string>('');
   const [mindMapContent, setMindMapContent] = useState<string>('');
+  const [mindMapDetailLevel, setMindMapDetailLevel] = useState<MindMapDetailLevel>('compact');
   const [diffOriginal, setDiffOriginal] = useState<string>('');
   const [diffModified, setDiffModified] = useState<string>('');
   const [examHistory, setExamHistory] = useState<ExamResult[]>(() => {
@@ -277,7 +281,7 @@ export const useAppFeatureState = ({
 
     setAiState({ isThinking: true, message: 'Dreaming up Mind Map...', error: null });
     try {
-      const mermaidCode = await generateMindMap(currentContent, aiConfig);
+      const mermaidCode = await generateMindMap(currentContent, aiConfig, mindMapDetailLevel);
       setMindMapContent(mermaidCode);
       setViewMode(ViewMode.MindMap);
     } catch (error: unknown) {
@@ -286,7 +290,7 @@ export const useAppFeatureState = ({
     } finally {
       setAiState(prev => ({ ...prev, isThinking: false, message: null }));
     }
-  }, [aiConfig, getActivePaneContent, setAiState, setViewMode, showToast, t.polishEmptyError]);
+  }, [aiConfig, getActivePaneContent, mindMapDetailLevel, setAiState, setViewMode, showToast, t.polishEmptyError]);
 
   const handleGenerateQuiz = useCallback(async () => {
     const currentContent = getActivePaneContent();
@@ -299,24 +303,36 @@ export const useAppFeatureState = ({
 
     setAiState({ isThinking: true, message: 'Creating Quiz...', error: null });
     try {
+      lastNonQuizViewModeRef.current = viewMode;
+      setQuizContext(currentContent);
+      setCurrentQuiz({
+        id: `quiz-loading-${Date.now()}`,
+        title: t.quiz || 'Quiz',
+        description: '',
+        questions: [],
+        isGraded: false,
+        status: 'in_progress',
+        sourceFileId
+      });
+      setViewMode(ViewMode.Quiz);
+
       const quiz = await generateQuiz(currentContent, aiConfig);
       if (!quiz || !quiz.questions || quiz.questions.length === 0) {
         throw new Error('Failed to generate quiz questions. The AI response was empty or invalid.');
       }
 
       const quizWithSource = sourceFileId ? { ...quiz, sourceFileId } : quiz;
-      lastNonQuizViewModeRef.current = viewMode;
-      setQuizContext(currentContent);
       setCurrentQuiz(quizWithSource);
-      setViewMode(ViewMode.Quiz);
       showToast(`Quiz generated with ${quiz.questions.length} questions!`, false);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Quiz generation failed';
+      setCurrentQuiz(null);
+      setViewMode(lastNonQuizViewModeRef.current || ViewMode.Editor);
       showToast(`Quiz generation failed: ${message}`, true);
     } finally {
       setAiState(prev => ({ ...prev, isThinking: false, message: null }));
     }
-  }, [aiConfig, getActivePaneContent, getActivePaneFileId, setAiState, setViewMode, showToast, t.polishEmptyError]);
+  }, [aiConfig, getActivePaneContent, getActivePaneFileId, setAiState, setViewMode, showToast, t.polishEmptyError, t.quiz, viewMode]);
 
   const handleImportQuiz = useCallback(async (file: File) => {
     setAiState({ isThinking: true, message: t.processingFile, error: null });
@@ -607,6 +623,8 @@ export const useAppFeatureState = ({
     currentQuiz,
     quizContext,
     mindMapContent,
+    mindMapDetailLevel,
+    setMindMapDetailLevel,
     diffOriginal,
     diffModified,
     examHistory,

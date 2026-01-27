@@ -4,6 +4,7 @@ import { suggestTags } from '../services/aiService';
 import { AIConfig } from '../types';
 import { translations } from '../utils/translations';
 import { Language } from '../utils/translations';
+import { Button } from './ui/Button';
 
 interface TagSuggestionModalProps {
   isOpen: boolean;
@@ -109,12 +110,13 @@ export const TagSuggestionModal: React.FC<TagSuggestionModalProps> = ({
           ) : error ? (
             <div className="flex flex-col items-center justify-center py-8 gap-3">
               <div className="text-amber-500 text-sm text-center">{error}</div>
-              <button
+              <Button
                 onClick={generateSuggestions}
-                className="px-4 py-2 bg-cyan-500 text-white rounded-lg text-sm hover:bg-cyan-600 transition-colors"
+                size="sm"
+                className="bg-cyan-500 hover:bg-cyan-600"
               >
                 {t.retry}
-              </button>
+              </Button>
             </div>
           ) : suggestedTags.length > 0 ? (
             <>
@@ -170,20 +172,23 @@ export const TagSuggestionModal: React.FC<TagSuggestionModalProps> = ({
         {/* Footer */}
         {suggestedTags.length > 0 && !isLoading && (
           <div className="flex justify-end gap-2 px-4 py-3 border-t border-paper-200 dark:border-cyber-700 bg-paper-50 dark:bg-cyber-900">
-            <button
+            <Button
               onClick={onClose}
-              className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-paper-200 dark:hover:bg-cyber-700 rounded-lg transition-colors"
+              variant="ghost"
+              size="sm"
+              className="text-slate-600 dark:text-slate-300 hover:bg-paper-200 dark:hover:bg-cyber-700"
             >
               {t.cancel}
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={handleApply}
               disabled={selectedTags.length === 0}
-              className="px-4 py-2 text-sm bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              size="sm"
+              leftIcon={<Plus size={14} />}
+              className="bg-cyan-500 hover:bg-cyan-600 disabled:opacity-50"
             >
-              <Plus size={14} />
               {t.applyTags.replace('{count}', String(selectedTags.length))}
-            </button>
+            </Button>
           </div>
         )}
       </div>

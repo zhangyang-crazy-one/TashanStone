@@ -130,9 +130,9 @@ export const useChatMemory = ({ language, showToast }: UseChatMemoryOptions) => 
                 : m.filePath?.split('/').pop()?.replace('.md', '') || m.id || '未知';
 
               return `【记忆片段 ${index + 1}】━━━━━━━━━━━━━━━━━━━━
-📁 来源：${fileName}
-🏷️ 标签：${m.topics?.join(', ') || '无'}
-📄 内容：
+来源：${fileName}
+标签：${m.topics?.join(', ') || '无'}
+内容：
 ${content}
 ━━━━━━━━━━━━━━━━━━━━━`;
             }).join('\n\n');
@@ -140,17 +140,17 @@ ${content}
             messageContent = `【系统提示】以下持久记忆已根据您的问题自动检索并注入到对话上下文中，供参考使用：
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔍 基于问题检索：${autoResults.length} 条
-📊 手动添加：${injectedMemories.length} 条
-📊 总计注入：${allMemories.length} 条
+基于问题检索：${autoResults.length} 条
+手动添加：${injectedMemories.length} 条
+总计注入：${allMemories.length} 条
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ${memoryContents}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💡 **重要提示**：以上记忆信息已完整注入，包含用户需要的知识。
-❌ 请勿再用 read_file 或 search_files 重复读取这些记忆文件。
-✅ 请直接使用注入的信息回答用户问题。
+**重要提示**：以上记忆信息已完整注入，包含用户需要的知识。
+请勿再用 read_file 或 search_files 重复读取这些记忆文件。
+请直接使用注入的信息回答用户问题。
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 用户问题：` + userQuery;

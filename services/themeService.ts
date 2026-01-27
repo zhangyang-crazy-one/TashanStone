@@ -42,9 +42,9 @@ export const DEFAULT_THEMES: AppTheme[] = [
       '--bg-main': '248 250 252',    // paper-50 (#f8fafc)
       '--bg-panel': '241 245 249',   // paper-100 (#f1f5f9)
       '--bg-element': '226 232 240', // paper-200 (#e2e8f0)
-      '--border-main': '226 232 240',
+      '--border-main': '203 213 225',
       '--text-primary': '30 41 59',
-      '--text-secondary': '100 116 139',
+      '--text-secondary': '71 85 105',
       '--primary-500': '6 182 212',
       '--primary-600': '8 145 178',
       '--secondary-500': '139 92 246',
@@ -135,9 +135,9 @@ export const DEFAULT_THEMES: AppTheme[] = [
       '--bg-main': '253 246 227',    // #fdf6e3 (Base3)
       '--bg-panel': '238 232 213',   // #eee8d5 (Base2)
       '--bg-element': '211 204 187', // #d3ccbb (Base2 darkened)
-      '--border-main': '211 204 187',
+      '--border-main': '191 183 166',
       '--text-primary': '101 123 131', // #657b83 (Base00)
-      '--text-secondary': '147 161 161', // #93a1a1 (Base1)
+      '--text-secondary': '88 110 117', // #586e75 (Base01)
       '--primary-500': '38 139 210',   // #268bd2 (Blue)
       '--primary-600': '42 161 152',   // #2aa198 (Cyan)
       '--secondary-500': '211 54 130', // #d33682 (Magenta)
@@ -201,7 +201,7 @@ export const DEFAULT_THEMES: AppTheme[] = [
       '--bg-element': '216 216 200',  // #d8d8c8 - Pixel box bg
       '--border-main': '139 139 122', // #8b8b7a - Green-grey border
       '--text-primary': '45 52 54',   // #2d3436 - Dark grey
-      '--text-secondary': '99 110 114', // #636e72 - Medium grey
+      '--text-secondary': '71 85 105', // #475569 - Deeper grey for contrast
       '--primary-500': '214 48 49',   // #d63031 - Red buttons
       '--primary-600': '214 48 49',
       '--secondary-500': '9 132 227', // #0984e3 - Blue highlight

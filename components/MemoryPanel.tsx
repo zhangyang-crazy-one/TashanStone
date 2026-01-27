@@ -3,6 +3,8 @@ import { Search, Plus, Trash2, Edit2, Sparkles, X, Filter, SortAsc, SortDesc, Br
 import { List, type RowComponentProps, useDynamicRowHeight } from 'react-window';
 import { AutoSizer } from 'react-virtualized-auto-sizer';
 import Tooltip from './Tooltip';
+import { Button } from './ui/Button';
+import { Skeleton } from './ui/Skeleton';
 
 interface MemoryDocument {
   id: string;
@@ -249,7 +251,7 @@ const MemoryPanel: React.FC<MemoryPanelProps> = ({
   if (!isOpen) return null;
 
   const t = useMemo(() => ({
-    title: language === 'zh' ? '🧠 AI 记忆库' : '🧠 Memory Library',
+    title: language === 'zh' ? 'AI 记忆库' : 'Memory Library',
     searchPlaceholder: language === 'zh' ? '搜索记忆...' : 'Search memories...',
     noMemories: language === 'zh' ? '暂无记忆' : 'No memories',
     noMemoriesDesc: language === 'zh' ? '创建第一个记忆来保存重要信息' : 'Create your first memory to save important information',
@@ -408,13 +410,15 @@ const MemoryPanel: React.FC<MemoryPanelProps> = ({
 
       {/* Actions */}
       <div className="p-3 border-b border-paper-200 dark:border-cyber-700 space-y-2">
-        <button
+        <Button
           onClick={onCreateMemory}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-violet-500 hover:bg-violet-600 text-white rounded-lg transition-colors text-xs font-medium"
+          size="sm"
+          fullWidth
+          leftIcon={<Plus size={14} />}
+          className="bg-violet-500 hover:bg-violet-600"
         >
-          <Plus size={14} />
           {t.create}
-        </button>
+        </Button>
       </div>
 
       {/* Search & Filters */}
@@ -470,8 +474,20 @@ const MemoryPanel: React.FC<MemoryPanelProps> = ({
       {/* Memory List */}
       <div className="flex-1 overflow-hidden p-3">
         {isLoading ? (
-          <div className="flex items-center justify-center py-8">
-            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-violet-500" />
+          <div className="space-y-3" aria-busy="true">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <div
+                key={`memory-skeleton-${index}`}
+                className="rounded-lg border border-paper-200 dark:border-cyber-700 bg-white/70 dark:bg-cyber-800/60 p-3 space-y-2"
+              >
+                <div className="flex items-center justify-between">
+                  <Skeleton className="h-3 w-24" />
+                  <Skeleton className="h-3 w-10" />
+                </div>
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-3 w-2/3" />
+              </div>
+            ))}
           </div>
         ) : filteredMemories.length === 0 ? (
           <div className="text-center py-8">

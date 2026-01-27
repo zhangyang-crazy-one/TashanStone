@@ -1,4 +1,4 @@
-import type { AIConfig, ChatMessage, GraphData, MarkdownFile, Quiz, QuizQuestion, ToolEventCallback } from "../../types";
+import type { AIConfig, ChatMessage, GraphData, MarkdownFile, MindMapDetailLevel, Quiz, QuizQuestion, ToolEventCallback } from "../../types";
 import type { ToolCallback } from "./providerTypes";
 import { chunkText, delay, extractJson } from "./aiTextUtils";
 
@@ -147,9 +147,14 @@ export const createFeaturePipelines = (deps: { generateAIResponse: GenerateAIRes
     return generateAIResponse(prompt, config, "You are a Knowledge Manager.");
   };
 
-  const generateMindMap = async (content: string, config: AIConfig): Promise<string> => {
+  const generateMindMap = async (content: string, config: AIConfig, detailLevel: MindMapDetailLevel = 'compact'): Promise<string> => {
     const contextLimit = config.contextEngine?.modelContextLimit ?? 200000;
     const limit = config.provider === 'gemini' ? contextLimit : Math.floor(contextLimit / 10);
+    const charCount = content.length;
+    const baseNodes = Math.max(18, Math.floor(charCount / 250));
+    const targetNodes = Math.min(detailLevel === 'detailed' ? 120 : 80, detailLevel === 'detailed' ? Math.floor(baseNodes * 1.4) : baseNodes);
+    const targetDepth = charCount > 2200 ? (detailLevel === 'detailed' ? 4 : 3) : (detailLevel === 'detailed' ? 3 : 2);
+    const includeSummary = detailLevel === 'detailed';
 
     const prompt = `Generate a Mermaid.js mind map from the content below.
 
@@ -159,8 +164,10 @@ CRITICAL INSTRUCTIONS:
 3. Use ((Root Topic)) for the root node (double parentheses = circle)
 4. Use (Child Node) for all other nodes (single parentheses = rounded rectangle)
 5. Use 2-space indentation for hierarchy
-6. Keep labels short (2-5 words max)
+6. Keep labels short (2-5 words max)${includeSummary ? ' for the title part' : ''}
 7. No special characters in labels: no (), #, :, **, *
+8. Aim for about ${targetNodes} nodes and at least ${targetDepth} levels when content is long. Do not over-summarize; include key subpoints.
+${includeSummary ? `9. For each node, append a short summary after \" | \". Example: (Branch Title | brief summary). Keep summary 6-12 words, plain text only.` : ''}
 
 Example output format:
 mindmap

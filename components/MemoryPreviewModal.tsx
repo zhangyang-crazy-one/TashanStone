@@ -3,6 +3,7 @@ import { X, Edit3, Save, Star, Eye, FileText, ExternalLink } from 'lucide-react'
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import Tooltip from './Tooltip';
+import { Button } from './ui/Button';
 
 export interface MemoryItem {
   id: string;
@@ -261,35 +262,36 @@ export const MemoryPreviewModal: React.FC<MemoryPreviewModalProps> = ({
           <div className="flex items-center gap-2">
             {/* Save Button (only when editing) */}
             {isEditing && onSave && (
-              <button
+              <Button
                 onClick={handleSave}
                 disabled={isSaving}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs bg-amber-500 hover:bg-amber-600 text-white rounded-lg transition-colors disabled:opacity-50"
+                isLoading={isSaving}
+                size="sm"
+                leftIcon={!isSaving ? <Save size={12} /> : undefined}
+                className="bg-amber-500 hover:bg-amber-600"
               >
-                {isSaving ? (
-                  <div className="w-3 h-3 border border-white/50 border-t-white rounded-full animate-spin" />
-                ) : (
-                  <Save size={12} />
-                )}
                 {t.save}
-              </button>
+              </Button>
             )}
             
             {/* Cancel Button */}
-            <button
+            <Button
               onClick={onClose}
-              className="px-3 py-1.5 text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
+              variant="ghost"
+              size="sm"
+              className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
             >
               {t.cancel}
-            </button>
+            </Button>
             
             {/* Confirm Add Button */}
-            <button
+            <Button
               onClick={handleConfirm}
-              className="flex items-center gap-1 px-4 py-1.5 text-xs bg-violet-500 hover:bg-violet-600 text-white rounded-lg transition-colors"
+              size="sm"
+              className="bg-violet-500 hover:bg-violet-600"
             >
               {t.confirm}
-            </button>
+            </Button>
           </div>
         </div>
       </div>

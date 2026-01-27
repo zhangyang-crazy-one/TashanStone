@@ -17,11 +17,14 @@ import { getIconForFile, isExtensionInList, OPERABLE_EXTENSIONS } from './sideba
 interface FileTreeRowProps {
   node: FlatNode;
   activeFileId: string;
+  style?: React.CSSProperties;
+  ariaAttributes?: React.HTMLAttributes<HTMLDivElement>;
   onSelect: (id: string) => void;
   onToggle: (path: string) => void;
   onDelete: (id: string, fileName: string) => void;
   onRequestCreate: (type: 'file' | 'folder', parentPath: string) => void;
   onDragStart: (e: React.DragEvent, nodeId: string) => void;
+  onDragEnd: () => void;
   onDragOver: (e: React.DragEvent, nodeId: string) => void;
   onDrop: (e: React.DragEvent, targetPath: string) => void;
   isDropTarget: boolean;
@@ -32,11 +35,14 @@ interface FileTreeRowProps {
 export const FileTreeRow = React.memo<FileTreeRowProps>(({
   node,
   activeFileId,
+  style,
+  ariaAttributes,
   onSelect,
   onToggle,
   onDelete,
   onRequestCreate,
   onDragStart,
+  onDragEnd,
   onDragOver,
   onDrop,
   isDropTarget,
@@ -44,6 +50,7 @@ export const FileTreeRow = React.memo<FileTreeRowProps>(({
   onShowContextMenu
 }) => {
   const indentStyle = { paddingLeft: `${node.level * 12 + 12}px` };
+  const rowStyle = style ? { ...style, ...indentStyle } : indentStyle;
 
   if (node.type === 'folder') {
     const isMemoryFolder = node.name === '.memories';
@@ -55,10 +62,12 @@ export const FileTreeRow = React.memo<FileTreeRowProps>(({
             ? 'bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/30 text-violet-700 dark:text-violet-300'
             : 'hover:bg-paper-200 dark:hover:bg-cyber-800 text-slate-600 dark:text-slate-300'}
                 `}
-        style={indentStyle}
+        style={rowStyle}
+        {...ariaAttributes}
         onClick={() => onToggle(node.path)}
         draggable
         onDragStart={(e) => onDragStart(e, node.fileId || node.id)}
+        onDragEnd={onDragEnd}
         onDragOver={(e) => onDragOver(e, node.id)}
         onDrop={(e) => onDrop(e, node.path)}
       >
@@ -71,7 +80,7 @@ export const FileTreeRow = React.memo<FileTreeRowProps>(({
           {node.isExpanded ? <FolderOpen size={16} /> : <Folder size={16} />}
         </span>
         <span className={`text-sm font-semibold truncate flex-1 ${isMemoryFolder ? 'text-violet-700 dark:text-violet-300' : ''}`}>
-          {isMemoryFolder ? '🧠 AI 记忆库' : node.name}
+          {isMemoryFolder ? 'AI 记忆库' : node.name}
         </span>
 
         {!isMemoryFolder && (
@@ -123,7 +132,8 @@ export const FileTreeRow = React.memo<FileTreeRowProps>(({
                     ${isDropTarget ? 'bg-cyan-100 dark:bg-cyan-900/40 ring-1 ring-cyan-400 inset-0' :
           'hover:bg-paper-200 dark:hover:bg-cyber-800 text-slate-600 dark:text-slate-300'}
                 `}
-      style={indentStyle}
+      style={rowStyle}
+      {...ariaAttributes}
       onClick={() => isOperable && onSelect(node.fileId!)}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -133,6 +143,7 @@ export const FileTreeRow = React.memo<FileTreeRowProps>(({
       }}
       draggable={isOperable}
       onDragStart={(e) => isOperable && onDragStart(e, node.fileId!)}
+      onDragEnd={onDragEnd}
     >
       {node.level > 0 && <div className="absolute left-0 top-0 bottom-0 border-l border-paper-200 dark:border-cyber-800" style={{ left: `${node.level * 12 + 4}px` }} />}
 

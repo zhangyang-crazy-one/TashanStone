@@ -184,14 +184,17 @@ export const SidebarFilesTab: React.FC<SidebarFilesTabProps> = ({
           />
           <Search size={12} className="absolute left-2.5 top-2.5 text-slate-400" />
           {searchQuery && (
-            <button onClick={() => setSearchQuery('')} className="absolute right-2 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+            >
               <X size={12} />
             </button>
           )}
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-hidden p-3 space-y-2 flex flex-col">
+      <div className="flex-1 min-h-0 overflow-hidden p-3 flex flex-col">
         <SidebarFileActions
           onOpenCreation={(type) => handleOpenCreation(type)}
           onOpenFolder={onOpenFolder}
@@ -202,7 +205,7 @@ export const SidebarFilesTab: React.FC<SidebarFilesTabProps> = ({
           t={t}
         />
 
-        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1">
+        <div className="flex-1 min-h-0 overflow-hidden">
           <SidebarFileTree
             activeFileId={activeFileId}
             visibleFlatNodes={visibleFlatNodes}

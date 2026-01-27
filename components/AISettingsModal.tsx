@@ -62,7 +62,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
   const [activeTab, setActiveTab] = useState<Tab>('ai');
   const [tempConfig, setTempConfig] = useState<AIConfig>(config);
 
-  // 🔧 修复: 辅助函数，安全更新 contextEngine
+  // 修复: 辅助函数，安全更新 contextEngine
   const updateContextEngine = (updates: any) => {
     setTempConfig({
       ...tempConfig,
@@ -198,7 +198,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
 
     try {
       const mockToolCallback = async (name: string, args: Record<string, JsonValue>) => {
-        setTestLog(prev => [...prev, `\n✅ Tool '${name}' triggered!`, `📦 Arguments:\n${JSON.stringify(args, null, 2)}`]);
+        setTestLog(prev => [...prev, `\n[OK] Tool '${name}' triggered!`, `Arguments:\n${JSON.stringify(args, null, 2)}`]);
         return { success: true, message: "Test execution simulated." } as JsonValue;
       };
 

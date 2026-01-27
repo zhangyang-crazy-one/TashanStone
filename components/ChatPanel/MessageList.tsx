@@ -1,10 +1,12 @@
 import React, { useMemo } from 'react';
 import { Bot, Loader2, Square } from 'lucide-react';
-import type { AIState, ChatMessage } from '../../types';
-import { ChatMessageRow } from './MessageItem';
 import { List, type ListImperativeAPI, type RowComponentProps, useDynamicRowHeight } from 'react-window';
 import { AutoSizer } from 'react-virtualized-auto-sizer';
+
+import type { AIState, ChatMessage } from '../../types';
+import { ChatMessageRow } from './MessageItem';
 import Tooltip from '../Tooltip';
+import { Skeleton } from '../ui/Skeleton';
 import { translations, type Language } from '../../utils/translations';
 
 const DEFAULT_ROW_HEIGHT = 80;
@@ -102,10 +104,54 @@ export const MessageList: React.FC<MessageListProps> = ({
     [messages.length, compactMode, aiState.isThinking, language, isStreaming]
   );
   const dynamicRowHeight = useDynamicRowHeight({ defaultRowHeight: DEFAULT_ROW_HEIGHT, key: rowHeightKey });
+  const showInitialSkeleton = messages.length === 0 && aiState.isThinking;
 
   return (
     <div className="flex-1 min-h-0">
-      {rowCount === 0 ? (
+      {showInitialSkeleton ? (
+        <div className="flex flex-col gap-4 px-4 py-6">
+          <div className="flex justify-end">
+            <div className="w-full max-w-[70%] space-y-2">
+              <Skeleton className="h-3 w-1/2" />
+              <Skeleton className="h-3 w-full" />
+            </div>
+          </div>
+          <div className="flex gap-3">
+            {!compactMode && (
+              <div className="w-8 h-8 rounded-full bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center shrink-0">
+                <Bot size={16} className="text-violet-600 dark:text-violet-400" />
+              </div>
+            )}
+            <div className="flex-1 space-y-2">
+              <Skeleton className="h-3 w-2/3" />
+              <Skeleton className="h-3 w-5/6" />
+              <Skeleton className="h-3 w-1/2" />
+            </div>
+          </div>
+          <div className="flex gap-3">
+            {!compactMode && (
+              <div className="w-8 h-8 rounded-full bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center shrink-0">
+                <Bot size={16} className="text-violet-600 dark:text-violet-400" />
+              </div>
+            )}
+            <div className="bg-white dark:bg-cyber-800/50 p-3 rounded-2xl rounded-tl-none border border-paper-200 dark:border-cyber-700 flex items-center gap-2">
+              <Loader2 size={14} className="animate-spin text-violet-500" />
+              <span className="text-xs text-slate-500">{language === 'zh' ? 'AI 正在思考...' : 'AI is thinking...'}</span>
+              {isStreaming && onStopStreaming && (
+                <Tooltip content={t.stopGeneration}>
+                  <button
+                    onClick={onStopStreaming}
+                    className="ml-2 p-1 hover:bg-red-100 dark:hover:bg-red-900/20 rounded text-red-500 transition-colors"
+                    aria-label={t.stopGeneration}
+                  >
+                    <Square size={12} />
+                  </button>
+                </Tooltip>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : rowCount === 0 ? (
         <div className="flex flex-col items-center justify-center h-full text-slate-400 text-center space-y-2 opacity-60">
           <Bot size={48} />
           <p className="max-w-[80%]">{t.askMe}</p>
