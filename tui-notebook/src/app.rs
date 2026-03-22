@@ -5,14 +5,16 @@
 use anyhow::Result;
 use crossterm::event::{Event as CrosstermEvent, KeyEvent, MouseEvent};
 use ratatui::Frame;
-use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::time::{interval, Duration};
 
-pub use crate::action::{Action, ComponentId};
+pub use crate::action::{Action, ComponentId, ChatAction};
 use crate::components::{chat::ChatPanel, editor::Editor, knowledge::KnowledgePanel, search::SearchPanel, sidebar::Sidebar, status::StatusBar, Component};
+use crate::services::ai::{AiService, ChatMessage, MessageRole};
+use crate::services::vector::VectorService;
 use crate::tui::Tui;
 use crate::app::focus::FocusManager;
+use std::sync::Arc;
 
 /// Container for all UI components (to separate borrows)
 struct Components<'a> {
@@ -40,6 +42,15 @@ pub struct App {
     /// Focus management
     focus_manager: FocusManager,
 
+    /// AI service
+    ai_service: AiService,
+
+    /// Vector service for knowledge base
+    vector_service: Arc<VectorService>,
+
+    /// Shared scroll offset for synchronized scrolling
+    scroll_offset: usize,
+
     /// Should quit
     should_quit: bool,
 
@@ -65,6 +76,9 @@ impl App {
             knowledge: KnowledgePanel::new(),
             status: StatusBar::new(),
             focus_manager: focus::FocusManager::new(),
+            ai_service: AiService::new(),
+            vector_service: Arc::new(VectorService::new()),
+            scroll_offset: 0,
             should_quit: false,
             action_tx,
             action_rx,
@@ -110,6 +124,10 @@ impl App {
             let size = self.tui.size();
             let has_content = self.editor.has_content();
             let chat_open = self.chat.is_open();
+
+            // Sync scroll offset to editor for synchronized scrolling
+            self.editor.set_scroll_offset(self.scroll_offset);
+
             let layout = Self::compute_layout(size, has_content, chat_open);
             let components = Components {
                 sidebar: &self.sidebar,
@@ -193,6 +211,28 @@ impl App {
                 self.chat.toggle();
                 return None;
             }
+            // Toggle knowledge panel
+            (crossterm::event::KeyModifiers::CONTROL, crossterm::event::KeyCode::Char('l')) => {
+                self.knowledge.toggle();
+                return None;
+            }
+            // Index current file
+            (crossterm::event::KeyModifiers::CONTROL | crossterm::event::KeyModifiers::SHIFT, crossterm::event::KeyCode::Char('k')) => {
+                if let Some(path) = self.editor.current_file() {
+                    self.handle_action(Action::Knowledge(crate::action::KnowledgeAction::Index(path)));
+                }
+                return None;
+            }
+            // Scroll up
+            (crossterm::event::KeyModifiers::CONTROL, crossterm::event::KeyCode::Up) => {
+                self.scroll_offset = self.scroll_offset.saturating_sub(3);
+                return None;
+            }
+            // Scroll down
+            (crossterm::event::KeyModifiers::CONTROL, crossterm::event::KeyCode::Down) => {
+                self.scroll_offset += 3;
+                return None;
+            }
             _ => {}
         }
 
@@ -209,6 +249,16 @@ impl App {
 
     /// Handle mouse events
     fn handle_mouse_event(&mut self, mouse: MouseEvent) -> Option<Action> {
+        // Handle mouse wheel scrolling
+        if let crossterm::event::MouseEventKind::ScrollUp = mouse.kind {
+            self.scroll_offset = self.scroll_offset.saturating_sub(3);
+            return None;
+        }
+        if let crossterm::event::MouseEventKind::ScrollDown = mouse.kind {
+            self.scroll_offset += 3;
+            return None;
+        }
+
         // Handle click to focus components
         if matches!(mouse.kind, crossterm::event::MouseEventKind::Down(_)) {
             let size = self.tui.size();
@@ -270,9 +320,109 @@ impl App {
                 self.search.handle_action(&search);
             }
             Action::Chat(chat) => {
-                self.chat.handle_action(&chat);
+                match &chat {
+                    ChatAction::Send(_msg) => {
+                        // Get current chat model config
+                        let model_config = self.chat.get_model_config();
+
+                        // Build messages from chat history
+                        let messages: Vec<ChatMessage> = self.chat.get_messages()
+                            .iter()
+                            .map(|m| ChatMessage {
+                                role: match m.role {
+                                    crate::components::chat::MessageRole::User => MessageRole::User,
+                                    crate::components::chat::MessageRole::Assistant => MessageRole::Assistant,
+                                    crate::components::chat::MessageRole::System => MessageRole::System,
+                                },
+                                content: m.content.clone(),
+                            })
+                            .collect();
+
+                        // Spawn async task for AI call
+                        let action_tx = self.action_tx.clone();
+                        tokio::spawn(async move {
+                            let ai_service = AiService::with_config(model_config);
+                            match ai_service.chat(messages).await {
+                                Ok(response) => {
+                                    let _ = action_tx.send(Action::Chat(ChatAction::StreamResponse(response.content)));
+                                }
+                                Err(e) => {
+                                    tracing::error!("AI chat error: {}", e);
+                                    let _ = action_tx.send(Action::Chat(ChatAction::StreamResponse(format!("Error: {}", e))));
+                                }
+                            }
+                        });
+                        self.chat.handle_action(&chat);
+                    }
+                    _ => {
+                        self.chat.handle_action(&chat);
+                    }
+                }
             }
             Action::Knowledge(knowledge) => {
+                match &knowledge {
+                    crate::action::KnowledgeAction::Search(query) => {
+                        let query = query.clone();
+                        let vector_service = Arc::clone(&self.vector_service);
+                        let action_tx = self.action_tx.clone();
+                        tokio::spawn(async move {
+                            match vector_service.search(&query, 10).await {
+                                Ok(results) => {
+                                    let search_results: Vec<crate::action::SearchResult> = results
+                                        .into_iter()
+                                        .map(|r| crate::action::SearchResult {
+                                            file_path: r.file_path,
+                                            score: r.score,
+                                            excerpt: r.content.chars().take(200).collect(),
+                                            block_id: Some(r.chunk_id),
+                                        })
+                                        .collect();
+                                    let _ = action_tx.send(Action::Knowledge(
+                                        crate::action::KnowledgeAction::SearchResults(search_results)
+                                    ));
+                                }
+                                Err(e) => {
+                                    tracing::error!("Search error: {}", e);
+                                }
+                            }
+                        });
+                    }
+                    crate::action::KnowledgeAction::Index(path) => {
+                        let path = path.clone();
+                        let vector_service = Arc::clone(&self.vector_service);
+                        let action_tx = self.action_tx.clone();
+
+                        // Notify indexing started
+                        self.knowledge.handle_action(&knowledge);
+
+                        tokio::spawn(async move {
+                            // Read file content
+                            match tokio::fs::read_to_string(&path).await {
+                                Ok(content) => {
+                                    let chunks = vector_service.chunk_text(&content, 50);
+                                    let total = chunks.len();
+
+                                    for (i, chunk) in chunks.into_iter().enumerate() {
+                                        let mut chunk_with_path = chunk;
+                                        chunk_with_path.file_path = path.clone();
+                                        vector_service.add_chunks(&path, vec![chunk_with_path]).await;
+
+                                        let progress = (i + 1) as f32 / total as f32;
+                                        let _ = action_tx.send(Action::Knowledge(
+                                            crate::action::KnowledgeAction::IndexProgress(progress)
+                                        ));
+                                    }
+
+                                    tracing::info!("Indexed file: {}", path);
+                                }
+                                Err(e) => {
+                                    tracing::error!("Failed to read file for indexing: {}", e);
+                                }
+                            }
+                        });
+                    }
+                    _ => {}
+                }
                 self.knowledge.handle_action(&knowledge);
             }
             Action::Learning(learning) => {

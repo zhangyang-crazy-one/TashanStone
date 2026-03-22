@@ -118,8 +118,8 @@ impl AiService {
 
         match config.provider {
             AiProvider::OpenAI => self.openai_chat(&config, messages).await,
-            AiProvider::Gemini => Err(AiError::Config("Gemini not implemented".to_string())),
-            AiProvider::Ollama => Err(AiError::Config("Ollama not implemented".to_string())),
+            AiProvider::Gemini => self.gemini_chat(&config, messages).await,
+            AiProvider::Ollama => self.ollama_chat(&config, messages).await,
         }
     }
 
@@ -185,6 +185,169 @@ impl AiService {
             content: choice.message.content.clone(),
             model: config.model.clone(),
             finish_reason: choice.finish_reason.clone(),
+        })
+    }
+
+    /// Gemini chat implementation
+    async fn gemini_chat(
+        &self,
+        config: &ModelConfig,
+        messages: Vec<ChatMessage>,
+    ) -> Result<ChatCompletionResponse, AiError> {
+        let api_key = config.api_key.as_ref()
+            .ok_or_else(|| AiError::Config("Gemini API key not set".to_string()))?;
+
+        let client = reqwest::Client::new();
+        let base_url = config.base_url.as_deref().unwrap_or("https://generativelanguage.googleapis.com");
+
+        // Convert messages to Gemini format
+        let contents: Vec<serde_json::Value> = messages
+            .into_iter()
+            .filter(|m| m.role != MessageRole::System)
+            .map(|m| {
+                let role = match m.role {
+                    MessageRole::User => "user",
+                    MessageRole::Assistant => "model",
+                    MessageRole::System => "user", // Gemini doesn't have system role
+                };
+                serde_json::json!({
+                    "role": role,
+                    "parts": [{"text": m.content}]
+                })
+            })
+            .collect();
+
+        let request_body = serde_json::json!({
+            "contents": contents,
+            "generationConfig": {
+                "temperature": 0.7,
+                "maxOutputTokens": 2048,
+            }
+        });
+
+        let url = format!(
+            "{}/v1beta/models/{}:generateContent?key={}",
+            base_url, config.model, api_key
+        );
+
+        let response = client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&request_body)
+            .send()
+            .await
+            .map_err(|e| AiError::Network(e.to_string()))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(AiError::Api(format!("{}: {}", status, body)));
+        }
+
+        #[derive(Deserialize)]
+        struct GeminiResponse {
+            candidates: Vec<GeminiCandidate>,
+        }
+
+        #[derive(Deserialize)]
+        struct GeminiCandidate {
+            content: GeminiContent,
+        }
+
+        #[derive(Deserialize)]
+        struct GeminiContent {
+            parts: Vec<GeminiPart>,
+        }
+
+        #[derive(Deserialize)]
+        struct GeminiPart {
+            text: String,
+        }
+
+        let gemini_resp: GeminiResponse = response
+            .json()
+            .await
+            .map_err(|e| AiError::Parse(e.to_string()))?;
+
+        let content = gemini_resp.candidates
+            .first()
+            .and_then(|c| c.content.parts.first())
+            .map(|p| p.text.clone())
+            .ok_or_else(|| AiError::Parse("No content in response".to_string()))?;
+
+        Ok(ChatCompletionResponse {
+            content,
+            model: config.model.clone(),
+            finish_reason: "stop".to_string(),
+        })
+    }
+
+    /// Ollama chat implementation
+    async fn ollama_chat(
+        &self,
+        config: &ModelConfig,
+        messages: Vec<ChatMessage>,
+    ) -> Result<ChatCompletionResponse, AiError> {
+        let client = reqwest::Client::new();
+        let base_url = config.base_url.as_deref().unwrap_or("http://localhost:11434");
+
+        // Convert messages to Ollama format
+        let ollama_messages: Vec<serde_json::Value> = messages
+            .into_iter()
+            .map(|m| {
+                let role = match m.role {
+                    MessageRole::System => "system",
+                    MessageRole::User => "user",
+                    MessageRole::Assistant => "assistant",
+                };
+                serde_json::json!({
+                    "role": role,
+                    "content": m.content
+                })
+            })
+            .collect();
+
+        let request_body = serde_json::json!({
+            "model": config.model,
+            "messages": ollama_messages,
+            "stream": false,
+        });
+
+        let url = format!("{}/api/chat", base_url);
+
+        let response = client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&request_body)
+            .send()
+            .await
+            .map_err(|e| AiError::Network(e.to_string()))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(AiError::Api(format!("{}: {}", status, body)));
+        }
+
+        #[derive(Deserialize)]
+        struct OllamaResponse {
+            message: OllamaMessage,
+        }
+
+        #[derive(Deserialize)]
+        struct OllamaMessage {
+            content: String,
+        }
+
+        let ollama_resp: OllamaResponse = response
+            .json()
+            .await
+            .map_err(|e| AiError::Parse(e.to_string()))?;
+
+        Ok(ChatCompletionResponse {
+            content: ollama_resp.message.content,
+            model: config.model.clone(),
+            finish_reason: "stop".to_string(),
         })
     }
 

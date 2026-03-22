@@ -291,6 +291,16 @@ impl Editor {
         }
     }
 
+    /// Set scroll offset (for sync scrolling)
+    pub fn set_scroll_offset(&mut self, offset: usize) {
+        self.scroll_offset = offset;
+    }
+
+    /// Get current scroll offset
+    pub fn scroll_offset(&self) -> usize {
+        self.scroll_offset
+    }
+
     /// Insert a character at cursor
     fn insert_char(&mut self, c: char) {
         let pos = self.buffer.line_to_char(self.cursor_line) + self.cursor_col;
@@ -398,20 +408,31 @@ impl Editor {
             .block(
                 Block::default()
                     .title(self.current_file.as_deref().unwrap_or("Untitled"))
-                    .borders(ratatui::widgets::Borders::ALL),
+                    .borders(ratatui::widgets::Borders::ALL)
+                    .title_style(Style::default().fg(Color::Cyan)),
             )
             .scroll((self.scroll_offset as u16, 0));
 
         f.render_widget(paragraph, area);
 
-        // Render cursor
+        // Render cursor with visible block
         let cursor_x = self.cursor_col as u16;
-        let cursor_y = (self.cursor_line - self.scroll_offset) as u16;
-        if cursor_y < area.height && cursor_x < area.width {
-            f.set_cursor(
-                area.x + cursor_x,
-                area.y + cursor_y,
+        let cursor_y = (self.cursor_line.saturating_sub(self.scroll_offset)) as u16;
+        if cursor_y < area.height.saturating_sub(2) && cursor_x < area.width.saturating_sub(2) {
+            // Draw cursor as a highlighted block using a canvas
+            let cursor_area = ratatui::layout::Rect::new(
+                area.x + 1 + cursor_x,
+                area.y + 1 + cursor_y,
+                1,
+                1,
             );
+            let cursor_line = Line::from(vec![Span::styled(
+                " ",
+                Style::default().bg(Color::White).fg(Color::Black),
+            )]);
+            let cursor_para = Paragraph::new(cursor_line)
+                .style(Style::default().bg(Color::White));
+            f.render_widget(cursor_para, cursor_area);
         }
     }
 
@@ -516,6 +537,8 @@ impl Editor {
         let mut current_line: Vec<Span> = Vec::new();
         let mut in_code_block = false;
         let mut heading_level: usize = 0;
+        let mut in_blockquote = false;
+        let mut in_list = false;
 
         for event in parser {
             match event {
@@ -533,7 +556,11 @@ impl Editor {
                         2 => Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
                         _ => Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
                     };
-                    current_line.push(Span::styled("#".repeat(heading_level), style));
+                    if !current_line.is_empty() {
+                        lines.push(Line::from(current_line.clone()));
+                        current_line.clear();
+                    }
+                    current_line.push(Span::styled("#".repeat(heading_level) + " ", style));
                 }
                 pulldown_cmark::Event::End(pulldown_cmark::TagEnd::Heading(_)) => {
                     lines.push(Line::from(current_line.clone()));
@@ -542,46 +569,114 @@ impl Editor {
                 }
                 pulldown_cmark::Event::Start(pulldown_cmark::Tag::CodeBlock(_)) => {
                     in_code_block = true;
-                    current_line.push(Span::styled("```\n", Style::default().fg(Color::Magenta)));
-                }
-                pulldown_cmark::Event::End(pulldown_cmark::TagEnd::CodeBlock) => {
-                    in_code_block = false;
-                    current_line.push(Span::styled("```", Style::default().fg(Color::Magenta)));
-                }
-                pulldown_cmark::Event::Text(text) => {
-                    let style = if in_code_block {
-                        Style::default().fg(Color::White)
-                    } else if heading_level > 0 {
-                        match heading_level {
-                            1 => Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-                            2 => Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
-                            _ => Style::default().add_modifier(Modifier::BOLD),
-                        }
-                    } else {
-                        Style::default()
-                    };
-                    current_line.push(Span::styled(text.to_string(), style));
-                }
-                pulldown_cmark::Event::Code(code) => {
-                    current_line.push(Span::styled(code.to_string(), Style::default().fg(Color::Cyan)));
-                }
-                pulldown_cmark::Event::SoftBreak | pulldown_cmark::Event::HardBreak => {
                     if !current_line.is_empty() {
                         lines.push(Line::from(current_line.clone()));
                         current_line.clear();
                     }
+                    current_line.push(Span::styled("``` code ", Style::default().fg(Color::Magenta).add_modifier(Modifier::REVERSED)));
+                    lines.push(Line::from(current_line.clone()));
+                    current_line.clear();
+                }
+                pulldown_cmark::Event::End(pulldown_cmark::TagEnd::CodeBlock) => {
+                    in_code_block = false;
+                    current_line.clear();
+                    lines.push(Line::from(vec![Span::styled("```", Style::default().fg(Color::Magenta))]));
+                }
+                pulldown_cmark::Event::Start(pulldown_cmark::Tag::Paragraph) => {
+                    // Start of paragraph
+                }
+                pulldown_cmark::Event::End(pulldown_cmark::TagEnd::Paragraph) => {
+                    if !current_line.is_empty() {
+                        lines.push(Line::from(current_line.clone()));
+                        current_line.clear();
+                    }
+                    lines.push(Line::from(vec![Span::raw("")])); // Empty line between paragraphs
+                }
+                pulldown_cmark::Event::Start(pulldown_cmark::Tag::BlockQuote(_)) => {
+                    in_blockquote = true;
+                    current_line.push(Span::styled("│ ", Style::default().fg(Color::DarkGray)));
+                }
+                pulldown_cmark::Event::End(pulldown_cmark::TagEnd::BlockQuote(_)) => {
+                    in_blockquote = false;
+                    lines.push(Line::from(current_line.clone()));
+                    current_line.clear();
+                }
+                pulldown_cmark::Event::Start(pulldown_cmark::Tag::List(list_type)) => {
+                    in_list = true;
+                    // We'll handle list markers in the first text item
+                }
+                pulldown_cmark::Event::End(pulldown_cmark::TagEnd::List(_)) => {
+                    in_list = false;
+                }
+                pulldown_cmark::Event::Start(pulldown_cmark::Tag::Item) => {
+                    // List item start - we'll add bullet/number in text handler
+                }
+                pulldown_cmark::Event::End(pulldown_cmark::TagEnd::Item) => {
+                    lines.push(Line::from(current_line.clone()));
+                    current_line.clear();
+                }
+                pulldown_cmark::Event::Text(text) => {
+                    let text_owned = text.to_string();
+                    let style = if in_code_block {
+                        Style::default().fg(Color::White)
+                    } else if in_blockquote {
+                        Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)
+                    } else if heading_level > 0 {
+                        match heading_level {
+                            1 => Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                            2 => Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                            _ => Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                        }
+                    } else {
+                        Style::default()
+                    };
+
+                    // Handle list markers at start of text
+                    if in_list {
+                        for line in text_owned.lines() {
+                            if line.starts_with("- ") || line.starts_with("* ") {
+                                current_line.push(Span::styled("• ", Style::default().fg(Color::Cyan)));
+                                current_line.push(Span::styled(line[2..].to_string(), style));
+                            } else if line.starts_with("1. ") {
+                                current_line.push(Span::styled("1. ", Style::default().fg(Color::Cyan)));
+                                current_line.push(Span::styled(line[3..].to_string(), style));
+                            } else {
+                                current_line.push(Span::styled(line.to_string(), style));
+                            }
+                            lines.push(Line::from(current_line.clone()));
+                            current_line.clear();
+                        }
+                    } else {
+                        current_line.push(Span::styled(text_owned, style));
+                    }
+                }
+                pulldown_cmark::Event::Code(code) => {
+                    current_line.push(Span::styled(code.to_string(), Style::default().fg(Color::Cyan).add_modifier(Modifier::REVERSED)));
+                }
+                pulldown_cmark::Event::SoftBreak | pulldown_cmark::Event::HardBreak => {
+                    if !current_line.is_empty() && current_line != vec![Span::styled("│ ", Style::default().fg(Color::DarkGray))] {
+                        lines.push(Line::from(current_line.clone()));
+                        current_line.clear();
+                        if in_blockquote {
+                            current_line.push(Span::styled("│ ", Style::default().fg(Color::DarkGray)));
+                        }
+                    }
                 }
                 pulldown_cmark::Event::Start(pulldown_cmark::Tag::Emphasis) => {
-                    // We'll track this with the next text
+                    current_line.push(Span::styled("", Style::default().add_modifier(Modifier::ITALIC)));
                 }
                 pulldown_cmark::Event::End(pulldown_cmark::TagEnd::Emphasis) => {}
-                pulldown_cmark::Event::Start(pulldown_cmark::Tag::Strong) => {}
+                pulldown_cmark::Event::Start(pulldown_cmark::Tag::Strong) => {
+                    current_line.push(Span::styled("", Style::default().add_modifier(Modifier::BOLD)));
+                }
                 pulldown_cmark::Event::End(pulldown_cmark::TagEnd::Strong) => {}
-                pulldown_cmark::Event::Start(pulldown_cmark::Tag::Link { .. }) => {
-                    current_line.push(Span::styled("[", Style::default().fg(Color::Blue)));
+                pulldown_cmark::Event::Start(pulldown_cmark::Tag::Link { dest_url, .. }) => {
+                    current_line.push(Span::styled("[", Style::default().fg(Color::Blue).add_modifier(Modifier::UNDERLINED)));
+                    // Store URL for later in a different way if needed
+                    let _ = dest_url;
                 }
                 pulldown_cmark::Event::End(pulldown_cmark::TagEnd::Link) => {
-                    current_line.push(Span::styled("]", Style::default().fg(Color::Blue)));
+                    current_line.push(Span::styled("]", Style::default().fg(Color::Blue).add_modifier(Modifier::UNDERLINED)));
                 }
                 _ => {}
             }
@@ -603,7 +698,8 @@ impl Editor {
             .block(
                 Block::default()
                     .title(" Preview ")
-                    .borders(ratatui::widgets::Borders::ALL),
+                    .borders(ratatui::widgets::Borders::ALL)
+                    .title_style(Style::default().fg(Color::Green)),
             )
             .scroll((self.scroll_offset as u16, 0));
 

@@ -122,6 +122,7 @@ pub enum KnowledgeAction {
     Index(String),
     Search(String),
     SearchResults(Vec<SearchResult>),
+    IndexProgress(f32),
     AddToIndex { path: String, content: String },
     RemoveFromIndex(String),
 }

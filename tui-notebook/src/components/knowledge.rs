@@ -24,6 +24,8 @@ pub struct KnowledgePanel {
     is_indexing: bool,
     /// Index progress
     index_progress: f32,
+    /// Index job handle for cancellation
+    index_path: Option<String>,
 }
 
 impl KnowledgePanel {
@@ -35,7 +37,18 @@ impl KnowledgePanel {
             selected_index: 0,
             is_indexing: false,
             index_progress: 0.0,
+            index_path: None,
         }
+    }
+
+    /// Check if panel is open
+    pub fn is_open(&self) -> bool {
+        self.is_open
+    }
+
+    /// Toggle panel visibility
+    pub fn toggle(&mut self) {
+        self.is_open = !self.is_open;
     }
 
     /// Handle key events
@@ -76,18 +89,21 @@ impl KnowledgePanel {
             KnowledgeAction::Index(path) => {
                 self.is_indexing = true;
                 self.index_progress = 0.0;
-                // TODO: Start indexing
+                self.index_path = Some(path.clone());
                 tracing::info!("Indexing: {}", path);
             }
             KnowledgeAction::Search(query) => {
                 self.query = query.clone();
-                // TODO: Perform semantic search
                 tracing::info!("Semantic search: {}", query);
             }
             KnowledgeAction::SearchResults(results) => {
                 self.results = results.clone();
                 self.selected_index = 0;
                 self.is_indexing = false;
+                self.index_progress = 1.0;
+            }
+            KnowledgeAction::IndexProgress(progress) => {
+                self.index_progress = *progress;
             }
             _ => {}
         }

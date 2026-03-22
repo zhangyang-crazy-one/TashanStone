@@ -1,12 +1,13 @@
 //! Chat component - AI conversation panel
 
 use crate::action::{Action, ChatAction, ChatModel};
+use crate::services::ai::{AiProvider, ModelConfig};
 use crossterm::event::KeyEvent;
 use ratatui::{
     layout::Rect,
     style::{Color, Style},
     text::{Line, Span, Text},
-    widgets::{Block, List, ListItem, Paragraph},
+    widgets::{Block, Paragraph},
     Frame,
 };
 use ropey::Rope;
@@ -103,12 +104,21 @@ impl ChatPanel {
         match action {
             ChatAction::Send(msg) => {
                 self.is_streaming = true;
-                // TODO: Call AI API
+                // Add user message
+                self.add_message(MessageRole::User, msg.clone());
             }
             ChatAction::StreamResponse(chunk) => {
-                // Append streaming response
-                if let Some(last) = self.messages.back_mut() {
-                    last.content.push_str(chunk);
+                if self.is_streaming {
+                    // First chunk - add new AI message
+                    self.add_message(MessageRole::Assistant, chunk.clone());
+                    self.is_streaming = false;
+                } else {
+                    // Subsequent chunks - append to last AI message
+                    if let Some(last) = self.messages.back_mut() {
+                        if matches!(last.role, MessageRole::Assistant) {
+                            last.content.push_str(chunk);
+                        }
+                    }
                 }
             }
             ChatAction::Clear => {
@@ -133,6 +143,41 @@ impl ChatPanel {
         if self.messages.len() > 100 {
             self.messages.pop_front();
         }
+    }
+
+    /// Get model configuration for AI service
+    pub fn get_model_config(&self) -> ModelConfig {
+        match &self.model {
+            ChatModel::OpenAI { model } => ModelConfig {
+                provider: AiProvider::OpenAI,
+                model: model.clone(),
+                api_key: None, // Should be loaded from environment
+                base_url: None,
+            },
+            ChatModel::Gemini { model } => ModelConfig {
+                provider: AiProvider::Gemini,
+                model: model.clone(),
+                api_key: None, // Should be loaded from environment
+                base_url: None,
+            },
+            ChatModel::Ollama { model, base_url } => ModelConfig {
+                provider: AiProvider::Ollama,
+                model: model.clone(),
+                api_key: None,
+                base_url: Some(base_url.clone()),
+            },
+        }
+    }
+
+    /// Get all messages for AI service context
+    pub fn get_messages(&self) -> &VecDeque<ChatMessage> {
+        &self.messages
+    }
+
+    /// Add AI response message
+    pub fn add_ai_message(&mut self, content: String) {
+        self.is_streaming = false;
+        self.add_message(MessageRole::Assistant, content);
     }
 }
 
