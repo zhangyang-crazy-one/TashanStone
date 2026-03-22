@@ -12,6 +12,7 @@ mod app;
 mod components;
 mod models;
 mod services;
+mod theme;
 mod tui;
 
 use anyhow::Result;

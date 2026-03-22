@@ -1,1 +1,0 @@
-StreamReader<futures_util::stream::ErrInto<futures_util::stream::MapErr<impl Stream<Item = Result<tokio_util::bytes::Bytes, reqwest::Error>>, {closure@src/services/ai.rs:239:22: 239:25}>, _>, tokio_util::bytes::Bytes>

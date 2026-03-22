@@ -12,6 +12,7 @@ pub use crate::action::{Action, ComponentId, ChatAction};
 use crate::components::{chat::ChatPanel, editor::Editor, knowledge::KnowledgePanel, search::SearchPanel, sidebar::Sidebar, status::StatusBar, Component};
 use crate::services::ai::{AiService, ChatMessage, MessageRole};
 use crate::services::vector::VectorService;
+use crate::theme::ThemeManager;
 use crate::tui::Tui;
 use crate::app::focus::FocusManager;
 use std::sync::Arc;
@@ -48,6 +49,9 @@ pub struct App {
     /// Vector service for knowledge base
     vector_service: Arc<VectorService>,
 
+    /// Theme manager
+    theme_manager: ThemeManager,
+
     /// Shared scroll offset for synchronized scrolling
     scroll_offset: usize,
 
@@ -78,6 +82,7 @@ impl App {
             focus_manager: focus::FocusManager::new(),
             ai_service: AiService::new(),
             vector_service: Arc::new(VectorService::new()),
+            theme_manager: ThemeManager::new(),
             scroll_offset: 0,
             should_quit: false,
             action_tx,
@@ -124,11 +129,12 @@ impl App {
             let size = self.tui.size();
             let has_content = self.editor.has_content();
             let chat_open = self.chat.is_open();
+            let knowledge_open = self.knowledge.is_open();
 
             // Sync scroll offset to editor for synchronized scrolling
             self.editor.set_scroll_offset(self.scroll_offset);
 
-            let layout = Self::compute_layout(size, has_content, chat_open);
+            let layout = Self::compute_layout(size, has_content, chat_open, knowledge_open);
             let components = Components {
                 sidebar: &self.sidebar,
                 editor: &self.editor,
@@ -216,6 +222,11 @@ impl App {
                 self.knowledge.toggle();
                 return None;
             }
+            // Toggle theme
+            (crossterm::event::KeyModifiers::CONTROL, crossterm::event::KeyCode::Char('t')) => {
+                self.theme_manager.toggle();
+                return None;
+            }
             // Index current file
             (crossterm::event::KeyModifiers::CONTROL | crossterm::event::KeyModifiers::SHIFT, crossterm::event::KeyCode::Char('k')) => {
                 if let Some(path) = self.editor.current_file() {
@@ -264,7 +275,8 @@ impl App {
             let size = self.tui.size();
             let has_content = self.editor.has_content();
             let chat_open = self.chat.is_open();
-            let layout = Self::compute_layout(size, has_content, chat_open);
+            let knowledge_open = self.knowledge.is_open();
+            let layout = Self::compute_layout(size, has_content, chat_open, knowledge_open);
 
             let mouse_x = mouse.column;
             let mouse_y = mouse.row;
@@ -321,12 +333,13 @@ impl App {
             }
             Action::Chat(chat) => {
                 match &chat {
-                    ChatAction::Send(_msg) => {
+                    ChatAction::Send(msg) => {
                         // Get current chat model config
                         let model_config = self.chat.get_model_config();
+                        let user_message = msg.clone();
 
                         // Build messages from chat history
-                        let messages: Vec<ChatMessage> = self.chat.get_messages()
+                        let mut messages: Vec<ChatMessage> = self.chat.get_messages()
                             .iter()
                             .map(|m| ChatMessage {
                                 role: match m.role {
@@ -338,11 +351,40 @@ impl App {
                             })
                             .collect();
 
-                        // Spawn async task for AI call
+                        // Search knowledge base for context
+                        let vector_service = Arc::clone(&self.vector_service);
                         let action_tx = self.action_tx.clone();
+
+                        // Spawn async task for AI call with RAG
                         tokio::spawn(async move {
+                            // Search knowledge base for relevant context
+                            let context = match vector_service.search(&user_message, 5).await {
+                                Ok(results) if !results.is_empty() => {
+                                    let context_text: String = results
+                                        .iter()
+                                        .map(|r| format!("From {}:\n{}\n---\n", r.file_path, r.content))
+                                        .collect();
+                                    Some(context_text)
+                                }
+                                _ => None,
+                            };
+
+                            // Build final message with context
+                            let final_message = if let Some(ctx) = context {
+                                format!("Context from knowledge base:\n{}\n\nUser question: {}", ctx, user_message)
+                            } else {
+                                user_message
+                            };
+
+                            // Create messages with context included
+                            let mut final_messages = messages;
+                            final_messages.push(ChatMessage {
+                                role: MessageRole::User,
+                                content: final_message,
+                            });
+
                             let ai_service = AiService::with_config(model_config);
-                            match ai_service.chat(messages).await {
+                            match ai_service.chat(final_messages).await {
                                 Ok(response) => {
                                     let _ = action_tx.send(Action::Chat(ChatAction::StreamResponse(response.content)));
                                 }
@@ -496,7 +538,8 @@ impl App {
     fn render(&self, f: &mut Frame<'_>) {
         let has_content = self.editor.has_content();
         let chat_open = self.chat.is_open();
-        let layout = Self::compute_layout(f.size(), has_content, chat_open);
+        let knowledge_open = self.knowledge.is_open();
+        let layout = Self::compute_layout(f.size(), has_content, chat_open, knowledge_open);
         let components = Components {
             sidebar: &self.sidebar,
             editor: &self.editor,
@@ -530,6 +573,11 @@ impl App {
             components.chat.render(f, *area);
         }
 
+        // Render knowledge panel
+        if let Some(area) = layout.get("knowledge") {
+            components.knowledge.render(f, *area);
+        }
+
         // Render search overlay
         if components.search.is_open() {
             if let Some(area) = layout.get("search") {
@@ -544,18 +592,19 @@ impl App {
     }
 
     /// Compute the layout based on terminal size
-    fn compute_layout(area: ratatui::layout::Rect, has_content: bool, chat_open: bool) -> std::collections::HashMap<String, ratatui::layout::Rect> {
+    fn compute_layout(area: ratatui::layout::Rect, has_content: bool, chat_open: bool, knowledge_open: bool) -> std::collections::HashMap<String, ratatui::layout::Rect> {
         use ratatui::layout::{Constraint, Direction, Layout, Direction::*, Constraint::*};
 
         let mut layout = std::collections::HashMap::new();
 
         // Status bar at bottom
         let status_height = 1;
+        let knowledge_height = if knowledge_open { 20 } else { 0 };
         let main_area = ratatui::layout::Rect::new(
             area.x,
             area.y,
             area.width,
-            area.height - status_height,
+            area.height - status_height - knowledge_height,
         );
 
         // Calculate chat panel width (0 if not open)
@@ -606,9 +655,20 @@ impl App {
                 area.width - chat_width,
                 0,
                 chat_width,
-                area.height - status_height,
+                area.height - status_height - knowledge_height,
             );
             layout.insert("chat".to_string(), chat_area);
+        }
+
+        // Knowledge panel (bottom, only if open)
+        if knowledge_open {
+            let knowledge_area = ratatui::layout::Rect::new(
+                area.x,
+                area.height - status_height - knowledge_height,
+                area.width,
+                knowledge_height,
+            );
+            layout.insert("knowledge".to_string(), knowledge_area);
         }
 
         // Search overlay (centered)
