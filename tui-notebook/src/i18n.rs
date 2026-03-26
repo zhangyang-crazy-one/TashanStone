@@ -1,4 +1,4 @@
-use crate::action::ComponentId;
+use crate::action::{ComponentId, GraphFilter};
 use crate::services::config::ShortcutProfile;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -65,6 +65,14 @@ impl Translator {
         }
     }
 
+    pub fn graph_filter_label(self, filter: GraphFilter) -> &'static str {
+        match filter {
+            GraphFilter::All => self.text(TextKey::GraphFilterAll),
+            GraphFilter::LinksOnly => self.text(TextKey::GraphFilterLinks),
+            GraphFilter::BacklinksOnly => self.text(TextKey::GraphFilterBacklinks),
+        }
+    }
+
     pub fn language_name(self, language: Language) -> &'static str {
         match language {
             Language::En => self.text(TextKey::SettingsLanguageEnglish),
@@ -81,6 +89,7 @@ impl Translator {
                 "Space 1-5 focus   Space s save",
                 "Space / search    Space , settings",
                 "Space k AI        Space l knowledge",
+                "Space g graph     Space i index",
                 "i/a/o insert      h j k l move",
                 "w/b words         0/$ line",
                 "gg/G top/bottom   Ctrl+u/d half page",
@@ -95,6 +104,7 @@ impl Translator {
                 "Space 1-5 聚焦     Space s 保存",
                 "Space / 搜索       Space , 设置",
                 "Space k AI         Space l 知识",
+                "Space g 图谱       Space i 索引",
                 "i/a/o 插入         h j k l 移动",
                 "w/b 单词           0/$ 行首尾",
                 "gg/G 顶部/底部     Ctrl+u/d 半页",
@@ -107,8 +117,8 @@ impl Translator {
                 "",
                 "F1 Files     F2 Editor    F3 Preview",
                 "F4 AI        F5 Knowledge F6 Search",
-                "F7 Index     F8 Preview   F9 Save",
-                "F10 Settings F12 Quit",
+                "F7 Graph     F8 Preview   F9 Save",
+                "F10 Settings F11 Index   F12 Quit",
                 "",
                 "Esc back/close  Tab cycle focus",
                 "Ctrl+Q quit    Ctrl+K AI",
@@ -118,8 +128,8 @@ impl Translator {
                 "",
                 "F1 文件      F2 编辑器    F3 预览",
                 "F4 AI        F5 知识      F6 搜索",
-                "F7 建索引    F8 预览      F9 保存",
-                "F10 设置     F12 退出",
+                "F7 图谱      F8 预览      F9 保存",
+                "F10 设置     F11 索引     F12 退出",
                 "",
                 "Esc 返回/关闭   Tab 循环焦点",
                 "Ctrl+Q 退出    Ctrl+K AI",
@@ -311,6 +321,28 @@ pub enum TextKey {
     KeyboardNoteTerminalLeader,
     KeyboardNoteIdeCompatible,
     KeyboardNoteEscape,
+    GraphTitle,
+    GraphSubtitle,
+    GraphBadgeLocal,
+    GraphBadgePinned,
+    GraphTreeTitle,
+    GraphSelectedNodeTitle,
+    GraphExplorerStateTitle,
+    GraphEmptyNoFile,
+    GraphEmptyNoRelations,
+    GraphNoSelection,
+    GraphRootLabel,
+    GraphCycleLabel,
+    GraphUnresolvedLabel,
+    GraphFooterHint,
+    GraphStateFollowCurrent,
+    GraphStatePinned,
+    GraphStatePressPin,
+    GraphStateLazyExpand,
+    GraphStateFilter,
+    GraphFilterAll,
+    GraphFilterLinks,
+    GraphFilterBacklinks,
     ConfirmDeleteTitle,
     ConfirmDeleteWarning,
     ConfirmDeleteButton,
@@ -344,9 +376,18 @@ pub enum TextKey {
     EditorNewDocumentHeading,
     EditorNewDocumentBody,
     EditorCalloutNote,
+    EditorCalloutAbstract,
+    EditorCalloutInfo,
     EditorCalloutTip,
+    EditorCalloutSuccess,
+    EditorCalloutQuestion,
     EditorCalloutImportant,
     EditorCalloutWarning,
+    EditorCalloutFailure,
+    EditorCalloutDanger,
+    EditorCalloutBug,
+    EditorCalloutExample,
+    EditorCalloutQuote,
     EditorCalloutCaution,
     EditorImageBadge,
     EditorHtmlBadge,
@@ -435,8 +476,12 @@ fn en_text(key: TextKey) -> &'static str {
         TextKey::ShortcutHintInsertLeader => "Esc Normal  Ctrl+K AI  Ctrl+Q Quit  Ctrl+G Help",
         TextKey::ShortcutHintNormalLeader => "Space leader  i Insert  p Preview  / Search  ? Help",
         TextKey::ShortcutHintPreview => "j/k Scroll  Tab Next  Enter Open  Esc Back",
-        TextKey::ShortcutHintGlobalLeader => "Tab Cycle  Shift+Tab Back  Space 1-5 Focus  ? Help",
-        TextKey::ShortcutHintIde => "F1-F5 Focus  F6 Search  F8 Preview  F9 Save  F10 Settings",
+        TextKey::ShortcutHintGlobalLeader => {
+            "Tab Cycle  Shift+Tab Back  Space 1-5 Focus  Space g Graph"
+        }
+        TextKey::ShortcutHintIde => {
+            "F1-F5 Focus  F6 Search  F7 Graph  F9 Save  F10 Settings"
+        }
         TextKey::ShortcutProfileTerminalLeader => "Terminal Leader",
         TextKey::ShortcutProfileIdeCompatible => "IDE Compatible",
         TextKey::KeyboardNoteTerminalLeader => {
@@ -446,6 +491,30 @@ fn en_text(key: TextKey) -> &'static str {
             "IDE Compatible: F1-F12 focus/actions + Ctrl+Q/Ctrl+K fallback."
         }
         TextKey::KeyboardNoteEscape => "Esc always returns or closes without requiring the mouse.",
+        TextKey::GraphTitle => "Graph Explorer",
+        TextKey::GraphSubtitle => "Connected notes around the current note",
+        TextKey::GraphBadgeLocal => "LOCAL GRAPH",
+        TextKey::GraphBadgePinned => "PINNED",
+        TextKey::GraphTreeTitle => "TREE • CURRENT NOTE",
+        TextKey::GraphSelectedNodeTitle => "SELECTED NODE",
+        TextKey::GraphExplorerStateTitle => "EXPLORER STATE",
+        TextKey::GraphEmptyNoFile => "Open a note to inspect its local graph.",
+        TextKey::GraphEmptyNoRelations => "No links, backlinks, or tag relations match this filter.",
+        TextKey::GraphNoSelection => "Move selection to inspect a related note.",
+        TextKey::GraphRootLabel => "ROOT",
+        TextKey::GraphCycleLabel => "Cycle detected in the current branch.",
+        TextKey::GraphUnresolvedLabel => "Target note is unresolved in this workspace.",
+        TextKey::GraphFooterHint => {
+            "↑↓ Move  → Expand  ← Collapse  o Open  p Pin  f Filter  Esc Close"
+        }
+        TextKey::GraphStateFollowCurrent => "Root follows the current note",
+        TextKey::GraphStatePinned => "Pinned keeps this note stable",
+        TextKey::GraphStatePressPin => "Press p to pin or unpin the context",
+        TextKey::GraphStateLazyExpand => "Expand loads one hop at a time",
+        TextKey::GraphStateFilter => "Filter:",
+        TextKey::GraphFilterAll => "All",
+        TextKey::GraphFilterLinks => "Links",
+        TextKey::GraphFilterBacklinks => "Backlinks",
         TextKey::ConfirmDeleteTitle => "Confirm",
         TextKey::ConfirmDeleteWarning => "This action cannot be undone.",
         TextKey::ConfirmDeleteButton => "Delete",
@@ -487,9 +556,18 @@ fn en_text(key: TextKey) -> &'static str {
         TextKey::EditorNewDocumentHeading => "# New Document",
         TextKey::EditorNewDocumentBody => "Start writing here...",
         TextKey::EditorCalloutNote => "NOTE",
+        TextKey::EditorCalloutAbstract => "ABSTRACT",
+        TextKey::EditorCalloutInfo => "INFO",
         TextKey::EditorCalloutTip => "TIP",
+        TextKey::EditorCalloutSuccess => "SUCCESS",
+        TextKey::EditorCalloutQuestion => "QUESTION",
         TextKey::EditorCalloutImportant => "IMPORTANT",
         TextKey::EditorCalloutWarning => "WARNING",
+        TextKey::EditorCalloutFailure => "FAILURE",
+        TextKey::EditorCalloutDanger => "DANGER",
+        TextKey::EditorCalloutBug => "BUG",
+        TextKey::EditorCalloutExample => "EXAMPLE",
+        TextKey::EditorCalloutQuote => "QUOTE",
         TextKey::EditorCalloutCaution => "CAUTION",
         TextKey::EditorImageBadge => "IMAGE",
         TextKey::EditorHtmlBadge => "HTML",
@@ -579,13 +657,41 @@ fn zh_text(key: TextKey) -> &'static str {
         TextKey::ShortcutHintInsertLeader => "Esc 普通  Ctrl+K AI  Ctrl+Q 退出  Ctrl+G 帮助",
         TextKey::ShortcutHintNormalLeader => "Space 引导  i 插入  p 预览  / 搜索  ? 帮助",
         TextKey::ShortcutHintPreview => "j/k 滚动  Tab 下一个  Enter 打开  Esc 返回",
-        TextKey::ShortcutHintGlobalLeader => "Tab 循环  Shift+Tab 返回  Space 1-5 聚焦  ? 帮助",
-        TextKey::ShortcutHintIde => "F1-F5 聚焦  F6 搜索  F8 预览  F9 保存  F10 设置",
+        TextKey::ShortcutHintGlobalLeader => {
+            "Tab 循环  Shift+Tab 返回  Space 1-5 聚焦  Space g 图谱"
+        }
+        TextKey::ShortcutHintIde => {
+            "F1-F5 聚焦  F6 搜索  F7 图谱  F9 保存  F10 设置"
+        }
         TextKey::ShortcutProfileTerminalLeader => "终端 Leader",
         TextKey::ShortcutProfileIdeCompatible => "IDE 兼容",
         TextKey::KeyboardNoteTerminalLeader => "终端 Leader：Space 引导键 + 类 Vim 编辑导航。",
         TextKey::KeyboardNoteIdeCompatible => "IDE 兼容：F1-F12 聚焦/动作 + Ctrl+Q/Ctrl+K 兜底。",
         TextKey::KeyboardNoteEscape => "Esc 始终可返回或关闭，无需鼠标。",
+        TextKey::GraphTitle => "关系图谱",
+        TextKey::GraphSubtitle => "围绕当前笔记的本地关联",
+        TextKey::GraphBadgeLocal => "LOCAL GRAPH",
+        TextKey::GraphBadgePinned => "PINNED",
+        TextKey::GraphTreeTitle => "树 • 当前笔记",
+        TextKey::GraphSelectedNodeTitle => "已选节点",
+        TextKey::GraphExplorerStateTitle => "图谱状态",
+        TextKey::GraphEmptyNoFile => "先打开一篇笔记，再查看它的本地图谱。",
+        TextKey::GraphEmptyNoRelations => "当前筛选下没有链接、反链或标签关联。",
+        TextKey::GraphNoSelection => "移动选择后，这里会显示节点详情。",
+        TextKey::GraphRootLabel => "ROOT",
+        TextKey::GraphCycleLabel => "当前分支检测到循环引用。",
+        TextKey::GraphUnresolvedLabel => "该目标笔记在当前工作区中无法解析。",
+        TextKey::GraphFooterHint => {
+            "↑↓ 移动  → 展开  ← 收起  o 打开  p 固定  f 筛选  Esc 关闭"
+        }
+        TextKey::GraphStateFollowCurrent => "根节点会跟随当前笔记",
+        TextKey::GraphStatePinned => "已固定，保持当前上下文不变",
+        TextKey::GraphStatePressPin => "按 p 可固定或取消固定",
+        TextKey::GraphStateLazyExpand => "展开时按一跳一跳加载",
+        TextKey::GraphStateFilter => "筛选：",
+        TextKey::GraphFilterAll => "全部",
+        TextKey::GraphFilterLinks => "链接",
+        TextKey::GraphFilterBacklinks => "反链",
         TextKey::ConfirmDeleteTitle => "确认",
         TextKey::ConfirmDeleteWarning => "此操作不可撤销。",
         TextKey::ConfirmDeleteButton => "删除",
@@ -619,9 +725,18 @@ fn zh_text(key: TextKey) -> &'static str {
         TextKey::EditorNewDocumentHeading => "# 新文档",
         TextKey::EditorNewDocumentBody => "从这里开始写作...",
         TextKey::EditorCalloutNote => "注记",
+        TextKey::EditorCalloutAbstract => "摘要",
+        TextKey::EditorCalloutInfo => "信息",
         TextKey::EditorCalloutTip => "提示",
+        TextKey::EditorCalloutSuccess => "完成",
+        TextKey::EditorCalloutQuestion => "问题",
         TextKey::EditorCalloutImportant => "重要",
         TextKey::EditorCalloutWarning => "警告",
+        TextKey::EditorCalloutFailure => "失败",
+        TextKey::EditorCalloutDanger => "危险",
+        TextKey::EditorCalloutBug => "缺陷",
+        TextKey::EditorCalloutExample => "示例",
+        TextKey::EditorCalloutQuote => "引用",
         TextKey::EditorCalloutCaution => "注意",
         TextKey::EditorImageBadge => "图片",
         TextKey::EditorHtmlBadge => "HTML",

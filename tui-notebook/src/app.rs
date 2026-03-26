@@ -25,6 +25,7 @@ use crate::components::{
     chat::ChatPanel,
     confirm::ConfirmDialog,
     editor::Editor,
+    graph_explorer::GraphExplorer,
     knowledge::KnowledgePanel,
     new_file::NewFileDialog,
     search::SearchPanel,
@@ -37,7 +38,7 @@ use crate::i18n::{Language, TextKey};
 use crate::services::ai::{AiService, ChatMessage, MessageRole};
 use crate::services::config::{AppSettings, ConfigService, ShortcutProfile};
 use crate::services::vector::VectorService;
-use crate::services::workspace::{WorkspaceIndex, WorkspaceLinkPreview};
+use crate::services::workspace::{GraphRoot, WorkspaceIndex, WorkspaceLinkPreview};
 use crate::theme::{Theme, ThemeManager};
 use crate::tui::Tui;
 use std::path::{Path, PathBuf};
@@ -52,6 +53,7 @@ struct Components<'a> {
     search: &'a SearchPanel,
     chat: &'a ChatPanel,
     knowledge: &'a KnowledgePanel,
+    graph: &'a GraphExplorer,
     status: &'a StatusBar,
     settings: &'a SettingsModal,
     new_file: &'a NewFileDialog,
@@ -83,6 +85,7 @@ enum ShortcutCommand {
     Save,
     ToggleChat,
     ToggleKnowledge,
+    OpenGraphExplorer,
     IndexCurrentFile,
     ToggleHelp,
     OpenQuitDialog,
@@ -121,6 +124,7 @@ pub struct App {
     search: SearchPanel,
     chat: ChatPanel,
     knowledge: KnowledgePanel,
+    graph_explorer: GraphExplorer,
     status: StatusBar,
     settings_modal: SettingsModal,
     new_file_dialog: NewFileDialog,
@@ -209,6 +213,7 @@ impl App {
             search: SearchPanel::new(),
             chat: ChatPanel::new(),
             knowledge: KnowledgePanel::new(),
+            graph_explorer: GraphExplorer::new(),
             status: StatusBar::new(),
             settings_modal: SettingsModal::new(),
             new_file_dialog: NewFileDialog::new(),
@@ -269,6 +274,7 @@ impl App {
         self.search.set_language(self.language);
         self.chat.set_language(self.language);
         self.knowledge.set_language(self.language);
+        self.graph_explorer.set_language(self.language);
         self.status.set_language(self.language);
         self.settings_modal.set_language(self.language);
         self.new_file_dialog.set_language(self.language);
@@ -355,6 +361,34 @@ impl App {
         self.knowledge.set_document_context(context);
     }
 
+    fn graph_root_for_current_file(&self) -> Option<GraphRoot> {
+        let current_file = self.editor.current_file()?;
+        let current_path = PathBuf::from(&current_file);
+
+        if let Some(root) = self.workspace_index.graph_root_for_path(&current_path) {
+            return Some(root);
+        }
+
+        let relative_path = self.workspace_relative_path(&current_file);
+        let title = self.editor.current_file_name();
+        Some(GraphRoot {
+            title,
+            relative_path: if relative_path.is_empty() {
+                current_file
+            } else {
+                relative_path
+            },
+            absolute_path: Some(current_path.to_string_lossy().to_string()),
+            children: Vec::new(),
+        })
+    }
+
+    fn sync_graph_explorer_root_from_current_file(&mut self) {
+        if self.graph_explorer.is_open() && !self.graph_explorer.is_pinned() {
+            self.graph_explorer.set_root(self.graph_root_for_current_file());
+        }
+    }
+
     fn request_workspace_index_reload(&mut self) {
         self.workspace_index_request_id = self.workspace_index_request_id.wrapping_add(1);
         let request_id = self.workspace_index_request_id;
@@ -397,6 +431,7 @@ impl App {
             self.workspace_index = index;
             self.workspace_index_loading = false;
             self.sync_knowledge_panel();
+            self.sync_graph_explorer_root_from_current_file();
         }
 
         if should_clear_receiver {
@@ -528,6 +563,7 @@ impl App {
 
     fn has_modal_open(&self) -> bool {
         self.settings_modal.is_open()
+            || self.graph_explorer.is_open()
             || self.new_file_dialog.is_open()
             || self.confirm_dialog.is_open()
     }
@@ -812,6 +848,7 @@ impl App {
         self.editor
             .set_cursor_position(preview.line_number.unwrap_or(1).saturating_sub(1), 0);
         self.sync_knowledge_panel();
+        self.sync_graph_explorer_root_from_current_file();
         self.focus_component(ComponentId::Editor);
         self.clear_link_preview();
         true
@@ -915,6 +952,7 @@ impl App {
                 search: &self.search,
                 chat: &self.chat,
                 knowledge: &self.knowledge,
+                graph: &self.graph_explorer,
                 status: &self.status,
                 settings: &self.settings_modal,
                 new_file: &self.new_file_dialog,
@@ -1018,6 +1056,10 @@ impl App {
                     self.focus_component(ComponentId::Editor);
                 }
             }
+            ShortcutCommand::OpenGraphExplorer => {
+                self.clear_pending_sequences();
+                return Some(Action::Graph(crate::action::GraphAction::Open));
+            }
             ShortcutCommand::IndexCurrentFile => {
                 if let Some(path) = self.editor.current_file() {
                     return Some(Action::Knowledge(crate::action::KnowledgeAction::Index(
@@ -1107,10 +1149,11 @@ impl App {
             (_, KeyCode::F(4)) => Some(ShortcutCommand::ToggleChat),
             (_, KeyCode::F(5)) => Some(ShortcutCommand::ToggleKnowledge),
             (_, KeyCode::F(6)) => Some(ShortcutCommand::OpenSearch),
-            (_, KeyCode::F(7)) => Some(ShortcutCommand::IndexCurrentFile),
+            (_, KeyCode::F(7)) => Some(ShortcutCommand::OpenGraphExplorer),
             (_, KeyCode::F(8)) => Some(ShortcutCommand::EnterPreview),
             (_, KeyCode::F(9)) => Some(ShortcutCommand::Save),
             (_, KeyCode::F(10)) => Some(ShortcutCommand::OpenSettings),
+            (_, KeyCode::F(11)) => Some(ShortcutCommand::IndexCurrentFile),
             (_, KeyCode::F(12)) => Some(ShortcutCommand::OpenQuitDialog),
             (KeyModifiers::NONE, KeyCode::Tab) if !self.in_text_input_context() => {
                 Some(ShortcutCommand::CycleFocus(true))
@@ -1141,6 +1184,7 @@ impl App {
             KeyCode::Char(',') => Some(ShortcutCommand::OpenSettings),
             KeyCode::Char('k') | KeyCode::Char('K') => Some(ShortcutCommand::ToggleChat),
             KeyCode::Char('l') | KeyCode::Char('L') => Some(ShortcutCommand::ToggleKnowledge),
+            KeyCode::Char('g') | KeyCode::Char('G') => Some(ShortcutCommand::OpenGraphExplorer),
             KeyCode::Char('i') | KeyCode::Char('I') => Some(ShortcutCommand::IndexCurrentFile),
             KeyCode::Char('q') | KeyCode::Char('Q') => Some(ShortcutCommand::OpenQuitDialog),
             _ => None,
@@ -1232,6 +1276,10 @@ impl App {
                 self.apply_settings_update_if_needed();
                 return None;
             }
+        }
+
+        if self.graph_explorer.is_open() {
+            return self.graph_explorer.handle_key_event(key);
         }
 
         if self.shortcut_help_open {
@@ -1341,6 +1389,10 @@ impl App {
             if handled {
                 return None;
             }
+        }
+
+        if self.graph_explorer.is_open() {
+            return None;
         }
 
         // Handle mouse wheel scrolling
@@ -1473,7 +1525,12 @@ impl App {
                 self.handle_file_action(file);
             }
             Action::Editor(editor) => {
+                let previous_file = self.editor.current_file();
                 self.editor.handle_action(&editor);
+                if self.editor.current_file() != previous_file {
+                    self.sync_knowledge_panel();
+                    self.sync_graph_explorer_root_from_current_file();
+                }
             }
             Action::Search(search) => match &search {
                 crate::action::SearchAction::Open => {
@@ -1501,6 +1558,7 @@ impl App {
                     self.editor
                         .set_cursor_position(line_number.saturating_sub(1), 0);
                     self.sync_knowledge_panel();
+                    self.sync_graph_explorer_root_from_current_file();
                     self.focus_component(ComponentId::Editor);
                     self.clear_link_preview();
                     self.search
@@ -1715,6 +1773,9 @@ impl App {
                 }
                 self.knowledge.handle_action(&knowledge);
             }
+            Action::Graph(graph) => {
+                self.handle_graph_action(graph);
+            }
             Action::Learning(learning) => {
                 self.handle_learning_action(learning);
             }
@@ -1778,6 +1839,7 @@ impl App {
             crate::action::FileAction::Select(path) => {
                 self.editor.load_file(&path);
                 self.sync_knowledge_panel();
+                self.sync_graph_explorer_root_from_current_file();
                 self.focus_component(ComponentId::Editor);
                 self.clear_link_preview();
             }
@@ -1791,7 +1853,9 @@ impl App {
                 } else {
                     self.sidebar.reload();
                     self.editor.load_file(path.to_string_lossy().as_ref());
+                    self.sync_knowledge_panel();
                     self.reload_workspace_index();
+                    self.sync_graph_explorer_root_from_current_file();
                     self.focus_component(ComponentId::Editor);
                     self.clear_link_preview();
                 }
@@ -1801,6 +1865,8 @@ impl App {
                 if self.editor.current_file().as_deref() == Some(path.as_str()) {
                     let fallback = self.workspace_root.join("notes.md");
                     self.editor.create_file(fallback.to_string_lossy().as_ref());
+                    self.sync_knowledge_panel();
+                    self.sync_graph_explorer_root_from_current_file();
                 }
                 self.reload_workspace_index();
                 self.clear_link_preview();
@@ -1809,6 +1875,8 @@ impl App {
                 self.sidebar.rename_file(&old, &new);
                 if self.editor.current_file().as_deref() == Some(old.as_str()) {
                     self.editor.load_file(&new);
+                    self.sync_knowledge_panel();
+                    self.sync_graph_explorer_root_from_current_file();
                 }
                 self.reload_workspace_index();
                 self.clear_link_preview();
@@ -1824,6 +1892,53 @@ impl App {
                 self.editor.save_all();
                 self.reload_workspace_index();
                 self.clear_link_preview();
+            }
+        }
+    }
+
+    fn handle_graph_action(&mut self, graph: crate::action::GraphAction) {
+        match graph {
+            crate::action::GraphAction::Open => {
+                self.clear_link_preview();
+                self.graph_explorer.open(self.graph_root_for_current_file());
+            }
+            crate::action::GraphAction::Close => {
+                self.graph_explorer.close();
+                self.refresh_link_preview_for_focus();
+            }
+            crate::action::GraphAction::SyncRootFromCurrentFile => {
+                self.sync_graph_explorer_root_from_current_file();
+            }
+            crate::action::GraphAction::TogglePin => {
+                self.graph_explorer.toggle_pin();
+            }
+            crate::action::GraphAction::MoveSelection(delta) => {
+                self.graph_explorer.move_selection(delta);
+            }
+            crate::action::GraphAction::ExpandSelected => {
+                if let Some(path) = self.graph_explorer.request_expand_selected() {
+                    let children = self.workspace_index.graph_children_for_relative_path(&path);
+                    self.graph_explorer.set_loaded_children(path, children);
+                }
+            }
+            crate::action::GraphAction::CollapseSelected => {
+                self.graph_explorer.collapse_selected();
+            }
+            crate::action::GraphAction::OpenSelected => {
+                if let Some(path) = self.graph_explorer.selected_absolute_path() {
+                    self.editor.load_file(&path);
+                    if let Some(line_number) = self.graph_explorer.selected_line_number() {
+                        self.editor
+                            .set_cursor_position(line_number.saturating_sub(1), 0);
+                    }
+                    self.sync_knowledge_panel();
+                    self.sync_graph_explorer_root_from_current_file();
+                    self.focus_component(ComponentId::Editor);
+                    self.clear_link_preview();
+                }
+            }
+            crate::action::GraphAction::SetFilter(filter) => {
+                self.graph_explorer.set_filter(filter);
             }
         }
     }
@@ -2196,6 +2311,7 @@ impl App {
             search: &self.search,
             chat: &self.chat,
             knowledge: &self.knowledge,
+            graph: &self.graph_explorer,
             status: &self.status,
             settings: &self.settings_modal,
             new_file: &self.new_file_dialog,
@@ -2275,8 +2391,13 @@ impl App {
             components.status.render(f, *area);
         }
 
+        if components.graph.is_open() {
+            components.graph.render(f, f.area());
+        }
+
         if let Some(preview) = components.link_preview {
             if !components.settings.is_open()
+                && !components.graph.is_open()
                 && !components.new_file.is_open()
                 && !components.confirm.is_open()
                 && !components.shortcut_help_open
@@ -2299,6 +2420,7 @@ impl App {
         }
 
         if !components.settings.is_open()
+            && !components.graph.is_open()
             && !components.new_file.is_open()
             && !components.confirm.is_open()
             && components.shortcut_help_open
@@ -2312,6 +2434,7 @@ impl App {
         }
 
         if !components.settings.is_open()
+            && !components.graph.is_open()
             && !components.new_file.is_open()
             && !components.confirm.is_open()
             && !components.shortcut_help_open

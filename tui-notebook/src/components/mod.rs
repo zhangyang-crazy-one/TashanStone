@@ -6,6 +6,7 @@
 pub mod chat;
 pub mod confirm;
 pub mod editor;
+pub mod graph_explorer;
 pub mod knowledge;
 pub mod new_file;
 pub mod search;

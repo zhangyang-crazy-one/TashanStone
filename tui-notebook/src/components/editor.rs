@@ -158,6 +158,8 @@ enum MdBlock {
     /// Block quote
     BlockQuote {
         kind: Option<CalloutKind>,
+        title: Option<InlineLine>,
+        collapsed: bool,
         lines: Vec<InlineLine>,
         depth: usize,
     },
@@ -213,9 +215,18 @@ struct InlineSegment {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CalloutKind {
     Note,
+    Abstract,
+    Info,
     Tip,
+    Success,
+    Question,
     Important,
     Warning,
+    Failure,
+    Danger,
+    Bug,
+    Example,
+    Quote,
     Caution,
 }
 
@@ -858,6 +869,72 @@ fn to_callout_kind(kind: pulldown_cmark::BlockQuoteKind) -> CalloutKind {
     }
 }
 
+fn callout_kind_from_marker(marker: &str) -> Option<CalloutKind> {
+    match marker.trim().to_ascii_lowercase().as_str() {
+        "note" => Some(CalloutKind::Note),
+        "abstract" | "summary" | "tldr" => Some(CalloutKind::Abstract),
+        "info" => Some(CalloutKind::Info),
+        "tip" | "hint" => Some(CalloutKind::Tip),
+        "success" | "check" | "done" => Some(CalloutKind::Success),
+        "question" | "help" | "faq" => Some(CalloutKind::Question),
+        "important" => Some(CalloutKind::Important),
+        "warning" | "attention" => Some(CalloutKind::Warning),
+        "failure" | "fail" | "missing" => Some(CalloutKind::Failure),
+        "danger" | "error" => Some(CalloutKind::Danger),
+        "bug" => Some(CalloutKind::Bug),
+        "example" => Some(CalloutKind::Example),
+        "quote" | "cite" => Some(CalloutKind::Quote),
+        "caution" => Some(CalloutKind::Caution),
+        _ => None,
+    }
+}
+
+fn inline_line_from_text(text: &str) -> InlineLine {
+    parse_special_inline_segments(text, false, false, false)
+}
+
+fn parse_callout_metadata(
+    fallback_kind: Option<CalloutKind>,
+    lines: Vec<InlineLine>,
+) -> (
+    Option<CalloutKind>,
+    Option<InlineLine>,
+    bool,
+    Vec<InlineLine>,
+) {
+    let Some(first_line) = lines.first() else {
+        return (fallback_kind, None, false, lines);
+    };
+
+    let plain = plain_text_from_line(first_line);
+    let trimmed = plain.trim();
+    if !trimmed.starts_with("[!") {
+        return (fallback_kind, None, false, lines);
+    }
+
+    let Some(close_idx) = trimmed.find(']') else {
+        return (fallback_kind, None, false, lines);
+    };
+
+    let marker = &trimmed[2..close_idx];
+    let Some(kind) = callout_kind_from_marker(marker).or(fallback_kind) else {
+        return (fallback_kind, None, false, lines);
+    };
+
+    let rest = trimmed[close_idx + 1..].trim_start();
+    let (collapsed, title_text) = if let Some(remaining) = rest.strip_prefix('-') {
+        (true, remaining.trim())
+    } else if let Some(remaining) = rest.strip_prefix('+') {
+        (false, remaining.trim())
+    } else {
+        (false, rest.trim())
+    };
+
+    let title = (!title_text.is_empty()).then(|| inline_line_from_text(title_text));
+    let body_lines = lines.into_iter().skip(1).collect();
+    (Some(kind), title, collapsed, body_lines)
+}
+
 /// Parse Markdown text into blocks
 fn parse_markdown(md_text: &str) -> Vec<MdBlock> {
     use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
@@ -961,9 +1038,13 @@ fn parse_markdown(md_text: &str) -> Vec<MdBlock> {
                     if existing.depth > 1 {
                         existing.depth -= 1;
                     } else if let Some(mut finished) = quote.take() {
+                        let (kind, title, collapsed, lines) =
+                            parse_callout_metadata(finished.kind, finished.builder.take_lines());
                         blocks.push(MdBlock::BlockQuote {
-                            kind: finished.kind,
-                            lines: finished.builder.take_lines(),
+                            kind,
+                            title,
+                            collapsed,
+                            lines,
                             depth: finished.depth,
                         });
                     }
@@ -1895,6 +1976,22 @@ fn callout_styles_localized(
                 .add_modifier(Modifier::BOLD),
             Style::default().fg(Color::Rgb(97, 175, 239)),
         ),
+        Some(CalloutKind::Abstract) => (
+            format!(" {} ", t.text(TextKey::EditorCalloutAbstract)),
+            Style::default()
+                .fg(Color::Rgb(86, 182, 194))
+                .bg(Color::Rgb(24, 46, 48))
+                .add_modifier(Modifier::BOLD),
+            Style::default().fg(Color::Rgb(86, 182, 194)),
+        ),
+        Some(CalloutKind::Info) => (
+            format!(" {} ", t.text(TextKey::EditorCalloutInfo)),
+            Style::default()
+                .fg(Color::Rgb(97, 175, 239))
+                .bg(Color::Rgb(24, 40, 58))
+                .add_modifier(Modifier::BOLD),
+            Style::default().fg(Color::Rgb(97, 175, 239)),
+        ),
         Some(CalloutKind::Tip) => (
             format!(" {} ", t.text(TextKey::EditorCalloutTip)),
             Style::default()
@@ -1902,6 +1999,22 @@ fn callout_styles_localized(
                 .bg(Color::Rgb(31, 50, 31))
                 .add_modifier(Modifier::BOLD),
             Style::default().fg(Color::Rgb(152, 195, 121)),
+        ),
+        Some(CalloutKind::Success) => (
+            format!(" {} ", t.text(TextKey::EditorCalloutSuccess)),
+            Style::default()
+                .fg(Color::Rgb(152, 195, 121))
+                .bg(Color::Rgb(31, 50, 31))
+                .add_modifier(Modifier::BOLD),
+            Style::default().fg(Color::Rgb(152, 195, 121)),
+        ),
+        Some(CalloutKind::Question) => (
+            format!(" {} ", t.text(TextKey::EditorCalloutQuestion)),
+            Style::default()
+                .fg(Color::Rgb(97, 175, 239))
+                .bg(Color::Rgb(24, 40, 58))
+                .add_modifier(Modifier::BOLD),
+            Style::default().fg(Color::Rgb(97, 175, 239)),
         ),
         Some(CalloutKind::Important) => (
             format!(" {} ", t.text(TextKey::EditorCalloutImportant)),
@@ -1918,6 +2031,46 @@ fn callout_styles_localized(
                 .bg(Color::Rgb(64, 24, 24))
                 .add_modifier(Modifier::BOLD),
             Style::default().fg(Color::Rgb(224, 108, 117)),
+        ),
+        Some(CalloutKind::Failure) => (
+            format!(" {} ", t.text(TextKey::EditorCalloutFailure)),
+            Style::default()
+                .fg(Color::Rgb(224, 108, 117))
+                .bg(Color::Rgb(64, 24, 24))
+                .add_modifier(Modifier::BOLD),
+            Style::default().fg(Color::Rgb(224, 108, 117)),
+        ),
+        Some(CalloutKind::Danger) => (
+            format!(" {} ", t.text(TextKey::EditorCalloutDanger)),
+            Style::default()
+                .fg(Color::Rgb(224, 108, 117))
+                .bg(Color::Rgb(72, 29, 29))
+                .add_modifier(Modifier::BOLD),
+            Style::default().fg(Color::Rgb(224, 108, 117)),
+        ),
+        Some(CalloutKind::Bug) => (
+            format!(" {} ", t.text(TextKey::EditorCalloutBug)),
+            Style::default()
+                .fg(Color::Rgb(190, 80, 70))
+                .bg(Color::Rgb(60, 24, 20))
+                .add_modifier(Modifier::BOLD),
+            Style::default().fg(Color::Rgb(190, 80, 70)),
+        ),
+        Some(CalloutKind::Example) => (
+            format!(" {} ", t.text(TextKey::EditorCalloutExample)),
+            Style::default()
+                .fg(Color::Rgb(198, 120, 221))
+                .bg(Color::Rgb(43, 32, 56))
+                .add_modifier(Modifier::BOLD),
+            Style::default().fg(Color::Rgb(198, 120, 221)),
+        ),
+        Some(CalloutKind::Quote) => (
+            format!(" {} ", t.text(TextKey::EditorCalloutQuote)),
+            Style::default()
+                .fg(Color::Rgb(171, 178, 191))
+                .bg(Color::Rgb(34, 39, 46))
+                .add_modifier(Modifier::BOLD),
+            Style::default().fg(Color::Rgb(171, 178, 191)),
         ),
         Some(CalloutKind::Caution) => (
             format!(" {} ", t.text(TextKey::EditorCalloutCaution)),
@@ -2373,34 +2526,82 @@ fn preview_heading_render(level: u8, content: &InlineLine, width: usize) -> Prev
 
 fn preview_quote_render(
     kind: Option<CalloutKind>,
+    title: Option<&InlineLine>,
+    collapsed: bool,
     depth: usize,
     lines: &[InlineLine],
     width: usize,
 ) -> PreviewRender {
-    preview_quote_render_localized(kind, depth, lines, width, Language::En)
+    preview_quote_render_localized(kind, title, collapsed, depth, lines, width, Language::En)
 }
 
 fn preview_quote_render_localized(
     kind: Option<CalloutKind>,
+    title: Option<&InlineLine>,
+    collapsed: bool,
     depth: usize,
     lines: &[InlineLine],
     width: usize,
     language: Language,
 ) -> PreviewRender {
-    let (label, label_style, bar_style) = callout_styles_localized(kind, language);
-    let bar = format!("{} ", "▏".repeat(depth.max(1).min(3)));
-    let first_prefix = if label.is_empty() {
-        vec![Span::styled(bar.clone(), bar_style)]
-    } else {
-        vec![
-            Span::styled(label, label_style),
-            Span::raw(" ".to_string()),
-            Span::styled(bar.clone(), bar_style),
-        ]
-    };
-    let continuation_prefix = vec![Span::styled(bar, bar_style)];
+    if kind.is_none() {
+        let (label, label_style, bar_style) = callout_styles_localized(kind, language);
+        let bar = format!("{} ", "▏".repeat(depth.max(1).min(3)));
+        let first_prefix = if label.is_empty() {
+            vec![Span::styled(bar.clone(), bar_style)]
+        } else {
+            vec![
+                Span::styled(label, label_style),
+                Span::raw(" ".to_string()),
+                Span::styled(bar.clone(), bar_style),
+            ]
+        };
+        let continuation_prefix = vec![Span::styled(bar, bar_style)];
+        return wrap_inline_lines_with_hits(lines, width, first_prefix, continuation_prefix);
+    }
 
-    wrap_inline_lines_with_hits(lines, width, first_prefix, continuation_prefix)
+    let (label, label_style, bar_style) = callout_styles_localized(kind, language);
+    let chevron = if collapsed { "▸" } else { "▾" };
+    let header_prefix = vec![
+        Span::styled(format!("{chevron} "), bar_style),
+        Span::styled(label, label_style),
+        Span::raw(" ".to_string()),
+    ];
+    let header_padding = vec![Span::raw("   ".to_string())];
+
+    let mut render = if let Some(title_line) =
+        title.filter(|line| !plain_text_from_line(line).trim().is_empty())
+    {
+        wrap_inline_lines_with_hits(
+            std::slice::from_ref(title_line),
+            width,
+            header_prefix,
+            header_padding,
+        )
+    } else {
+        PreviewRender {
+            lines: vec![Line::from(header_prefix)],
+            hits: Vec::new(),
+            images: Vec::new(),
+        }
+    };
+
+    if collapsed || lines.is_empty() {
+        return render;
+    }
+
+    let body = wrap_inline_lines_with_hits(
+        lines,
+        width,
+        vec![Span::styled("│ ".to_string(), bar_style)],
+        vec![Span::styled("│ ".to_string(), bar_style)],
+    );
+    append_preview_render(&mut render, body);
+    render.lines.push(styled_text_line(
+        format!("╰{}", "─".repeat(width.saturating_sub(1).max(3))),
+        bar_style,
+    ));
+    render
 }
 
 fn preview_list_item_render(
@@ -2497,10 +2698,14 @@ fn footnote_numbering(blocks: &[MdBlock]) -> HashMap<String, usize> {
             MdBlock::Heading { content, .. } => {
                 collect_footnote_labels_from_line(content, &mut order)
             }
-            MdBlock::Paragraph { lines }
-            | MdBlock::BlockQuote { lines, .. }
-            | MdBlock::ListItem { lines, .. } => {
+            MdBlock::Paragraph { lines } | MdBlock::ListItem { lines, .. } => {
                 collect_footnote_labels_from_lines(lines, &mut order)
+            }
+            MdBlock::BlockQuote { title, lines, .. } => {
+                if let Some(title) = title {
+                    collect_footnote_labels_from_line(title, &mut order);
+                }
+                collect_footnote_labels_from_lines(lines, &mut order);
             }
             MdBlock::Table { header, rows, .. } => {
                 collect_footnote_labels_from_lines(header, &mut order);
@@ -2599,8 +2804,18 @@ fn normalize_blocks_for_preview(blocks: &[MdBlock]) -> Vec<MdBlock> {
                     .collect(),
                 alignments: alignments.clone(),
             },
-            MdBlock::BlockQuote { kind, lines, depth } => MdBlock::BlockQuote {
+            MdBlock::BlockQuote {
+                kind,
+                title,
+                collapsed,
+                lines,
+                depth,
+            } => MdBlock::BlockQuote {
                 kind: *kind,
+                title: title
+                    .as_ref()
+                    .map(|title| normalize_inline_line_for_preview(title, &numbering)),
+                collapsed: *collapsed,
                 lines: normalize_inline_lines_for_preview(lines, &numbering),
                 depth: *depth,
             },
@@ -2723,9 +2938,21 @@ fn preview_block_to_render_localized(
             hits: Vec::new(),
             images: Vec::new(),
         },
-        MdBlock::BlockQuote { kind, lines, depth } => {
-            preview_quote_render_localized(*kind, *depth, lines, width, language)
-        }
+        MdBlock::BlockQuote {
+            kind,
+            title,
+            collapsed,
+            lines,
+            depth,
+        } => preview_quote_render_localized(
+            *kind,
+            title.as_ref(),
+            *collapsed,
+            *depth,
+            lines,
+            width,
+            language,
+        ),
         MdBlock::ListItem {
             ordered,
             number,
@@ -4506,6 +4733,33 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_markdown_obsidian_callout_metadata() {
+        let md = "> [!tip]- 选择建议\n> 关注样本量";
+        let blocks = parse_markdown(md);
+        assert_eq!(blocks.len(), 1);
+
+        match &blocks[0] {
+            MdBlock::BlockQuote {
+                kind,
+                title,
+                collapsed,
+                lines,
+                ..
+            } => {
+                assert_eq!(*kind, Some(CalloutKind::Tip));
+                assert!(title.is_some());
+                assert_eq!(
+                    plain_text_from_line(title.as_ref().expect("title")),
+                    "选择建议"
+                );
+                assert!(*collapsed);
+                assert_eq!(plain_text_from_lines(lines, "\n"), "关注样本量");
+            }
+            other => panic!("Expected callout blockquote, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn test_parse_markdown_list() {
         let md = "- Item 1\n- Item 2\n- Item 3";
         let blocks = parse_markdown(md);
@@ -4642,6 +4896,28 @@ mod tests {
             .hits
             .iter()
             .any(|hit| hit.kind == PreviewTargetKind::MarkdownLink));
+    }
+
+    #[test]
+    fn test_preview_render_collapsed_callout_hides_body() {
+        let blocks =
+            normalize_blocks_for_preview(&parse_markdown("> [!warning]- 证据局限\n> 第二行内容"));
+        let render = build_preview_render(&blocks, 80);
+        let text = render_text(&render);
+
+        assert!(text.contains("证据局限"));
+        assert!(!text.contains("第二行内容"));
+    }
+
+    #[test]
+    fn test_preview_render_expanded_callout_keeps_body() {
+        let blocks =
+            normalize_blocks_for_preview(&parse_markdown("> [!tip]+ 选择建议\n> 第二行内容"));
+        let render = build_preview_render(&blocks, 80);
+        let text = render_text(&render);
+
+        assert!(text.contains("选择建议"));
+        assert!(text.contains("第二行内容"));
     }
 
     #[test]

@@ -142,6 +142,29 @@ pub enum KnowledgeAction {
     RemoveFromIndex(String),
 }
 
+/// Graph explorer filters
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum GraphFilter {
+    #[default]
+    All,
+    LinksOnly,
+    BacklinksOnly,
+}
+
+/// Graph explorer actions
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum GraphAction {
+    Open,
+    Close,
+    SyncRootFromCurrentFile,
+    TogglePin,
+    MoveSelection(i32),
+    ExpandSelected,
+    CollapseSelected,
+    OpenSelected,
+    SetFilter(GraphFilter),
+}
+
 /// Search result from knowledge base
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResult {
@@ -205,6 +228,9 @@ pub enum Action {
     // Knowledge base
     Knowledge(KnowledgeAction),
 
+    // Graph explorer
+    Graph(GraphAction),
+
     // Learning
     Learning(LearningAction),
 
@@ -228,6 +254,7 @@ impl Action {
             Action::Search(_) => "Search",
             Action::Chat(_) => "Chat",
             Action::Knowledge(_) => "Knowledge",
+            Action::Graph(_) => "Graph",
             Action::Learning(_) => "Learning",
             Action::Settings(_) => "Settings",
             Action::Resize { .. } => "Resize",

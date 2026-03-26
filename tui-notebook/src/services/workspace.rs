@@ -17,6 +17,33 @@ pub struct KnowledgeReference {
     pub line_number: Option<usize>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GraphEdgeKind {
+    #[default]
+    Link,
+    Backlink,
+    Tag,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct GraphNodeRef {
+    pub kind: GraphEdgeKind,
+    pub title: String,
+    pub relative_path: String,
+    pub absolute_path: Option<String>,
+    pub context: String,
+    pub line_number: Option<usize>,
+    pub resolved: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct GraphRoot {
+    pub title: String,
+    pub relative_path: String,
+    pub absolute_path: Option<String>,
+    pub children: Vec<GraphNodeRef>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct DocumentKnowledgeContext {
     pub title: String,
@@ -113,6 +140,48 @@ impl WorkspaceIndex {
     pub fn document_context_for_path(&self, path: &Path) -> Option<DocumentKnowledgeContext> {
         let relative_path = Self::to_relative_path(&self.root_path, path);
         self.document_contexts.get(&relative_path).cloned()
+    }
+
+    pub fn graph_root_for_path(&self, path: &Path) -> Option<GraphRoot> {
+        let relative_path = Self::to_relative_path(&self.root_path, path);
+        let context = self.document_contexts.get(&relative_path)?;
+
+        Some(GraphRoot {
+            title: context.title.clone(),
+            relative_path: context.relative_path.clone(),
+            absolute_path: Some(self.absolute_path(&context.relative_path)),
+            children: self.graph_children_for_relative_path(&context.relative_path),
+        })
+    }
+
+    pub fn graph_children_for_relative_path(&self, path: &str) -> Vec<GraphNodeRef> {
+        let Some(context) = self.document_contexts.get(path) else {
+            return Vec::new();
+        };
+
+        let mut children = Vec::new();
+        children.extend(
+            context
+                .outgoing_links
+                .iter()
+                .cloned()
+                .map(|reference| Self::graph_node(GraphEdgeKind::Link, reference)),
+        );
+        children.extend(
+            context
+                .backlinks
+                .iter()
+                .cloned()
+                .map(|reference| Self::graph_node(GraphEdgeKind::Backlink, reference)),
+        );
+        children.extend(
+            context
+                .related_tags
+                .iter()
+                .cloned()
+                .map(|reference| Self::graph_node(GraphEdgeKind::Tag, reference)),
+        );
+        children
     }
 
     pub fn document_count(&self) -> usize {
@@ -371,6 +440,20 @@ impl WorkspaceIndex {
         files
     }
 
+    fn graph_node(kind: GraphEdgeKind, reference: KnowledgeReference) -> GraphNodeRef {
+        let resolved = reference.absolute_path.is_some();
+
+        GraphNodeRef {
+            kind,
+            title: reference.title,
+            relative_path: reference.relative_path,
+            absolute_path: reference.absolute_path,
+            context: reference.context,
+            line_number: reference.line_number,
+            resolved,
+        }
+    }
+
     fn collect_related_tags(
         current_path: &str,
         tags: &[String],
@@ -602,7 +685,7 @@ impl WorkspaceIndex {
 
 #[cfg(test)]
 mod tests {
-    use super::WorkspaceIndex;
+    use super::{GraphEdgeKind, WorkspaceIndex};
     use std::fs;
 
     #[test]
@@ -637,6 +720,44 @@ mod tests {
         assert_eq!(topic.related_tags[0].relative_path, "daily.md");
         assert_eq!(daily.outgoing_links.len(), 1);
         assert_eq!(daily.outgoing_links[0].relative_path, "notes/topic.md");
+
+        fs::remove_dir_all(root).expect("cleanup temp workspace");
+    }
+
+    #[test]
+    fn builds_graph_roots_and_children() {
+        let root = std::env::temp_dir().join(format!("tui-notebook-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(root.join("notes")).expect("create temp workspace");
+
+        fs::write(
+            root.join("notes/topic.md"),
+            "# Topic\n\nSee [[daily]] and [[ghost-note]].\n\nTag #[rust]\n",
+        )
+        .expect("write topic");
+        fs::write(
+            root.join("daily.md"),
+            "# Daily\n\nLinks back to [[notes/topic]].\n\nTag #[rust]\n",
+        )
+        .expect("write daily");
+
+        let index = WorkspaceIndex::build(&root);
+        let graph = index
+            .graph_root_for_path(&root.join("notes/topic.md"))
+            .expect("graph root");
+
+        assert_eq!(graph.title, "Topic");
+        assert_eq!(graph.relative_path, "notes/topic.md");
+        assert_eq!(graph.children.len(), 4);
+        assert_eq!(graph.children[0].kind, GraphEdgeKind::Link);
+        assert_eq!(graph.children[0].relative_path, "daily.md");
+        assert!(graph.children[0].resolved);
+        assert_eq!(graph.children[1].kind, GraphEdgeKind::Link);
+        assert_eq!(graph.children[1].relative_path, "ghost-note");
+        assert!(!graph.children[1].resolved);
+        assert_eq!(graph.children[2].kind, GraphEdgeKind::Backlink);
+        assert_eq!(graph.children[2].relative_path, "daily.md");
+        assert_eq!(graph.children[3].kind, GraphEdgeKind::Tag);
+        assert_eq!(graph.children[3].relative_path, "daily.md");
 
         fs::remove_dir_all(root).expect("cleanup temp workspace");
     }
