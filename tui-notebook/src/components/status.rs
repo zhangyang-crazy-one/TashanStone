@@ -1,5 +1,6 @@
 //! Status bar component
 
+use crate::i18n::{Language, TextKey};
 use ratatui::{
     layout::Rect,
     style::{Color, Style},
@@ -29,6 +30,8 @@ pub struct StatusBar {
     focus_label: String,
     /// Focus shortcut hint
     focus_shortcuts: String,
+    /// Current UI language
+    language: Language,
 }
 
 /// Status mode
@@ -38,6 +41,7 @@ pub enum StatusMode {
     Insert,
     Visual,
     Command,
+    Preview,
 }
 
 impl StatusBar {
@@ -53,7 +57,12 @@ impl StatusBar {
             ai_status: "● AI ready".to_string(),
             focus_label: "Editor".to_string(),
             focus_shortcuts: "Ctrl+1 Files  Ctrl+2 Editor  Ctrl+3 AI  Ctrl+Tab Cycle".to_string(),
+            language: Language::En,
         }
+    }
+
+    pub fn set_language(&mut self, language: Language) {
+        self.language = language;
     }
 
     /// Set terminal size
@@ -104,10 +113,11 @@ impl Default for StatusBar {
 impl crate::components::Component for StatusBar {
     fn render(&self, f: &mut Frame<'_>, area: Rect) {
         let mode_str = match self.mode {
-            StatusMode::Normal => "NORMAL",
-            StatusMode::Insert => "INSERT",
-            StatusMode::Visual => "VISUAL",
-            StatusMode::Command => "COMMAND",
+            StatusMode::Normal => self.language.translator().text(TextKey::StatusModeNormal),
+            StatusMode::Insert => self.language.translator().text(TextKey::StatusModeInsert),
+            StatusMode::Visual => self.language.translator().text(TextKey::StatusModeVisual),
+            StatusMode::Command => self.language.translator().text(TextKey::StatusModeCommand),
+            StatusMode::Preview => self.language.translator().text(TextKey::StatusModePreview),
         };
 
         let mode_style = match self.mode {
@@ -115,6 +125,7 @@ impl crate::components::Component for StatusBar {
             StatusMode::Insert => Style::default().fg(Color::Yellow),
             StatusMode::Visual => Style::default().fg(Color::Blue),
             StatusMode::Command => Style::default().fg(Color::Magenta),
+            StatusMode::Preview => Style::default().fg(Color::Cyan),
         };
 
         let left = vec![
@@ -124,12 +135,20 @@ impl crate::components::Component for StatusBar {
             ),
             Span::raw("  "),
             Span::styled(
-                format!("Ln {}", self.line),
+                format!(
+                    "{} {}",
+                    self.language.translator().text(TextKey::StatusLine),
+                    self.line
+                ),
                 Style::default().fg(Color::DarkGray),
             ),
             Span::raw("  "),
             Span::styled(
-                format!("Col {}", self.column),
+                format!(
+                    "{} {}",
+                    self.language.translator().text(TextKey::StatusColumn),
+                    self.column
+                ),
                 Style::default().fg(Color::DarkGray),
             ),
             Span::raw("  "),
@@ -138,7 +157,11 @@ impl crate::components::Component for StatusBar {
 
         let right = vec![
             Span::styled(
-                format!("Focus {}", self.focus_label),
+                format!(
+                    "{} {}",
+                    self.language.translator().text(TextKey::StatusFocus),
+                    self.focus_label
+                ),
                 Style::default().fg(Color::Rgb(88, 166, 255)),
             ),
             Span::raw("  "),

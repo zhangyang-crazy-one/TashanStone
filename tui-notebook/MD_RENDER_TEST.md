@@ -46,6 +46,10 @@
 
 ![示例图片 alt 文本](https://dummyimage.com/640x160/222b45/c9d1d9.png&text=Markdown+Image+Preview)
 
+本地图片测试：
+
+![本地图片测试（相对路径）](../build/LOGO-V2.png)
+
 ## 6. Blockquotes
 
 > 这是一级引用。

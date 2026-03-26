@@ -1,6 +1,7 @@
 //! Chat component - AI conversation panel
 
 use crate::action::{Action, ChatAction, ChatModel, ComponentId, NavigationAction};
+use crate::i18n::{Language, TextKey};
 use crate::services::ai::{AiProvider, ModelConfig};
 use crate::services::config::ConfigService;
 use crossterm::event::KeyEvent;
@@ -55,6 +56,8 @@ pub struct ChatPanel {
     is_open: bool,
     /// Config service for AI settings
     config_service: ConfigService,
+    /// Current UI language
+    language: Language,
 }
 
 impl ChatPanel {
@@ -68,7 +71,12 @@ impl ChatPanel {
             },
             is_open: false,
             config_service: ConfigService::new(),
+            language: Language::En,
         }
+    }
+
+    pub fn set_language(&mut self, language: Language) {
+        self.language = language;
     }
 
     /// Check if chat panel is open
@@ -349,7 +357,10 @@ impl ChatPanel {
         if self.is_streaming {
             all.push(Self::bubble_spec_for(
                 MessageRole::Assistant,
-                "thinking...".to_string(),
+                self.language
+                    .translator()
+                    .text(TextKey::ChatThinking)
+                    .to_string(),
                 area.width,
             ));
         }
@@ -432,7 +443,7 @@ impl crate::components::Component for ChatPanel {
             Span::styled("🤖", Style::default().fg(Color::Rgb(139, 148, 158))),
             Span::raw(" "),
             Span::styled(
-                "AI 对话",
+                self.language.translator().text(TextKey::ChatTitle),
                 Style::default()
                     .fg(primary_text)
                     .add_modifier(ratatui::style::Modifier::BOLD),
@@ -512,7 +523,10 @@ impl crate::components::Component for ChatPanel {
         f.render_widget(shell, shell_area);
 
         let input_text = if self.input_buffer.len_chars() == 0 {
-            "输入消息...".to_string()
+            self.language
+                .translator()
+                .text(TextKey::ChatPlaceholder)
+                .to_string()
         } else {
             self.input_buffer.to_string()
         };

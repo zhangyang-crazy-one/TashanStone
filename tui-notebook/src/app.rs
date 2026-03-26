@@ -4,7 +4,8 @@
 
 use anyhow::Result;
 use crossterm::event::{
-    Event as CrosstermEvent, KeyEvent, MouseButton, MouseEvent, MouseEventKind,
+    Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent,
+    MouseEventKind,
 };
 use ratatui::{
     layout::Rect,
@@ -21,22 +22,30 @@ pub use crate::action::{Action, ChatAction, ComponentId};
 use crate::app::focus::FocusManager;
 use crate::components::editor::{EditorLink, EditorLinkKind, PreviewHit, PreviewTargetKind};
 use crate::components::{
-    chat::ChatPanel, confirm::ConfirmDialog, editor::Editor, knowledge::KnowledgePanel,
-    new_file::NewFileDialog, search::SearchPanel, settings::SettingsModal, sidebar::Sidebar,
-    status::StatusBar, Component,
+    chat::ChatPanel,
+    confirm::ConfirmDialog,
+    editor::Editor,
+    knowledge::KnowledgePanel,
+    new_file::NewFileDialog,
+    search::SearchPanel,
+    settings::SettingsModal,
+    sidebar::Sidebar,
+    status::{StatusBar, StatusMode},
+    Component,
 };
 use crate::services::ai::{AiService, ChatMessage, MessageRole};
-use crate::services::config::{AppSettings, ConfigService};
+use crate::services::config::{AppSettings, ConfigService, ShortcutProfile};
 use crate::services::vector::VectorService;
 use crate::services::workspace::{WorkspaceIndex, WorkspaceLinkPreview};
 use crate::theme::{Theme, ThemeManager};
 use crate::tui::Tui;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{mpsc as std_mpsc, Arc};
 
 /// Container for all UI components (to separate borrows)
 struct Components<'a> {
     focused: ComponentId,
+    editor_mode: EditorMode,
     sidebar: &'a Sidebar,
     editor: &'a Editor,
     search: &'a SearchPanel,
@@ -47,11 +56,56 @@ struct Components<'a> {
     new_file: &'a NewFileDialog,
     confirm: &'a ConfirmDialog,
     link_preview: Option<&'a LinkPreviewState>,
+    shortcut_profile: ShortcutProfile,
+    shortcut_help_open: bool,
 }
 
 struct LinkPreviewState {
     preview: WorkspaceLinkPreview,
     anchor: (u16, u16),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EditorMode {
+    Insert,
+    Normal,
+    Preview,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ShortcutCommand {
+    CycleFocus(bool),
+    Focus(ComponentId),
+    OpenSearch,
+    OpenSettings,
+    Save,
+    ToggleChat,
+    ToggleKnowledge,
+    IndexCurrentFile,
+    ToggleHelp,
+    OpenQuitDialog,
+    EnterInsert,
+    AppendInsert,
+    OpenLineBelow,
+    MoveLeft,
+    MoveRight,
+    MoveUp,
+    MoveDown,
+    MoveWordForward,
+    MoveWordBackward,
+    MoveLineStart,
+    MoveLineEnd,
+    MoveDocStart,
+    MoveDocEnd,
+    MoveHalfPageUp,
+    MoveHalfPageDown,
+    ActivateCursorTarget,
+    ShowCursorPreview,
+    EnterPreview,
+    ExitPreview,
+    PreviewScroll(i32),
+    PreviewSelectNext(bool),
+    PreviewOpenSelection,
 }
 
 /// Application state
@@ -81,6 +135,12 @@ pub struct App {
 
     /// Workspace metadata index for links, backlinks, and tags
     workspace_index: WorkspaceIndex,
+    /// Background workspace index reload receiver
+    workspace_index_rx: Option<std_mpsc::Receiver<(u64, WorkspaceIndex)>>,
+    /// Monotonic id used to ignore stale background indexing results
+    workspace_index_request_id: u64,
+    /// Whether the workspace index is currently rebuilding
+    workspace_index_loading: bool,
 
     /// Vector service for knowledge base
     vector_service: Arc<VectorService>,
@@ -88,8 +148,38 @@ pub struct App {
     /// Theme manager
     theme_manager: ThemeManager,
 
+    /// Active shortcut profile
+    shortcut_profile: ShortcutProfile,
+
+    /// Whether the status bar should show shortcut hints
+    show_shortcut_hints: bool,
+
+    /// Whether preview focus should sync to the editor cursor context
+    preview_focus_follows_editor: bool,
+
     /// Preview overlay for links under the mouse or current cursor
     link_preview: Option<LinkPreviewState>,
+
+    /// Current editor interaction mode
+    editor_mode: EditorMode,
+
+    /// Mode to restore when leaving preview focus
+    preview_return_mode: EditorMode,
+
+    /// Terminal leader-key state
+    leader_pending: bool,
+
+    /// Pending `g` sequence for normal mode
+    normal_g_pending: bool,
+
+    /// Independent preview scroll when Preview is focused
+    preview_scroll_offset: usize,
+
+    /// Selected interactive target inside Preview
+    preview_selected_target: Option<usize>,
+
+    /// Shortcut help overlay state
+    shortcut_help_open: bool,
 
     /// Should quit
     should_quit: bool,
@@ -122,9 +212,22 @@ impl App {
             config_service: ConfigService::new(),
             workspace_root: PathBuf::from("."),
             workspace_index: WorkspaceIndex::empty(PathBuf::from(".")),
+            workspace_index_rx: None,
+            workspace_index_request_id: 0,
+            workspace_index_loading: false,
             vector_service: Arc::new(VectorService::new()),
             theme_manager: ThemeManager::new(),
+            shortcut_profile: ShortcutProfile::TerminalLeader,
+            show_shortcut_hints: true,
+            preview_focus_follows_editor: true,
             link_preview: None,
+            editor_mode: EditorMode::Insert,
+            preview_return_mode: EditorMode::Normal,
+            leader_pending: false,
+            normal_g_pending: false,
+            preview_scroll_offset: 0,
+            preview_selected_target: None,
+            shortcut_help_open: false,
             should_quit: false,
             action_tx,
             action_rx,
@@ -157,7 +260,9 @@ impl App {
 
         self.sidebar
             .load_directory(self.workspace_root.to_string_lossy().as_ref());
-        self.reload_workspace_index();
+        self.workspace_index = WorkspaceIndex::empty(self.workspace_root.clone());
+        self.sync_knowledge_panel();
+        self.request_workspace_index_reload();
 
         let theme = if settings.theme == "light" {
             Theme::Light
@@ -166,15 +271,14 @@ impl App {
         };
         self.theme_manager.set_theme(theme);
         self.settings_modal.set_theme(theme);
+        self.shortcut_profile = settings.shortcut_profile;
+        self.show_shortcut_hints = settings.show_shortcut_hints;
+        self.preview_focus_follows_editor = settings.preview_focus_follows_editor;
+        self.preview_scroll_offset = 0;
+        self.preview_selected_target = None;
+        self.leader_pending = false;
+        self.normal_g_pending = false;
         self.clear_link_preview();
-    }
-
-    /// Persist the current theme into settings storage.
-    fn persist_theme(&mut self) {
-        let mut settings = self.config_service.settings().clone();
-        settings.theme = self.theme_manager.theme().to_string();
-        self.config_service.update(settings);
-        self.settings_modal.set_theme(self.theme_manager.theme());
     }
 
     /// Keep derived status bar data aligned with the current editor state.
@@ -184,6 +288,7 @@ impl App {
             self.editor.cursor_column_number(),
             "Markdown",
         );
+        self.status.set_mode(self.status_mode());
 
         let ai_status = if self.chat.is_open() {
             format!("● {}", self.chat.get_provider_display())
@@ -191,10 +296,8 @@ impl App {
             "● AI idle".to_string()
         };
         self.status.set_ai_status(ai_status);
-        self.status.set_focus_state(
-            self.focus_label(),
-            "Ctrl+1 Files  Ctrl+2 Editor  Ctrl+3 AI  Ctrl+Tab Cycle",
-        );
+        self.status
+            .set_focus_state(self.focus_label(), self.focus_shortcut_hint());
 
         if let Some(path) = self.editor.current_file() {
             if let Some(context) = self
@@ -211,16 +314,24 @@ impl App {
             }
         }
 
-        self.status.set_message(Some(format!(
-            "{} notes • {} tags",
-            self.workspace_index.document_count(),
-            self.workspace_index.tag_count()
-        )));
+        let workspace_summary = if self.workspace_index_loading {
+            format!(
+                "{} notes • {} tags • indexing…",
+                self.workspace_index.document_count(),
+                self.workspace_index.tag_count()
+            )
+        } else {
+            format!(
+                "{} notes • {} tags",
+                self.workspace_index.document_count(),
+                self.workspace_index.tag_count()
+            )
+        };
+        self.status.set_message(Some(workspace_summary));
     }
 
     fn reload_workspace_index(&mut self) {
-        self.workspace_index = WorkspaceIndex::build(&self.workspace_root);
-        self.sync_knowledge_panel();
+        self.request_workspace_index_reload();
     }
 
     fn sync_knowledge_panel(&mut self) {
@@ -231,8 +342,109 @@ impl App {
         self.knowledge.set_document_context(context);
     }
 
+    fn request_workspace_index_reload(&mut self) {
+        self.workspace_index_request_id = self.workspace_index_request_id.wrapping_add(1);
+        let request_id = self.workspace_index_request_id;
+        let root = self.workspace_root.clone();
+        let (tx, rx) = std_mpsc::channel();
+        self.workspace_index_rx = Some(rx);
+        self.workspace_index_loading = true;
+
+        std::thread::spawn(move || {
+            let index = WorkspaceIndex::build(&root);
+            let _ = tx.send((request_id, index));
+        });
+    }
+
+    fn poll_workspace_index_reload(&mut self) {
+        let mut should_clear_receiver = false;
+        let mut next_index = None;
+
+        if let Some(rx) = self.workspace_index_rx.as_ref() {
+            loop {
+                match rx.try_recv() {
+                    Ok((request_id, index)) => {
+                        if request_id == self.workspace_index_request_id {
+                            next_index = Some(index);
+                            should_clear_receiver = true;
+                        }
+                    }
+                    Err(std_mpsc::TryRecvError::Empty) => break,
+                    Err(std_mpsc::TryRecvError::Disconnected) => {
+                        should_clear_receiver = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        let received_latest_index = next_index.is_some();
+
+        if let Some(index) = next_index {
+            self.workspace_index = index;
+            self.workspace_index_loading = false;
+            self.sync_knowledge_panel();
+        }
+
+        if should_clear_receiver {
+            self.workspace_index_rx = None;
+            if !received_latest_index {
+                self.workspace_index_loading = false;
+            }
+        }
+    }
+
+    fn status_mode(&self) -> StatusMode {
+        if self.has_modal_open() || self.search.is_open() {
+            return StatusMode::Command;
+        }
+
+        match self.focus_manager.focused() {
+            ComponentId::Editor => match self.editor_mode {
+                EditorMode::Insert => StatusMode::Insert,
+                EditorMode::Normal => StatusMode::Normal,
+                EditorMode::Preview => StatusMode::Preview,
+            },
+            ComponentId::Preview => StatusMode::Preview,
+            _ => StatusMode::Normal,
+        }
+    }
+
+    fn focus_shortcut_hint(&self) -> String {
+        if !self.show_shortcut_hints {
+            return String::new();
+        }
+
+        match self.shortcut_profile {
+            ShortcutProfile::TerminalLeader => match self.focus_manager.focused() {
+                ComponentId::Editor => match self.editor_mode {
+                    EditorMode::Insert => {
+                        "Esc Normal  Ctrl+K AI  Ctrl+Q Quit  Ctrl+G Help".to_string()
+                    }
+                    EditorMode::Normal => {
+                        "Space leader  i Insert  p Preview  / Search  ? Help".to_string()
+                    }
+                    EditorMode::Preview => "j/k Scroll  Tab Next  Enter Open  Esc Back".to_string(),
+                },
+                ComponentId::Preview => "j/k Scroll  Tab Next  Enter Open  Esc Back".to_string(),
+                _ => "Tab Cycle  Shift+Tab Back  Space 1-5 Focus  ? Help".to_string(),
+            },
+            ShortcutProfile::IdeCompatible => {
+                "F1-F5 Focus  F6 Search  F8 Preview  F9 Save  F10 Settings".to_string()
+            }
+        }
+    }
+
+    fn clear_pending_sequences(&mut self) {
+        self.leader_pending = false;
+        self.normal_g_pending = false;
+    }
+
     fn focusable_components(&self) -> Vec<ComponentId> {
         let mut components = vec![ComponentId::Sidebar, ComponentId::Editor];
+        if self.editor.has_content() {
+            components.push(ComponentId::Preview);
+        }
         if self.chat.is_open() {
             components.push(ComponentId::Chat);
         }
@@ -256,6 +468,13 @@ impl App {
     }
 
     fn focus_component(&mut self, component: ComponentId) {
+        let previous = self.focus_manager.focused();
+
+        if previous == ComponentId::Preview && component != ComponentId::Preview {
+            self.editor_mode = self.preview_return_mode;
+            self.preview_selected_target = None;
+        }
+
         match component {
             ComponentId::Chat if !self.chat.is_open() => {
                 self.chat.toggle();
@@ -263,8 +482,24 @@ impl App {
             ComponentId::Knowledge if !self.knowledge.is_open() => {
                 self.knowledge.toggle();
             }
+            ComponentId::Editor if previous != ComponentId::Preview => {
+                self.editor_mode = EditorMode::Insert;
+            }
+            ComponentId::Preview => {
+                if !self.editor.has_content() {
+                    return;
+                }
+                self.preview_return_mode = match self.editor_mode {
+                    EditorMode::Preview => self.preview_return_mode,
+                    mode => mode,
+                };
+                self.editor_mode = EditorMode::Preview;
+                self.sync_preview_navigation_to_editor();
+            }
             _ => {}
         }
+
+        self.clear_pending_sequences();
         self.focus_manager.set_focus(component);
     }
 
@@ -398,17 +633,53 @@ impl App {
     }
 
     fn image_preview_state(&self, target: &str, label: &str) -> WorkspaceLinkPreview {
+        let trimmed = target.trim();
+        let title = if label.trim().is_empty() {
+            "Image".to_string()
+        } else {
+            format!("Image: {label}")
+        };
+
+        if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+            return WorkspaceLinkPreview {
+                title,
+                subtitle: trimmed.to_string(),
+                body: vec![
+                    "Remote image references are detected correctly.".to_string(),
+                    "Preview currently renders only local workspace images.".to_string(),
+                ],
+                absolute_path: None,
+                line_number: None,
+                resolved: false,
+            };
+        }
+
+        if let Some(path) = self.editor.resolve_image_path(trimmed) {
+            let path_string = path.to_string_lossy().to_string();
+            let subtitle = self.workspace_relative_path(&path_string);
+            return WorkspaceLinkPreview {
+                title,
+                subtitle: if subtitle.is_empty() {
+                    path_string
+                } else {
+                    subtitle
+                },
+                body: vec![
+                    "Local image reference resolved successfully.".to_string(),
+                    "Standalone image blocks render directly in Preview when visible.".to_string(),
+                ],
+                absolute_path: None,
+                line_number: None,
+                resolved: true,
+            };
+        }
+
         WorkspaceLinkPreview {
-            title: if label.trim().is_empty() {
-                "Image".to_string()
-            } else {
-                format!("Image: {label}")
-            },
-            subtitle: target.to_string(),
+            title,
+            subtitle: trimmed.to_string(),
             body: vec![
-                "Terminal image rendering is not enabled in the current TUI stack.".to_string(),
-                "Hover and click now resolve image references and show metadata fallback."
-                    .to_string(),
+                "Local image reference could not be resolved.".to_string(),
+                "Check the path relative to the current note or workspace root.".to_string(),
             ],
             absolute_path: None,
             line_number: None,
@@ -471,13 +742,31 @@ impl App {
             return;
         }
 
-        let Some(hit) = self
-            .editor
-            .preview_hit_at_screen_position(preview_area, x, y)
-        else {
+        let preview_scroll = if self.focus_manager.focused() == ComponentId::Preview {
+            self.preview_scroll_offset
+        } else {
+            self.editor.synced_preview_scroll(preview_area)
+        };
+
+        let Some(hit) = self.editor.preview_hit_at_screen_position_with_scroll(
+            preview_area,
+            x,
+            y,
+            preview_scroll,
+        ) else {
             self.clear_link_preview();
             return;
         };
+
+        if self.focus_manager.focused() == ComponentId::Preview {
+            let targets = self.editor.preview_targets(preview_area);
+            self.preview_selected_target = targets.iter().position(|candidate| {
+                candidate.line == hit.line
+                    && candidate.kind == hit.kind
+                    && candidate.target == hit.target
+                    && candidate.label == hit.label
+            });
+        }
 
         self.link_preview = Some(LinkPreviewState {
             preview: self.preview_state_for_hit(&hit),
@@ -499,14 +788,7 @@ impl App {
         true
     }
 
-    fn activate_preview_reference(&mut self, preview_area: Rect, x: u16, y: u16) -> bool {
-        let Some(hit) = self
-            .editor
-            .preview_hit_at_screen_position(preview_area, x, y)
-        else {
-            return false;
-        };
-
+    fn activate_preview_hit(&mut self, hit: PreviewHit, anchor: (u16, u16)) -> bool {
         match hit.kind {
             PreviewTargetKind::BlockRef => {
                 if let Some(reference) = self.editor.block_ref_by_id(&hit.target) {
@@ -517,7 +799,7 @@ impl App {
                 } else {
                     self.link_preview = Some(LinkPreviewState {
                         preview: self.preview_state_for_hit(&hit),
-                        anchor: (x, y),
+                        anchor,
                     });
                     false
                 }
@@ -527,21 +809,35 @@ impl App {
                 if self.open_workspace_preview(preview.clone()) {
                     true
                 } else {
-                    self.link_preview = Some(LinkPreviewState {
-                        preview,
-                        anchor: (x, y),
-                    });
+                    self.link_preview = Some(LinkPreviewState { preview, anchor });
                     false
                 }
             }
             PreviewTargetKind::Image => {
                 self.link_preview = Some(LinkPreviewState {
                     preview: self.preview_state_for_hit(&hit),
-                    anchor: (x, y),
+                    anchor,
                 });
                 false
             }
         }
+    }
+
+    fn activate_preview_reference(&mut self, preview_area: Rect, x: u16, y: u16) -> bool {
+        let preview_scroll = if self.focus_manager.focused() == ComponentId::Preview {
+            self.preview_scroll_offset
+        } else {
+            self.editor.synced_preview_scroll(preview_area)
+        };
+        let Some(hit) = self.editor.preview_hit_at_screen_position_with_scroll(
+            preview_area,
+            x,
+            y,
+            preview_scroll,
+        ) else {
+            return false;
+        };
+        self.activate_preview_hit(hit, (x, y))
     }
 
     /// Run the main event loop
@@ -557,6 +853,8 @@ impl App {
 
         // Main render loop
         loop {
+            self.poll_workspace_index_reload();
+
             // Handle pending actions first
             while let Ok(action) = self.action_rx.try_recv() {
                 self.handle_action(action);
@@ -582,6 +880,7 @@ impl App {
             let scroll_offset = self.editor.scroll_offset();
             let components = Components {
                 focused: self.focus_manager.focused(),
+                editor_mode: self.editor_mode,
                 sidebar: &self.sidebar,
                 editor: &self.editor,
                 search: &self.search,
@@ -592,9 +891,20 @@ impl App {
                 new_file: &self.new_file_dialog,
                 confirm: &self.confirm_dialog,
                 link_preview: self.link_preview.as_ref(),
+                shortcut_profile: self.shortcut_profile,
+                shortcut_help_open: self.shortcut_help_open,
             };
             self.tui.draw(|f| {
-                Self::render_with_components(f, &layout, components, scroll_offset);
+                let preview_scroll = if components.focused == ComponentId::Preview {
+                    self.preview_scroll_offset
+                } else {
+                    layout
+                        .get("preview")
+                        .copied()
+                        .map(|area| self.editor.synced_preview_scroll(area))
+                        .unwrap_or(scroll_offset)
+                };
+                Self::render_with_components(f, &layout, components, preview_scroll);
             })?;
 
             // Check quit
@@ -638,6 +948,244 @@ impl App {
         }
     }
 
+    fn execute_shortcut_command(&mut self, command: ShortcutCommand) -> Option<Action> {
+        match command {
+            ShortcutCommand::CycleFocus(forward) => {
+                return Some(Action::Navigation(if forward {
+                    crate::action::NavigationAction::FocusNext
+                } else {
+                    crate::action::NavigationAction::FocusPrev
+                }));
+            }
+            ShortcutCommand::Focus(component) => {
+                return Some(Action::Navigation(
+                    crate::action::NavigationAction::FocusComponent(component),
+                ));
+            }
+            ShortcutCommand::OpenSearch => {
+                return Some(Action::Search(crate::action::SearchAction::Open));
+            }
+            ShortcutCommand::OpenSettings => {
+                self.clear_pending_sequences();
+                self.open_settings_modal();
+            }
+            ShortcutCommand::Save => {
+                return Some(Action::File(crate::action::FileAction::Save));
+            }
+            ShortcutCommand::ToggleChat => {
+                self.chat.toggle();
+                if self.chat.is_open() {
+                    self.focus_component(ComponentId::Chat);
+                } else if self.focus_manager.focused() == ComponentId::Chat {
+                    self.focus_component(ComponentId::Editor);
+                }
+            }
+            ShortcutCommand::ToggleKnowledge => {
+                self.knowledge.toggle();
+                if self.knowledge.is_open() {
+                    self.focus_component(ComponentId::Knowledge);
+                } else if self.focus_manager.focused() == ComponentId::Knowledge {
+                    self.focus_component(ComponentId::Editor);
+                }
+            }
+            ShortcutCommand::IndexCurrentFile => {
+                if let Some(path) = self.editor.current_file() {
+                    return Some(Action::Knowledge(crate::action::KnowledgeAction::Index(
+                        path,
+                    )));
+                }
+            }
+            ShortcutCommand::ToggleHelp => {
+                self.clear_pending_sequences();
+                self.shortcut_help_open = !self.shortcut_help_open;
+            }
+            ShortcutCommand::OpenQuitDialog => {
+                self.clear_pending_sequences();
+                self.open_quit_dialog();
+            }
+            ShortcutCommand::EnterInsert => {
+                self.editor_mode = EditorMode::Insert;
+            }
+            ShortcutCommand::AppendInsert => {
+                self.editor.move_cursor_right_command();
+                self.editor_mode = EditorMode::Insert;
+            }
+            ShortcutCommand::OpenLineBelow => {
+                self.editor.open_line_below();
+                self.editor_mode = EditorMode::Insert;
+            }
+            ShortcutCommand::MoveLeft => self.editor.move_cursor_left_command(),
+            ShortcutCommand::MoveRight => self.editor.move_cursor_right_command(),
+            ShortcutCommand::MoveUp => self.editor.move_cursor_up_command(),
+            ShortcutCommand::MoveDown => self.editor.move_cursor_down_command(),
+            ShortcutCommand::MoveWordForward => self.editor.move_cursor_word_forward(),
+            ShortcutCommand::MoveWordBackward => self.editor.move_cursor_word_backward(),
+            ShortcutCommand::MoveLineStart => self.editor.move_cursor_to_line_start(),
+            ShortcutCommand::MoveLineEnd => self.editor.move_cursor_to_line_end(),
+            ShortcutCommand::MoveDocStart => self.editor.move_cursor_to_document_start(),
+            ShortcutCommand::MoveDocEnd => self.editor.move_cursor_to_document_end(),
+            ShortcutCommand::MoveHalfPageUp => self.editor.move_half_page_up(),
+            ShortcutCommand::MoveHalfPageDown => self.editor.move_half_page_down(),
+            ShortcutCommand::ActivateCursorTarget => self.activate_cursor_target(),
+            ShortcutCommand::ShowCursorPreview => self.show_cursor_preview(),
+            ShortcutCommand::EnterPreview => self.focus_component(ComponentId::Preview),
+            ShortcutCommand::ExitPreview => self.focus_component(ComponentId::Editor),
+            ShortcutCommand::PreviewScroll(delta) => self.scroll_preview(delta),
+            ShortcutCommand::PreviewSelectNext(forward) => self.move_preview_selection(forward),
+            ShortcutCommand::PreviewOpenSelection => self.activate_selected_preview_target(),
+        }
+
+        self.refresh_link_preview_for_focus();
+        None
+    }
+
+    fn refresh_link_preview_for_focus(&mut self) {
+        if self.shortcut_help_open || self.has_modal_open() {
+            self.clear_link_preview();
+            return;
+        }
+
+        match self.focus_manager.focused() {
+            ComponentId::Editor => {
+                if let Some(area) = self.current_editor_area() {
+                    self.sync_editor_link_preview(area);
+                }
+            }
+            ComponentId::Preview => {
+                self.sync_preview_selection_overlay();
+            }
+            _ => self.clear_link_preview(),
+        }
+    }
+
+    fn in_text_input_context(&self) -> bool {
+        match self.focus_manager.focused() {
+            ComponentId::Editor => self.editor_mode == EditorMode::Insert,
+            ComponentId::Chat | ComponentId::Knowledge | ComponentId::Search => true,
+            _ => false,
+        }
+    }
+
+    fn route_global_shortcut(&self, key: KeyEvent) -> Option<ShortcutCommand> {
+        match (key.modifiers, key.code) {
+            (KeyModifiers::CONTROL, KeyCode::Char('q')) => Some(ShortcutCommand::OpenQuitDialog),
+            (KeyModifiers::CONTROL, KeyCode::Char('k')) => Some(ShortcutCommand::ToggleChat),
+            (KeyModifiers::CONTROL, KeyCode::Char('g')) => Some(ShortcutCommand::ToggleHelp),
+            (_, KeyCode::F(1)) => Some(ShortcutCommand::Focus(ComponentId::Sidebar)),
+            (_, KeyCode::F(2)) => Some(ShortcutCommand::Focus(ComponentId::Editor)),
+            (_, KeyCode::F(3)) => Some(ShortcutCommand::Focus(ComponentId::Preview)),
+            (_, KeyCode::F(4)) => Some(ShortcutCommand::ToggleChat),
+            (_, KeyCode::F(5)) => Some(ShortcutCommand::ToggleKnowledge),
+            (_, KeyCode::F(6)) => Some(ShortcutCommand::OpenSearch),
+            (_, KeyCode::F(7)) => Some(ShortcutCommand::IndexCurrentFile),
+            (_, KeyCode::F(8)) => Some(ShortcutCommand::EnterPreview),
+            (_, KeyCode::F(9)) => Some(ShortcutCommand::Save),
+            (_, KeyCode::F(10)) => Some(ShortcutCommand::OpenSettings),
+            (_, KeyCode::F(12)) => Some(ShortcutCommand::OpenQuitDialog),
+            (KeyModifiers::NONE, KeyCode::Tab) if !self.in_text_input_context() => {
+                Some(ShortcutCommand::CycleFocus(true))
+            }
+            (KeyModifiers::SHIFT, KeyCode::BackTab) | (KeyModifiers::SHIFT, KeyCode::Tab)
+                if !self.in_text_input_context() =>
+            {
+                Some(ShortcutCommand::CycleFocus(false))
+            }
+            _ => None,
+        }
+    }
+
+    fn route_terminal_leader_sequence(&mut self, key: KeyEvent) -> Option<ShortcutCommand> {
+        if !self.leader_pending {
+            return None;
+        }
+
+        self.leader_pending = false;
+        match key.code {
+            KeyCode::Char('1') => Some(ShortcutCommand::Focus(ComponentId::Sidebar)),
+            KeyCode::Char('2') => Some(ShortcutCommand::Focus(ComponentId::Editor)),
+            KeyCode::Char('3') => Some(ShortcutCommand::Focus(ComponentId::Preview)),
+            KeyCode::Char('4') => Some(ShortcutCommand::Focus(ComponentId::Chat)),
+            KeyCode::Char('5') => Some(ShortcutCommand::Focus(ComponentId::Knowledge)),
+            KeyCode::Char('s') | KeyCode::Char('S') => Some(ShortcutCommand::Save),
+            KeyCode::Char('/') => Some(ShortcutCommand::OpenSearch),
+            KeyCode::Char(',') => Some(ShortcutCommand::OpenSettings),
+            KeyCode::Char('k') | KeyCode::Char('K') => Some(ShortcutCommand::ToggleChat),
+            KeyCode::Char('l') | KeyCode::Char('L') => Some(ShortcutCommand::ToggleKnowledge),
+            KeyCode::Char('i') | KeyCode::Char('I') => Some(ShortcutCommand::IndexCurrentFile),
+            KeyCode::Char('q') | KeyCode::Char('Q') => Some(ShortcutCommand::OpenQuitDialog),
+            _ => None,
+        }
+    }
+
+    fn route_editor_normal_shortcut(&mut self, key: KeyEvent) -> Option<ShortcutCommand> {
+        if self.normal_g_pending {
+            self.normal_g_pending = false;
+            if matches!(key.code, KeyCode::Char('g')) {
+                return Some(ShortcutCommand::MoveDocStart);
+            }
+        }
+
+        match key.code {
+            KeyCode::Char(' ') => {
+                self.leader_pending = true;
+                None
+            }
+            KeyCode::Char('i') => Some(ShortcutCommand::EnterInsert),
+            KeyCode::Char('a') => Some(ShortcutCommand::AppendInsert),
+            KeyCode::Char('o') => Some(ShortcutCommand::OpenLineBelow),
+            KeyCode::Char('h') | KeyCode::Left => Some(ShortcutCommand::MoveLeft),
+            KeyCode::Char('j') | KeyCode::Down => Some(ShortcutCommand::MoveDown),
+            KeyCode::Char('k') | KeyCode::Up => Some(ShortcutCommand::MoveUp),
+            KeyCode::Char('l') | KeyCode::Right => Some(ShortcutCommand::MoveRight),
+            KeyCode::Char('w') => Some(ShortcutCommand::MoveWordForward),
+            KeyCode::Char('b') => Some(ShortcutCommand::MoveWordBackward),
+            KeyCode::Char('0') => Some(ShortcutCommand::MoveLineStart),
+            KeyCode::Char('$') => Some(ShortcutCommand::MoveLineEnd),
+            KeyCode::Char('g') => {
+                self.normal_g_pending = true;
+                None
+            }
+            KeyCode::Char('G') => Some(ShortcutCommand::MoveDocEnd),
+            KeyCode::Char('p') => Some(ShortcutCommand::EnterPreview),
+            KeyCode::Char('K') => Some(ShortcutCommand::ShowCursorPreview),
+            KeyCode::Char('/') => Some(ShortcutCommand::OpenSearch),
+            KeyCode::Char('?') => Some(ShortcutCommand::ToggleHelp),
+            KeyCode::Enter => Some(ShortcutCommand::ActivateCursorTarget),
+            KeyCode::PageUp => Some(ShortcutCommand::MoveHalfPageUp),
+            KeyCode::PageDown => Some(ShortcutCommand::MoveHalfPageDown),
+            KeyCode::Char('u') if key.modifiers == KeyModifiers::CONTROL => {
+                Some(ShortcutCommand::MoveHalfPageUp)
+            }
+            KeyCode::Char('d') if key.modifiers == KeyModifiers::CONTROL => {
+                Some(ShortcutCommand::MoveHalfPageDown)
+            }
+            _ => None,
+        }
+    }
+
+    fn route_preview_shortcut(&mut self, key: KeyEvent) -> Option<ShortcutCommand> {
+        if let Some(command) = self.route_terminal_leader_sequence(key) {
+            return Some(command);
+        }
+
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => Some(ShortcutCommand::ExitPreview),
+            KeyCode::Char(' ') => {
+                self.leader_pending = true;
+                None
+            }
+            KeyCode::Char('j') | KeyCode::Down => Some(ShortcutCommand::PreviewScroll(1)),
+            KeyCode::Char('k') | KeyCode::Up => Some(ShortcutCommand::PreviewScroll(-1)),
+            KeyCode::PageUp => Some(ShortcutCommand::PreviewScroll(-6)),
+            KeyCode::PageDown => Some(ShortcutCommand::PreviewScroll(6)),
+            KeyCode::Tab => Some(ShortcutCommand::PreviewSelectNext(true)),
+            KeyCode::BackTab => Some(ShortcutCommand::PreviewSelectNext(false)),
+            KeyCode::Char('?') => Some(ShortcutCommand::ToggleHelp),
+            KeyCode::Enter | KeyCode::Char('o') => Some(ShortcutCommand::PreviewOpenSelection),
+            _ => None,
+        }
+    }
+
     /// Handle key events
     fn handle_key_event(&mut self, key: KeyEvent) -> Option<Action> {
         if self.confirm_dialog.is_open() {
@@ -656,134 +1204,79 @@ impl App {
             }
         }
 
-        // Global shortcuts - using Ctrl+Shift to avoid shell conflicts
-        match (key.modifiers, key.code) {
-            // Open settings with Escape (when modal is closed)
-            (crossterm::event::KeyModifiers::NONE, crossterm::event::KeyCode::Esc) => {
-                if !self.settings_modal.is_open() {
-                    self.open_settings_modal();
+        if self.shortcut_help_open {
+            match (key.modifiers, key.code) {
+                (KeyModifiers::CONTROL, KeyCode::Char('g'))
+                | (_, KeyCode::Esc)
+                | (_, KeyCode::Char('?')) => {
+                    self.shortcut_help_open = false;
+                    self.refresh_link_preview_for_focus();
                 }
-                return None;
+                _ => {}
             }
-            // Quit (Ctrl+Shift+q instead of Ctrl+c)
-            (
-                crossterm::event::KeyModifiers::CONTROL | crossterm::event::KeyModifiers::SHIFT,
-                crossterm::event::KeyCode::Char('q'),
-            ) => {
-                return Some(Action::Quit);
+            return None;
+        }
+
+        if matches!(self.shortcut_profile, ShortcutProfile::IdeCompatible) {
+            if let Some(command) = self.route_global_shortcut(key) {
+                return self.execute_shortcut_command(command);
             }
-            // Tab to cycle focus
-            (crossterm::event::KeyModifiers::CONTROL, crossterm::event::KeyCode::Tab) => {
-                return Some(Action::Navigation(
-                    crate::action::NavigationAction::FocusNext,
-                ));
-            }
-            // Shift+Tab to cycle focus backwards
-            (crossterm::event::KeyModifiers::SHIFT, crossterm::event::KeyCode::Tab) => {
-                return Some(Action::Navigation(
-                    crate::action::NavigationAction::FocusPrev,
-                ));
-            }
-            // Search (Ctrl+Shift+f)
-            (crossterm::event::KeyModifiers::CONTROL, crossterm::event::KeyCode::Char('1')) => {
-                return Some(Action::Navigation(
-                    crate::action::NavigationAction::FocusComponent(ComponentId::Sidebar),
-                ));
-            }
-            (crossterm::event::KeyModifiers::CONTROL, crossterm::event::KeyCode::Char('2')) => {
-                return Some(Action::Navigation(
-                    crate::action::NavigationAction::FocusComponent(ComponentId::Editor),
-                ));
-            }
-            (crossterm::event::KeyModifiers::CONTROL, crossterm::event::KeyCode::Char('3')) => {
-                return Some(Action::Navigation(
-                    crate::action::NavigationAction::FocusComponent(ComponentId::Chat),
-                ));
-            }
-            (
-                crossterm::event::KeyModifiers::CONTROL | crossterm::event::KeyModifiers::SHIFT,
-                crossterm::event::KeyCode::Char('f'),
-            ) => {
-                return Some(Action::Search(crate::action::SearchAction::Open));
-            }
-            // Save (Ctrl+Shift+s)
-            (
-                crossterm::event::KeyModifiers::CONTROL | crossterm::event::KeyModifiers::SHIFT,
-                crossterm::event::KeyCode::Char('s'),
-            ) => {
-                return Some(Action::File(crate::action::FileAction::Save));
-            }
-            // Toggle chat panel (Ctrl+Shift+k)
-            (
-                crossterm::event::KeyModifiers::CONTROL | crossterm::event::KeyModifiers::SHIFT,
-                crossterm::event::KeyCode::Char('k'),
-            ) => {
-                self.chat.toggle();
-                if self.chat.is_open() {
-                    self.focus_component(ComponentId::Chat);
-                } else {
-                    self.focus_component(ComponentId::Editor);
+        } else if let Some(command) = self.route_global_shortcut(key) {
+            return self.execute_shortcut_command(command);
+        }
+
+        match self.focus_manager.focused() {
+            ComponentId::Preview => {
+                if let Some(command) = self.route_preview_shortcut(key) {
+                    return self.execute_shortcut_command(command);
                 }
-                return None;
             }
-            // Toggle knowledge panel (Ctrl+Shift+l)
-            (
-                crossterm::event::KeyModifiers::CONTROL | crossterm::event::KeyModifiers::SHIFT,
-                crossterm::event::KeyCode::Char('l'),
-            ) => {
-                self.knowledge.toggle();
-                if self.knowledge.is_open() {
-                    self.focus_component(ComponentId::Knowledge);
-                } else {
-                    self.focus_component(ComponentId::Editor);
+            ComponentId::Editor if self.editor_mode == EditorMode::Insert => {
+                if key.code == KeyCode::Esc {
+                    self.editor_mode = EditorMode::Normal;
+                    self.refresh_link_preview_for_focus();
+                    return None;
                 }
-                return None;
             }
-            // Toggle theme (Ctrl+Shift+t)
-            (
-                crossterm::event::KeyModifiers::CONTROL | crossterm::event::KeyModifiers::SHIFT,
-                crossterm::event::KeyCode::Char('t'),
-            ) => {
-                self.theme_manager.toggle();
-                self.persist_theme();
-                return None;
-            }
-            // Open settings (Ctrl+Shift+p)
-            (
-                crossterm::event::KeyModifiers::CONTROL | crossterm::event::KeyModifiers::SHIFT,
-                crossterm::event::KeyCode::Char('p'),
-            ) => {
-                self.open_settings_modal();
-                return None;
-            }
-            // Index current file (Ctrl+Shift+i)
-            (
-                crossterm::event::KeyModifiers::CONTROL | crossterm::event::KeyModifiers::SHIFT,
-                crossterm::event::KeyCode::Char('i'),
-            ) => {
-                if let Some(path) = self.editor.current_file() {
-                    self.handle_action(Action::Knowledge(crate::action::KnowledgeAction::Index(
-                        path,
-                    )));
+            ComponentId::Editor => {
+                if self.shortcut_profile == ShortcutProfile::TerminalLeader {
+                    if let Some(command) = self.route_terminal_leader_sequence(key) {
+                        return self.execute_shortcut_command(command);
+                    }
                 }
-                return None;
+                if let Some(command) = self.route_editor_normal_shortcut(key) {
+                    return self.execute_shortcut_command(command);
+                }
             }
-            // Scroll up
-            (crossterm::event::KeyModifiers::CONTROL, crossterm::event::KeyCode::Up) => {
-                self.editor.scroll_by(-3);
-                return None;
+            ComponentId::Sidebar if self.shortcut_profile == ShortcutProfile::TerminalLeader => {
+                if let Some(command) = self.route_terminal_leader_sequence(key) {
+                    return self.execute_shortcut_command(command);
+                }
+                if key.code == KeyCode::Char(' ') {
+                    self.leader_pending = true;
+                    return None;
+                }
             }
-            // Scroll down
-            (crossterm::event::KeyModifiers::CONTROL, crossterm::event::KeyCode::Down) => {
-                self.editor.scroll_by(3);
-                return None;
+            _ if self.shortcut_profile == ShortcutProfile::TerminalLeader => {
+                if let Some(command) = self.route_terminal_leader_sequence(key) {
+                    return self.execute_shortcut_command(command);
+                }
             }
             _ => {}
         }
 
-        // Pass to focused component
         let focused = self.focus_manager.focused();
         let action = match focused {
+            ComponentId::Sidebar if self.shortcut_profile == ShortcutProfile::TerminalLeader => {
+                let remapped = match key.code {
+                    KeyCode::Char('j') => KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+                    KeyCode::Char('k') => KeyEvent::new(KeyCode::Up, KeyModifiers::NONE),
+                    KeyCode::Char('h') => KeyEvent::new(KeyCode::Left, KeyModifiers::NONE),
+                    KeyCode::Char('l') => KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
+                    _ => key,
+                };
+                self.sidebar.handle_key_event(remapped)
+            }
             ComponentId::Sidebar => self.sidebar.handle_key_event(key),
             ComponentId::Editor => self.editor.handle_key_event(key),
             ComponentId::Chat => self.chat.handle_key_event(key),
@@ -792,14 +1285,7 @@ impl App {
             _ => None,
         };
 
-        if focused == ComponentId::Editor {
-            if let Some(area) = self.current_editor_area() {
-                self.sync_editor_link_preview(area);
-            }
-        } else {
-            self.clear_link_preview();
-        }
-
+        self.refresh_link_preview_for_focus();
         action
     }
 
@@ -829,17 +1315,25 @@ impl App {
 
         // Handle mouse wheel scrolling
         if let MouseEventKind::ScrollUp = mouse.kind {
-            self.editor.scroll_by(-3);
-            if let Some(area) = layout.get("editor").copied() {
-                self.sync_editor_link_preview(area);
+            if let Some(area) = layout.get("preview").copied() {
+                if Self::point_in_rect(area, mouse.column, mouse.row) {
+                    self.scroll_preview(-3);
+                    return None;
+                }
             }
+            self.editor.scroll_by(-3);
+            self.refresh_link_preview_for_focus();
             return None;
         }
         if let MouseEventKind::ScrollDown = mouse.kind {
-            self.editor.scroll_by(3);
-            if let Some(area) = layout.get("editor").copied() {
-                self.sync_editor_link_preview(area);
+            if let Some(area) = layout.get("preview").copied() {
+                if Self::point_in_rect(area, mouse.column, mouse.row) {
+                    self.scroll_preview(3);
+                    return None;
+                }
             }
+            self.editor.scroll_by(3);
+            self.refresh_link_preview_for_focus();
             return None;
         }
 
@@ -889,6 +1383,7 @@ impl App {
             if let Some(area) = layout.get("editor").copied() {
                 if Self::point_in_rect(area, mouse_x, mouse_y) {
                     self.focus_component(ComponentId::Editor);
+                    self.editor_mode = EditorMode::Insert;
                     if self
                         .editor
                         .set_cursor_from_screen_position(area, mouse_x, mouse_y)
@@ -903,6 +1398,7 @@ impl App {
 
             if let Some(area) = layout.get("preview").copied() {
                 if Self::point_in_rect(area, mouse_x, mouse_y) {
+                    self.focus_component(ComponentId::Preview);
                     if !self.activate_preview_reference(area, mouse_x, mouse_y) {
                         self.sync_hover_preview_reference(area, mouse_x, mouse_y);
                     }
@@ -1237,13 +1733,7 @@ impl App {
             }
         }
 
-        if self.focus_manager.focused() == ComponentId::Editor {
-            if let Some(area) = self.current_editor_area() {
-                self.sync_editor_link_preview(area);
-            }
-        } else {
-            self.clear_link_preview();
-        }
+        self.refresh_link_preview_for_focus();
     }
 
     /// Handle file actions
@@ -1316,6 +1806,241 @@ impl App {
             self.knowledge.is_open(),
         );
         layout.get("editor").copied()
+    }
+
+    fn current_preview_area(&self) -> Option<Rect> {
+        let layout = Self::compute_layout(
+            self.tui.size(),
+            self.editor.has_content(),
+            self.chat.is_open(),
+            self.knowledge.is_open(),
+        );
+        layout.get("preview").copied()
+    }
+
+    fn preview_target_anchor(&self, area: Rect, hit: &PreviewHit) -> (u16, u16) {
+        let visible_line = hit.line.saturating_sub(self.preview_scroll_offset);
+        let max_x = area.width.saturating_sub(3) as usize;
+        let x = area.x + 1 + hit.start_col.min(max_x) as u16;
+        let y = area.y + 1 + visible_line.min(area.height.saturating_sub(3) as usize) as u16;
+        (x, y)
+    }
+
+    fn sync_preview_navigation_to_editor(&mut self) {
+        let Some(area) = self.current_preview_area() else {
+            self.preview_selected_target = None;
+            self.preview_scroll_offset = 0;
+            self.clear_link_preview();
+            return;
+        };
+
+        let hits = self.editor.preview_targets(area);
+        let max_scroll = self.editor.preview_max_scroll(area);
+        if self.preview_focus_follows_editor || self.preview_scroll_offset > max_scroll {
+            self.preview_scroll_offset = self.editor.synced_preview_scroll(area).min(max_scroll);
+        } else {
+            self.preview_scroll_offset = self.preview_scroll_offset.min(max_scroll);
+        }
+
+        let current_link = self.editor.link_at_cursor();
+        let current_block = self.editor.block_ref_at_cursor();
+        self.preview_selected_target = if hits.is_empty() {
+            None
+        } else if let Some(link) = current_link {
+            hits.iter().position(|hit| {
+                hit.target == link.target
+                    && matches!(
+                        (hit.kind, link.kind),
+                        (PreviewTargetKind::WikiLink, EditorLinkKind::Wiki)
+                            | (PreviewTargetKind::MarkdownLink, EditorLinkKind::Markdown)
+                            | (PreviewTargetKind::Image, EditorLinkKind::Image)
+                    )
+            })
+        } else if let Some(block) = current_block {
+            hits.iter()
+                .position(|hit| hit.kind == PreviewTargetKind::BlockRef && hit.target == block.id)
+        } else {
+            hits.iter()
+                .position(|hit| hit.line >= self.preview_scroll_offset)
+                .or(Some(0))
+        };
+
+        self.ensure_preview_selection_visible();
+        self.sync_preview_selection_overlay();
+    }
+
+    fn ensure_preview_selection_visible(&mut self) {
+        let Some(area) = self.current_preview_area() else {
+            return;
+        };
+        let Some(selected_index) = self.preview_selected_target else {
+            return;
+        };
+
+        let hits = self.editor.preview_targets(area);
+        let Some(hit) = hits.get(selected_index) else {
+            self.preview_selected_target = None;
+            return;
+        };
+
+        let body_height = area.height.saturating_sub(2) as usize;
+        if hit.line < self.preview_scroll_offset {
+            self.preview_scroll_offset = hit.line;
+        } else if hit.line >= self.preview_scroll_offset + body_height {
+            self.preview_scroll_offset = hit.line + 1 - body_height.max(1);
+        }
+        self.preview_scroll_offset = self
+            .preview_scroll_offset
+            .min(self.editor.preview_max_scroll(area));
+    }
+
+    fn sync_preview_selection_overlay(&mut self) {
+        if self.focus_manager.focused() != ComponentId::Preview || self.has_modal_open() {
+            return;
+        }
+
+        let Some(area) = self.current_preview_area() else {
+            self.clear_link_preview();
+            return;
+        };
+
+        let hits = self.editor.preview_targets(area);
+        let Some(selected_index) = self.preview_selected_target else {
+            self.clear_link_preview();
+            return;
+        };
+        let Some(hit) = hits.get(selected_index) else {
+            self.preview_selected_target = None;
+            self.clear_link_preview();
+            return;
+        };
+
+        self.link_preview = Some(LinkPreviewState {
+            preview: self.preview_state_for_hit(hit),
+            anchor: self.preview_target_anchor(area, hit),
+        });
+    }
+
+    fn scroll_preview(&mut self, delta: i32) {
+        let Some(area) = self.current_preview_area() else {
+            return;
+        };
+        let max_scroll = self.editor.preview_max_scroll(area) as i32;
+        let next = (self.preview_scroll_offset as i32 + delta).clamp(0, max_scroll);
+        self.preview_scroll_offset = next as usize;
+
+        let hits = self.editor.preview_targets(area);
+        self.preview_selected_target = hits
+            .iter()
+            .position(|hit| hit.line >= self.preview_scroll_offset)
+            .or_else(|| hits.len().checked_sub(1));
+        self.sync_preview_selection_overlay();
+    }
+
+    fn move_preview_selection(&mut self, forward: bool) {
+        let Some(area) = self.current_preview_area() else {
+            return;
+        };
+        let hits = self.editor.preview_targets(area);
+        if hits.is_empty() {
+            self.preview_selected_target = None;
+            self.clear_link_preview();
+            return;
+        }
+
+        let next = match self.preview_selected_target {
+            Some(current) if forward => (current + 1) % hits.len(),
+            Some(current) if current == 0 => hits.len() - 1,
+            Some(current) => current - 1,
+            None if forward => 0,
+            None => hits.len() - 1,
+        };
+        self.preview_selected_target = Some(next);
+        self.ensure_preview_selection_visible();
+        self.sync_preview_selection_overlay();
+    }
+
+    fn activate_selected_preview_target(&mut self) {
+        let Some(area) = self.current_preview_area() else {
+            return;
+        };
+        let hits = self.editor.preview_targets(area);
+        let Some(selected_index) = self.preview_selected_target else {
+            return;
+        };
+        let Some(hit) = hits.get(selected_index).cloned() else {
+            return;
+        };
+
+        let anchor = self.preview_target_anchor(area, &hit);
+        self.activate_preview_hit(hit, anchor);
+    }
+
+    fn show_cursor_preview(&mut self) {
+        let Some(area) = self.current_editor_area() else {
+            return;
+        };
+
+        if let Some(link) = self.editor.link_at_cursor() {
+            if let Some(anchor) = self.editor.cursor_screen_position(area) {
+                self.link_preview = Some(LinkPreviewState {
+                    preview: self.editor_preview_state_for_link(&link),
+                    anchor,
+                });
+            }
+            return;
+        }
+
+        let Some(block_ref) = self.editor.block_ref_at_cursor() else {
+            self.clear_link_preview();
+            return;
+        };
+        let Some(anchor) = self.editor.cursor_screen_position(area) else {
+            self.clear_link_preview();
+            return;
+        };
+
+        let hit = PreviewHit {
+            line: self.editor.cursor_line_number().saturating_sub(1),
+            start_col: 0,
+            end_col: 0,
+            kind: PreviewTargetKind::BlockRef,
+            target: block_ref.id,
+            label: "Block".to_string(),
+        };
+        self.link_preview = Some(LinkPreviewState {
+            preview: self.preview_state_for_hit(&hit),
+            anchor,
+        });
+    }
+
+    fn activate_cursor_target(&mut self) {
+        if let Some(link) = self.editor.link_at_cursor() {
+            let preview = self.editor_preview_state_for_link(&link);
+            if !self.open_workspace_preview(preview.clone()) {
+                self.show_cursor_preview();
+            }
+            return;
+        }
+
+        let Some(block_ref) = self.editor.block_ref_at_cursor() else {
+            return;
+        };
+
+        self.editor.set_cursor_position(block_ref.line, 0);
+        self.focus_component(ComponentId::Editor);
+        self.clear_link_preview();
+    }
+
+    fn open_quit_dialog(&mut self) {
+        self.clear_link_preview();
+        self.confirm_dialog.open(
+            "退出",
+            "确定要退出 TUI Notebook 吗？",
+            "未保存的改动可能会丢失。",
+            "退出",
+            Action::Quit,
+        );
     }
 
     fn point_in_rect(rect: Rect, x: u16, y: u16) -> bool {
@@ -1432,9 +2157,10 @@ impl App {
         let has_content = self.editor.has_content();
         let chat_open = self.chat.is_open();
         let knowledge_open = self.knowledge.is_open();
-        let layout = Self::compute_layout(f.size(), has_content, chat_open, knowledge_open);
+        let layout = Self::compute_layout(f.area(), has_content, chat_open, knowledge_open);
         let components = Components {
             focused: self.focus_manager.focused(),
+            editor_mode: self.editor_mode,
             sidebar: &self.sidebar,
             editor: &self.editor,
             search: &self.search,
@@ -1445,8 +2171,21 @@ impl App {
             new_file: &self.new_file_dialog,
             confirm: &self.confirm_dialog,
             link_preview: self.link_preview.as_ref(),
+            shortcut_profile: self.shortcut_profile,
+            shortcut_help_open: self.shortcut_help_open,
         };
-        Self::render_with_components(f, &layout, components, self.editor.scroll_offset());
+        let preview_scroll = layout
+            .get("preview")
+            .copied()
+            .map(|area| {
+                if components.focused == ComponentId::Preview {
+                    self.preview_scroll_offset
+                } else {
+                    self.editor.synced_preview_scroll(area)
+                }
+            })
+            .unwrap_or_else(|| self.editor.scroll_offset());
+        Self::render_with_components(f, &layout, components, preview_scroll);
     }
 
     /// Render with components
@@ -1454,7 +2193,7 @@ impl App {
         f: &mut Frame<'_>,
         layout: &std::collections::HashMap<String, ratatui::layout::Rect>,
         components: Components<'_>,
-        scroll_offset: usize,
+        preview_scroll: usize,
     ) {
         // Render sidebar
         if let Some(area) = layout.get("sidebar") {
@@ -1477,7 +2216,7 @@ impl App {
 
         // Render preview
         if let Some(area) = layout.get("preview") {
-            components.editor.render_preview(f, *area, scroll_offset);
+            components.editor.render_preview(f, *area, preview_scroll);
         }
 
         // Render chat
@@ -1508,27 +2247,37 @@ impl App {
             if !components.settings.is_open()
                 && !components.new_file.is_open()
                 && !components.confirm.is_open()
+                && !components.shortcut_help_open
             {
-                Self::render_link_preview(f, f.size(), preview);
+                Self::render_link_preview(f, f.area(), preview);
             }
         }
 
         // Render settings modal
         if components.settings.is_open() {
-            components.settings.render(f, f.size());
+            components.settings.render(f, f.area());
         }
 
         if components.new_file.is_open() {
-            components.new_file.render(f, f.size());
+            components.new_file.render(f, f.area());
         }
 
         if components.confirm.is_open() {
-            components.confirm.render(f, f.size());
+            components.confirm.render(f, f.area());
         }
 
         if !components.settings.is_open()
             && !components.new_file.is_open()
             && !components.confirm.is_open()
+            && components.shortcut_help_open
+        {
+            Self::render_shortcut_help(f, f.area(), components.shortcut_profile);
+        }
+
+        if !components.settings.is_open()
+            && !components.new_file.is_open()
+            && !components.confirm.is_open()
+            && !components.shortcut_help_open
         {
             Self::render_focus_cursor(f, layout, &components);
         }
@@ -1620,6 +2369,7 @@ impl App {
         let Some(area) = (match focused {
             ComponentId::Sidebar => layout.get("sidebar").copied(),
             ComponentId::Editor => layout.get("editor").copied(),
+            ComponentId::Preview => layout.get("preview").copied(),
             ComponentId::Chat => layout.get("chat").copied(),
             ComponentId::Knowledge => layout.get("knowledge").copied(),
             _ => None,
@@ -1645,20 +2395,95 @@ impl App {
         match components.focused {
             ComponentId::Editor => {
                 if let Some(area) = layout.get("editor").copied() {
-                    if let Some((x, y)) = components.editor.cursor_screen_position(area) {
-                        f.set_cursor(x, y);
+                    if components.editor_mode != EditorMode::Preview {
+                        if let Some((x, y)) = components.editor.cursor_screen_position(area) {
+                            f.set_cursor_position((x, y));
+                        }
                     }
+                }
+            }
+            ComponentId::Preview => {
+                if let Some(area) = layout.get("preview").copied() {
+                    let label = Line::from(vec![Span::styled(
+                        " Keyboard Preview ",
+                        Style::default().fg(Color::Rgb(88, 166, 255)),
+                    )]);
+                    f.render_widget(Paragraph::new(label), Rect::new(area.x + 2, area.y, 20, 1));
                 }
             }
             ComponentId::Chat => {
                 if let Some(area) = layout.get("chat").copied() {
                     if let Some((x, y)) = components.chat.input_cursor_screen_position(area) {
-                        f.set_cursor(x, y);
+                        f.set_cursor_position((x, y));
                     }
                 }
             }
             _ => {}
         }
+    }
+
+    fn render_shortcut_help(f: &mut Frame<'_>, screen: Rect, profile: ShortcutProfile) {
+        let width = {
+            let available = screen.width.saturating_sub(2);
+            if available >= 40 {
+                available.min(56)
+            } else {
+                available.max(1)
+            }
+        };
+        let height = {
+            let available = screen.height.saturating_sub(2);
+            if available >= 12 {
+                available.min(16)
+            } else {
+                available.max(1)
+            }
+        };
+        let area = Rect::new(
+            screen.x + screen.width.saturating_sub(width) / 2,
+            screen.y + screen.height.saturating_sub(height) / 2,
+            width,
+            height,
+        );
+        let lines = match profile {
+            ShortcutProfile::TerminalLeader => vec![
+                Line::from("Terminal Leader"),
+                Line::from(""),
+                Line::from("Esc normal/back   Tab cycle focus"),
+                Line::from("Space 1-5 focus   Space s save"),
+                Line::from("Space / search    Space , settings"),
+                Line::from("Space k AI        Space l knowledge"),
+                Line::from("i/a/o insert      h j k l move"),
+                Line::from("w/b words         0/$ line"),
+                Line::from("gg/G top/bottom   Ctrl+u/d half page"),
+                Line::from("p preview         Enter open target"),
+                Line::from(""),
+                Line::from("Ctrl+Q quit   Ctrl+K AI   Ctrl+G help"),
+            ],
+            ShortcutProfile::IdeCompatible => vec![
+                Line::from("IDE Compatible"),
+                Line::from(""),
+                Line::from("F1 Files     F2 Editor    F3 Preview"),
+                Line::from("F4 AI        F5 Knowledge F6 Search"),
+                Line::from("F7 Index     F8 Preview   F9 Save"),
+                Line::from("F10 Settings F12 Quit"),
+                Line::from(""),
+                Line::from("Esc back/close  Tab cycle focus"),
+                Line::from("Ctrl+Q quit    Ctrl+K AI"),
+            ],
+        };
+
+        f.render_widget(Clear, area);
+        f.render_widget(
+            Paragraph::new(lines).block(
+                Block::default()
+                    .title(" Shortcuts ")
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Rgb(88, 166, 255)))
+                    .style(Style::default().bg(Color::Rgb(15, 20, 28))),
+            ),
+            area,
+        );
     }
 
     fn render_title_bar(
@@ -1826,9 +2651,9 @@ pub mod focus {
                 components: vec![
                     ComponentId::Sidebar,
                     ComponentId::Editor,
+                    ComponentId::Preview,
                     ComponentId::Chat,
                     ComponentId::Knowledge,
-                    ComponentId::Search,
                 ],
                 current_index: 0,
             }

@@ -6,6 +6,7 @@
 //! - Syntax highlighting via tree-sitter
 
 use crate::action::{Action, EditorAction};
+use crate::i18n::{Language, TextKey};
 use crossterm::event::KeyEvent;
 use image::ImageReader;
 use ratatui::{
@@ -17,7 +18,7 @@ use ratatui::{
 };
 use ratatui_image::{picker::Picker, protocol::StatefulProtocol, Resize, StatefulImage};
 use ropey::Rope;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -45,9 +46,13 @@ pub struct Editor {
     viewport_width: u16,
     viewport_height: u16,
     /// Parsed link spans in the document
-    links: Vec<EditorLink>,
+    links: RefCell<Vec<EditorLink>>,
     /// Block references (id -> location)
-    block_refs: HashMap<String, BlockRef>,
+    block_refs: RefCell<HashMap<String, BlockRef>>,
+    /// Whether link/block analysis needs to be rebuilt from the buffer
+    document_index_dirty: Cell<bool>,
+    /// Monotonic version used to invalidate preview render cache on edits
+    document_version: Cell<u64>,
     /// Modified files pending save
     modified_files: HashMap<String, Rope>,
     /// Workspace root for resolving image paths
@@ -56,6 +61,10 @@ pub struct Editor {
     preview_picker: RefCell<Option<Picker>>,
     /// Cached image protocols keyed by resolved file path
     preview_image_cache: RefCell<HashMap<PathBuf, PreviewImageCacheEntry>>,
+    /// Cached preview render keyed by content width
+    preview_render_cache: RefCell<HashMap<u16, PreviewRenderCacheValue>>,
+    /// Current UI language
+    language: Language,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -121,6 +130,12 @@ struct PreviewImageBlock {
 enum PreviewImageCacheEntry {
     Ready(StatefulProtocol),
     Failed(String),
+}
+
+#[derive(Debug, Clone)]
+struct PreviewRenderCacheValue {
+    document_version: u64,
+    render: PreviewRender,
 }
 
 /// Markdown block types for rendering
@@ -258,6 +273,13 @@ impl InlineBuilder {
         }
     }
 
+    fn last_segment_text(&self) -> Option<&str> {
+        self.lines
+            .last()?
+            .last()
+            .map(|segment| segment.text.as_str())
+    }
+
     fn push_segment(&mut self, segment: InlineSegment) {
         if segment.text.is_empty() {
             return;
@@ -303,6 +325,7 @@ struct InlineStyleContext {
     strong_depth: usize,
     strikethrough_depth: usize,
     link_targets: Vec<String>,
+    link_suppressed: Vec<bool>,
     kbd_depth: usize,
 }
 
@@ -320,7 +343,20 @@ impl InlineStyleContext {
     }
 
     fn active_link(&self) -> Option<String> {
-        self.link_targets.last().cloned()
+        match (self.link_targets.last(), self.link_suppressed.last()) {
+            (Some(target), Some(false)) => Some(target.clone()),
+            _ => None,
+        }
+    }
+
+    fn push_link(&mut self, target: String, suppressed: bool) {
+        self.link_targets.push(target);
+        self.link_suppressed.push(suppressed);
+    }
+
+    fn pop_link(&mut self) {
+        self.link_targets.pop();
+        self.link_suppressed.pop();
     }
 }
 
@@ -1096,10 +1132,22 @@ fn parse_markdown(md_text: &str) -> Vec<MdBlock> {
                     inline_context.strikethrough_depth.saturating_sub(1);
             }
             Event::Start(Tag::Link { dest_url, .. }) => {
-                inline_context.link_targets.push(dest_url.to_string());
+                let suppress_link = image_stack
+                    .last()
+                    .map(|image| &image.alt)
+                    .or_else(|| table.as_ref().map(|builder| &builder.current_cell))
+                    .or_else(|| heading.as_ref().map(|(_, builder)| builder))
+                    .or_else(|| item_stack.last().map(|item| &item.builder))
+                    .or_else(|| quote.as_ref().map(|builder| &builder.builder))
+                    .or_else(|| footnote.as_ref().map(|builder| &builder.builder))
+                    .or_else(|| paragraph_active.then_some(&paragraph))
+                    .and_then(InlineBuilder::last_segment_text)
+                    .is_some_and(|text| text.ends_with("]("));
+
+                inline_context.push_link(dest_url.to_string(), suppress_link);
             }
             Event::End(TagEnd::Link) => {
-                inline_context.link_targets.pop();
+                inline_context.pop_link();
             }
             Event::Start(Tag::Image { dest_url, .. }) => {
                 image_stack.push(ImageAccumulator {
@@ -1830,9 +1878,14 @@ fn heading_styles(level: u8) -> (Style, Style) {
 }
 
 fn callout_styles(kind: Option<CalloutKind>) -> (String, Style, Style) {
+    callout_styles_localized(kind, Language::En)
+}
+
+fn callout_styles_localized(kind: Option<CalloutKind>, language: Language) -> (String, Style, Style) {
+    let t = language.translator();
     match kind {
         Some(CalloutKind::Note) => (
-            " NOTE ".to_string(),
+            format!(" {} ", t.text(TextKey::EditorCalloutNote)),
             Style::default()
                 .fg(Color::Rgb(97, 175, 239))
                 .bg(Color::Rgb(27, 40, 58))
@@ -1840,7 +1893,7 @@ fn callout_styles(kind: Option<CalloutKind>) -> (String, Style, Style) {
             Style::default().fg(Color::Rgb(97, 175, 239)),
         ),
         Some(CalloutKind::Tip) => (
-            " TIP ".to_string(),
+            format!(" {} ", t.text(TextKey::EditorCalloutTip)),
             Style::default()
                 .fg(Color::Rgb(152, 195, 121))
                 .bg(Color::Rgb(31, 50, 31))
@@ -1848,7 +1901,7 @@ fn callout_styles(kind: Option<CalloutKind>) -> (String, Style, Style) {
             Style::default().fg(Color::Rgb(152, 195, 121)),
         ),
         Some(CalloutKind::Important) => (
-            " IMPORTANT ".to_string(),
+            format!(" {} ", t.text(TextKey::EditorCalloutImportant)),
             Style::default()
                 .fg(Color::Rgb(229, 192, 123))
                 .bg(Color::Rgb(64, 47, 20))
@@ -1856,7 +1909,7 @@ fn callout_styles(kind: Option<CalloutKind>) -> (String, Style, Style) {
             Style::default().fg(Color::Rgb(229, 192, 123)),
         ),
         Some(CalloutKind::Warning) => (
-            " WARNING ".to_string(),
+            format!(" {} ", t.text(TextKey::EditorCalloutWarning)),
             Style::default()
                 .fg(Color::Rgb(224, 108, 117))
                 .bg(Color::Rgb(64, 24, 24))
@@ -1864,7 +1917,7 @@ fn callout_styles(kind: Option<CalloutKind>) -> (String, Style, Style) {
             Style::default().fg(Color::Rgb(224, 108, 117)),
         ),
         Some(CalloutKind::Caution) => (
-            " CAUTION ".to_string(),
+            format!(" {} ", t.text(TextKey::EditorCalloutCaution)),
             Style::default()
                 .fg(Color::Rgb(224, 108, 117))
                 .bg(Color::Rgb(72, 29, 29))
@@ -2018,21 +2071,37 @@ fn preview_list_item_lines(
 }
 
 fn preview_image_lines(alt: &InlineLine, src: &str, width: usize) -> Vec<Line<'static>> {
+    preview_image_lines_localized(alt, src, width, Language::En)
+}
+
+fn preview_image_lines_localized(
+    alt: &InlineLine,
+    src: &str,
+    width: usize,
+    language: Language,
+) -> Vec<Line<'static>> {
+    let t = language.translator();
     let title_style = Style::default()
         .fg(Color::Rgb(86, 182, 194))
         .bg(Color::Rgb(23, 43, 46))
         .add_modifier(Modifier::BOLD);
     let info_style = Style::default().fg(Color::Rgb(139, 148, 158));
 
-    let mut lines = vec![styled_text_line(" IMAGE ".to_string(), title_style)];
+    let mut lines = vec![styled_text_line(
+        format!(" {} ", t.text(TextKey::EditorImageBadge)),
+        title_style,
+    )];
     lines.extend(wrap_inline_lines(
         std::slice::from_ref(alt),
         width,
-        vec![Span::styled("alt: ".to_string(), info_style)],
+        vec![Span::styled(
+            format!("{}: ", t.text(TextKey::EditorAltLabel)),
+            info_style,
+        )],
         vec![Span::raw("     ".to_string())],
     ));
     lines.extend(wrap_plain_text_lines(
-        &[format!("src: {}", src)],
+        &[format!("{}: {}", t.text(TextKey::EditorSourceLabel), src)],
         width,
         info_style,
         Vec::new(),
@@ -2042,6 +2111,11 @@ fn preview_image_lines(alt: &InlineLine, src: &str, width: usize) -> Vec<Line<'s
 }
 
 fn preview_html_lines(raw: &str, width: usize) -> Vec<Line<'static>> {
+    preview_html_lines_localized(raw, width, Language::En)
+}
+
+fn preview_html_lines_localized(raw: &str, width: usize, language: Language) -> Vec<Line<'static>> {
+    let t = language.translator();
     let title_style = Style::default()
         .fg(Color::Rgb(209, 154, 102))
         .bg(Color::Rgb(56, 40, 22))
@@ -2050,7 +2124,10 @@ fn preview_html_lines(raw: &str, width: usize) -> Vec<Line<'static>> {
         .fg(Color::Rgb(171, 178, 191))
         .add_modifier(Modifier::DIM);
 
-    let mut lines = vec![styled_text_line(" HTML ".to_string(), title_style)];
+    let mut lines = vec![styled_text_line(
+        format!(" {} ", t.text(TextKey::EditorHtmlBadge)),
+        title_style,
+    )];
     let raw_lines: Vec<String> = raw.lines().map(ToString::to_string).collect();
     lines.extend(wrap_plain_text_lines(
         &raw_lines,
@@ -2123,6 +2200,17 @@ fn preview_table_lines(
     alignments: &[Alignment],
     width: usize,
 ) -> Vec<Line<'static>> {
+    preview_table_lines_localized(header, rows, alignments, width, Language::En)
+}
+
+fn preview_table_lines_localized(
+    header: &[InlineLine],
+    rows: &[Vec<InlineLine>],
+    alignments: &[Alignment],
+    width: usize,
+    language: Language,
+) -> Vec<Line<'static>> {
+    let t = language.translator();
     let col_count = header
         .len()
         .max(rows.iter().map(Vec::len).max().unwrap_or(0));
@@ -2149,7 +2237,12 @@ fn preview_table_lines(
 
     if width < (col_count * 6).max(12) {
         let mut fallback = vec![styled_text_line(
-            format!(" TABLE {}x{} ", plain_rows.len() + 1, col_count),
+            format!(
+                " {} {}x{} ",
+                t.text(TextKey::EditorTableBadge),
+                plain_rows.len() + 1,
+                col_count
+            ),
             Style::default()
                 .fg(Color::Rgb(97, 175, 239))
                 .bg(Color::Rgb(24, 40, 58))
@@ -2229,6 +2322,15 @@ fn preview_table_lines(
 }
 
 fn preview_display_math_lines(text: &str, width: usize) -> Vec<Line<'static>> {
+    preview_display_math_lines_localized(text, width, Language::En)
+}
+
+fn preview_display_math_lines_localized(
+    text: &str,
+    width: usize,
+    language: Language,
+) -> Vec<Line<'static>> {
+    let t = language.translator();
     let label_style = Style::default()
         .fg(Color::Rgb(198, 120, 221))
         .bg(Color::Rgb(40, 31, 49))
@@ -2237,7 +2339,10 @@ fn preview_display_math_lines(text: &str, width: usize) -> Vec<Line<'static>> {
         &[text.to_string()],
         width,
         Style::default().fg(Color::Rgb(220, 223, 228)),
-        vec![Span::styled(" MATH ".to_string(), label_style)],
+        vec![Span::styled(
+            format!(" {} ", t.text(TextKey::EditorMathBadge)),
+            label_style,
+        )],
         vec![Span::raw("      ".to_string())],
     )
 }
@@ -2269,7 +2374,17 @@ fn preview_quote_render(
     lines: &[InlineLine],
     width: usize,
 ) -> PreviewRender {
-    let (label, label_style, bar_style) = callout_styles(kind);
+    preview_quote_render_localized(kind, depth, lines, width, Language::En)
+}
+
+fn preview_quote_render_localized(
+    kind: Option<CalloutKind>,
+    depth: usize,
+    lines: &[InlineLine],
+    width: usize,
+    language: Language,
+) -> PreviewRender {
+    let (label, label_style, bar_style) = callout_styles_localized(kind, language);
     let bar = format!("{} ", "▏".repeat(depth.max(1).min(3)));
     let first_prefix = if label.is_empty() {
         vec![Span::styled(bar.clone(), bar_style)]
@@ -2334,7 +2449,7 @@ fn preview_list_item_render(
 }
 
 fn preview_footnote_render(label: &str, lines: &[InlineLine], width: usize) -> PreviewRender {
-    let prefix = format!("[^{}] ", label);
+    let prefix = format!("[{}] ", label);
     let continuation = " ".repeat(prefix.len());
     wrap_inline_lines_with_hits(
         lines,
@@ -2349,8 +2464,185 @@ fn preview_footnote_render(label: &str, lines: &[InlineLine], width: usize) -> P
     )
 }
 
+fn remember_footnote_label(order: &mut Vec<String>, label: &str) {
+    if !label.is_empty() && !order.iter().any(|existing| existing == label) {
+        order.push(label.to_string());
+    }
+}
+
+fn collect_footnote_labels_from_line(line: &InlineLine, order: &mut Vec<String>) {
+    for segment in line {
+        if segment.role == InlineRole::FootnoteReference {
+            if let Some(label) = segment.target.as_deref() {
+                remember_footnote_label(order, label);
+            }
+        }
+    }
+}
+
+fn collect_footnote_labels_from_lines(lines: &[InlineLine], order: &mut Vec<String>) {
+    for line in lines {
+        collect_footnote_labels_from_line(line, order);
+    }
+}
+
+fn footnote_numbering(blocks: &[MdBlock]) -> HashMap<String, usize> {
+    let mut order = Vec::new();
+
+    for block in blocks {
+        match block {
+            MdBlock::Heading { content, .. } => {
+                collect_footnote_labels_from_line(content, &mut order)
+            }
+            MdBlock::Paragraph { lines }
+            | MdBlock::BlockQuote { lines, .. }
+            | MdBlock::ListItem { lines, .. } => {
+                collect_footnote_labels_from_lines(lines, &mut order)
+            }
+            MdBlock::Table { header, rows, .. } => {
+                collect_footnote_labels_from_lines(header, &mut order);
+                for row in rows {
+                    collect_footnote_labels_from_lines(row, &mut order);
+                }
+            }
+            MdBlock::Image { alt, .. } => collect_footnote_labels_from_line(alt, &mut order),
+            MdBlock::FootnoteDefinition { label, lines } => {
+                remember_footnote_label(&mut order, label);
+                collect_footnote_labels_from_lines(lines, &mut order);
+            }
+            MdBlock::CodeBlock { .. }
+            | MdBlock::Mermaid { .. }
+            | MdBlock::HtmlBlock { .. }
+            | MdBlock::DisplayMath { .. }
+            | MdBlock::HorizontalRule => {}
+        }
+    }
+
+    order
+        .into_iter()
+        .enumerate()
+        .map(|(index, label)| (label, index + 1))
+        .collect()
+}
+
+fn normalize_inline_line_for_preview(
+    line: &InlineLine,
+    numbering: &HashMap<String, usize>,
+) -> InlineLine {
+    line.iter()
+        .cloned()
+        .map(|mut segment| {
+            if segment.role == InlineRole::FootnoteReference {
+                let label = segment
+                    .target
+                    .as_deref()
+                    .map(ToString::to_string)
+                    .unwrap_or_else(|| {
+                        segment
+                            .text
+                            .trim_start_matches("[^")
+                            .trim_start_matches('[')
+                            .trim_end_matches(']')
+                            .to_string()
+                    });
+                let display = numbering
+                    .get(&label)
+                    .map(|number| number.to_string())
+                    .unwrap_or(label);
+                segment.text = format!("[{}]", display);
+            }
+            segment
+        })
+        .collect()
+}
+
+fn normalize_inline_lines_for_preview(
+    lines: &[InlineLine],
+    numbering: &HashMap<String, usize>,
+) -> Vec<InlineLine> {
+    lines
+        .iter()
+        .map(|line| normalize_inline_line_for_preview(line, numbering))
+        .collect()
+}
+
+fn normalize_blocks_for_preview(blocks: &[MdBlock]) -> Vec<MdBlock> {
+    let numbering = footnote_numbering(blocks);
+
+    blocks
+        .iter()
+        .map(|block| match block {
+            MdBlock::Heading { level, content } => MdBlock::Heading {
+                level: *level,
+                content: normalize_inline_line_for_preview(content, &numbering),
+            },
+            MdBlock::Paragraph { lines } => MdBlock::Paragraph {
+                lines: normalize_inline_lines_for_preview(lines, &numbering),
+            },
+            MdBlock::CodeBlock { language, code } => MdBlock::CodeBlock {
+                language: language.clone(),
+                code: code.clone(),
+            },
+            MdBlock::Mermaid { code } => MdBlock::Mermaid { code: code.clone() },
+            MdBlock::Table {
+                header,
+                rows,
+                alignments,
+            } => MdBlock::Table {
+                header: normalize_inline_lines_for_preview(header, &numbering),
+                rows: rows
+                    .iter()
+                    .map(|row| normalize_inline_lines_for_preview(row, &numbering))
+                    .collect(),
+                alignments: alignments.clone(),
+            },
+            MdBlock::BlockQuote { kind, lines, depth } => MdBlock::BlockQuote {
+                kind: *kind,
+                lines: normalize_inline_lines_for_preview(lines, &numbering),
+                depth: *depth,
+            },
+            MdBlock::ListItem {
+                ordered,
+                number,
+                checked,
+                indent,
+                lines,
+            } => MdBlock::ListItem {
+                ordered: *ordered,
+                number: *number,
+                checked: *checked,
+                indent: *indent,
+                lines: normalize_inline_lines_for_preview(lines, &numbering),
+            },
+            MdBlock::Image { alt, src } => MdBlock::Image {
+                alt: normalize_inline_line_for_preview(alt, &numbering),
+                src: src.clone(),
+            },
+            MdBlock::HtmlBlock { raw } => MdBlock::HtmlBlock { raw: raw.clone() },
+            MdBlock::FootnoteDefinition { label, lines } => MdBlock::FootnoteDefinition {
+                label: numbering
+                    .get(label)
+                    .map(|number| number.to_string())
+                    .unwrap_or_else(|| label.clone()),
+                lines: normalize_inline_lines_for_preview(lines, &numbering),
+            },
+            MdBlock::DisplayMath { text } => MdBlock::DisplayMath { text: text.clone() },
+            MdBlock::HorizontalRule => MdBlock::HorizontalRule,
+        })
+        .collect()
+}
+
 fn preview_image_render(alt: &InlineLine, src: &str, width: usize) -> PreviewRender {
-    let lines = preview_image_lines(alt, src, width);
+    preview_image_render_localized(alt, src, width, Language::En)
+}
+
+fn preview_image_render_localized(
+    alt: &InlineLine,
+    src: &str,
+    width: usize,
+    language: Language,
+) -> PreviewRender {
+    let lines = preview_image_lines_localized(alt, src, width, language);
     let label = plain_text_from_line(alt);
     let hits = if src.trim().is_empty() {
         Vec::new()
@@ -2367,7 +2659,10 @@ fn preview_image_render(alt: &InlineLine, src: &str, width: usize) -> PreviewRen
                     kind: PreviewTargetKind::Image,
                     target: src.to_string(),
                     label: if label.trim().is_empty() {
-                        "Image".to_string()
+                        language
+                            .translator()
+                            .text(TextKey::PreviewImage)
+                            .to_string()
                     } else {
                         label.clone()
                     },
@@ -2384,6 +2679,15 @@ fn preview_image_render(alt: &InlineLine, src: &str, width: usize) -> PreviewRen
 }
 
 fn preview_block_to_render(block: &MdBlock, width: u16) -> PreviewRender {
+    preview_block_to_render_localized(block, width, Language::En)
+}
+
+fn preview_block_to_render_localized(
+    block: &MdBlock,
+    width: u16,
+    language: Language,
+) -> PreviewRender {
+    let t = language.translator();
     let width = width.max(1) as usize;
     match block {
         MdBlock::Heading { level, content } => preview_heading_render(*level, content, width),
@@ -2392,9 +2696,9 @@ fn preview_block_to_render(block: &MdBlock, width: u16) -> PreviewRender {
         }
         MdBlock::CodeBlock { language, code } => {
             let label = if language.trim().is_empty() {
-                "CODE".to_string()
+                t.text(TextKey::EditorCodeBadge).to_string()
             } else {
-                format!("CODE {}", language.trim())
+                format!("{} {}", t.text(TextKey::EditorCodeBadge), language.trim())
             };
             PreviewRender {
                 lines: preview_code_lines(label.as_str(), code, width, false),
@@ -2403,7 +2707,7 @@ fn preview_block_to_render(block: &MdBlock, width: u16) -> PreviewRender {
             }
         }
         MdBlock::Mermaid { code } => PreviewRender {
-            lines: preview_code_lines("MERMAID", code, width, true),
+            lines: preview_code_lines(t.text(TextKey::EditorMermaidBadge), code, width, true),
             hits: Vec::new(),
             images: Vec::new(),
         },
@@ -2412,12 +2716,12 @@ fn preview_block_to_render(block: &MdBlock, width: u16) -> PreviewRender {
             rows,
             alignments,
         } => PreviewRender {
-            lines: preview_table_lines(header, rows, alignments, width),
+            lines: preview_table_lines_localized(header, rows, alignments, width, language),
             hits: Vec::new(),
             images: Vec::new(),
         },
         MdBlock::BlockQuote { kind, lines, depth } => {
-            preview_quote_render(*kind, *depth, lines, width)
+            preview_quote_render_localized(*kind, *depth, lines, width, language)
         }
         MdBlock::ListItem {
             ordered,
@@ -2426,9 +2730,9 @@ fn preview_block_to_render(block: &MdBlock, width: u16) -> PreviewRender {
             indent,
             lines,
         } => preview_list_item_render(*ordered, *number, *checked, *indent, lines, width),
-        MdBlock::Image { alt, src } => preview_image_render(alt, src, width),
+        MdBlock::Image { alt, src } => preview_image_render_localized(alt, src, width, language),
         MdBlock::HtmlBlock { raw } => PreviewRender {
-            lines: preview_html_lines(raw, width),
+            lines: preview_html_lines_localized(raw, width, language),
             hits: Vec::new(),
             images: Vec::new(),
         },
@@ -2436,7 +2740,7 @@ fn preview_block_to_render(block: &MdBlock, width: u16) -> PreviewRender {
             preview_footnote_render(label, lines, width)
         }
         MdBlock::DisplayMath { text } => PreviewRender {
-            lines: preview_display_math_lines(text, width),
+            lines: preview_display_math_lines_localized(text, width, language),
             hits: Vec::new(),
             images: Vec::new(),
         },
@@ -2487,13 +2791,22 @@ impl Editor {
             horizontal_scroll: 0,
             viewport_width: 1,
             viewport_height: 1,
-            links: Vec::new(),
-            block_refs: HashMap::new(),
+            links: RefCell::new(Vec::new()),
+            block_refs: RefCell::new(HashMap::new()),
+            document_index_dirty: Cell::new(false),
+            document_version: Cell::new(0),
             modified_files: HashMap::new(),
             workspace_root: None,
             preview_picker: RefCell::new(None),
             preview_image_cache: RefCell::new(HashMap::new()),
+            preview_render_cache: RefCell::new(HashMap::new()),
+            language: Language::En,
         }
+    }
+
+    pub fn set_language(&mut self, language: Language) {
+        self.language = language;
+        self.preview_render_cache.borrow_mut().clear();
     }
 
     /// Initialize the editor
@@ -2590,6 +2903,149 @@ impl Editor {
         true
     }
 
+    pub fn move_cursor_up_command(&mut self) {
+        self.move_cursor_up();
+    }
+
+    pub fn move_cursor_down_command(&mut self) {
+        self.move_cursor_down();
+    }
+
+    pub fn move_cursor_left_command(&mut self) {
+        self.move_cursor_left();
+    }
+
+    pub fn move_cursor_right_command(&mut self) {
+        self.move_cursor_right();
+    }
+
+    pub fn move_cursor_word_forward(&mut self) {
+        let mut line = self.cursor_line;
+        let mut column = self.cursor_col;
+
+        loop {
+            let chars: Vec<char> = self.line_text(line).chars().collect();
+
+            while column < chars.len() && Self::is_word_char(chars[column]) {
+                column += 1;
+            }
+            while column < chars.len() && !Self::is_word_char(chars[column]) {
+                column += 1;
+            }
+
+            if column < chars.len() {
+                self.cursor_line = line;
+                self.cursor_col = column;
+                self.ensure_cursor_visible();
+                return;
+            }
+
+            if line >= self.max_line_index() {
+                self.cursor_line = line;
+                self.cursor_col = chars.len();
+                self.ensure_cursor_visible();
+                return;
+            }
+
+            line += 1;
+            column = 0;
+        }
+    }
+
+    pub fn move_cursor_word_backward(&mut self) {
+        if self.cursor_line == 0 && self.cursor_col == 0 {
+            return;
+        }
+
+        let mut line = self.cursor_line;
+        let mut column = self.cursor_col;
+
+        loop {
+            let chars: Vec<char> = self.line_text(line).chars().collect();
+            if column > chars.len() {
+                column = chars.len();
+            }
+
+            if column == 0 {
+                if line == 0 {
+                    self.cursor_line = 0;
+                    self.cursor_col = 0;
+                    self.ensure_cursor_visible();
+                    return;
+                }
+                line -= 1;
+                column = self.line_len_chars(line);
+                continue;
+            }
+
+            column -= 1;
+            while column > 0 && !Self::is_word_char(chars[column]) {
+                column -= 1;
+            }
+
+            if Self::is_word_char(chars[column]) {
+                while column > 0 && Self::is_word_char(chars[column - 1]) {
+                    column -= 1;
+                }
+                self.cursor_line = line;
+                self.cursor_col = column;
+                self.ensure_cursor_visible();
+                return;
+            }
+
+            if line == 0 {
+                self.cursor_line = 0;
+                self.cursor_col = 0;
+                self.ensure_cursor_visible();
+                return;
+            }
+
+            line -= 1;
+            column = self.line_len_chars(line);
+        }
+    }
+
+    pub fn move_cursor_to_line_start(&mut self) {
+        self.cursor_col = 0;
+        self.ensure_cursor_visible();
+    }
+
+    pub fn move_cursor_to_line_end(&mut self) {
+        self.cursor_col = self.line_len_chars(self.cursor_line);
+        self.ensure_cursor_visible();
+    }
+
+    pub fn move_cursor_to_document_start(&mut self) {
+        self.cursor_line = 0;
+        self.cursor_col = 0;
+        self.ensure_cursor_visible();
+    }
+
+    pub fn move_cursor_to_document_end(&mut self) {
+        self.cursor_line = self.max_line_index();
+        self.cursor_col = self.line_len_chars(self.cursor_line);
+        self.ensure_cursor_visible();
+    }
+
+    pub fn move_half_page_down(&mut self) {
+        let step = (self.visible_height() / 2).max(1);
+        self.cursor_line = (self.cursor_line + step).min(self.max_line_index());
+        self.cursor_col = self.cursor_col.min(self.line_len_chars(self.cursor_line));
+        self.ensure_cursor_visible();
+    }
+
+    pub fn move_half_page_up(&mut self) {
+        let step = (self.visible_height() / 2).max(1);
+        self.cursor_line = self.cursor_line.saturating_sub(step);
+        self.cursor_col = self.cursor_col.min(self.line_len_chars(self.cursor_line));
+        self.ensure_cursor_visible();
+    }
+
+    pub fn open_line_below(&mut self) {
+        self.cursor_col = self.line_len_chars(self.cursor_line);
+        self.insert_newline();
+    }
+
     pub fn cursor_screen_position(&self, area: Rect) -> Option<(u16, u16)> {
         let visible_y = self.cursor_line.checked_sub(self.scroll_offset)?;
         if visible_y >= area.height.saturating_sub(2) as usize {
@@ -2620,14 +3076,18 @@ impl Editor {
         let line_text = self.line_text(line);
         let display_col = self.horizontal_scroll + x.saturating_sub(area.x + 1) as usize;
         let column = Self::char_index_for_display_column(line_text.as_str(), display_col);
+        self.ensure_document_index();
         self.links
+            .borrow()
             .iter()
             .find(|link| link.line == line && column >= link.start_col && column < link.end_col)
             .cloned()
     }
 
     pub fn link_at_cursor(&self) -> Option<EditorLink> {
+        self.ensure_document_index();
         self.links
+            .borrow()
             .iter()
             .find(|link| {
                 link.line == self.cursor_line
@@ -2637,7 +3097,69 @@ impl Editor {
             .cloned()
     }
 
+    pub fn block_ref_at_cursor(&self) -> Option<BlockRef> {
+        self.ensure_document_index();
+        Self::parse_block_ref_hits_in_line(
+            self.cursor_line,
+            self.line_text(self.cursor_line).as_str(),
+        )
+        .into_iter()
+        .find(|(start_col, end_col, _)| self.cursor_col >= *start_col && self.cursor_col < *end_col)
+        .and_then(|(_, _, id)| self.block_refs.borrow().get(&id).cloned())
+    }
+
+    pub fn synced_preview_scroll(&self, area: Rect) -> usize {
+        self.preview_scroll_from_editor_scroll(area, self.scroll_offset)
+    }
+
+    pub fn preview_scroll_from_editor_scroll(&self, area: Rect, editor_scroll: usize) -> usize {
+        let render = self.preview_render_for_width(area.width.saturating_sub(2));
+        let max_scroll = render
+            .lines
+            .len()
+            .saturating_sub(area.height.saturating_sub(2) as usize);
+        map_preview_scroll(editor_scroll, self.max_vertical_scroll(), max_scroll)
+    }
+
+    pub fn preview_max_scroll(&self, area: Rect) -> usize {
+        let render = self.preview_render_for_width(area.width.saturating_sub(2));
+        render
+            .lines
+            .len()
+            .saturating_sub(area.height.saturating_sub(2) as usize)
+    }
+
+    pub fn preview_targets(&self, area: Rect) -> Vec<PreviewHit> {
+        let render = self.preview_render_for_width(area.width.saturating_sub(2));
+        let mut deduped = Vec::new();
+        for hit in render.hits {
+            let duplicate = deduped.last().is_some_and(|last: &PreviewHit| {
+                last.kind == hit.kind
+                    && last.target == hit.target
+                    && last.label == hit.label
+                    && last.end_col == hit.end_col
+                    && last.start_col == hit.start_col
+                    && last.line + 1 >= hit.line
+            });
+            if !duplicate {
+                deduped.push(hit);
+            }
+        }
+        deduped
+    }
+
     pub fn preview_hit_at_screen_position(&self, area: Rect, x: u16, y: u16) -> Option<PreviewHit> {
+        let preview_scroll = self.synced_preview_scroll(area);
+        self.preview_hit_at_screen_position_with_scroll(area, x, y, preview_scroll)
+    }
+
+    pub fn preview_hit_at_screen_position_with_scroll(
+        &self,
+        area: Rect,
+        x: u16,
+        y: u16,
+        preview_scroll: usize,
+    ) -> Option<PreviewHit> {
         if x <= area.x
             || x >= area.x + area.width.saturating_sub(1)
             || y <= area.y
@@ -2648,12 +3170,6 @@ impl Editor {
 
         let render = self.preview_render_for_width(area.width.saturating_sub(2));
 
-        let max_scroll = render
-            .lines
-            .len()
-            .saturating_sub(area.height.saturating_sub(2) as usize);
-        let preview_scroll =
-            map_preview_scroll(self.scroll_offset, self.max_vertical_scroll(), max_scroll);
         let preview_line = preview_scroll + y.saturating_sub(area.y + 1) as usize;
         let display_col = x.saturating_sub(area.x + 1) as usize;
 
@@ -2663,7 +3179,8 @@ impl Editor {
     }
 
     pub fn block_ref_by_id(&self, block_id: &str) -> Option<BlockRef> {
-        self.block_refs.get(block_id).cloned()
+        self.ensure_document_index();
+        self.block_refs.borrow().get(block_id).cloned()
     }
 
     /// Load a file into the editor
@@ -2677,6 +3194,7 @@ impl Editor {
                 self.cursor_col = 0;
                 self.scroll_offset = 0;
                 self.horizontal_scroll = 0;
+                self.invalidate_buffer_caches();
                 self.parse_document();
                 self.ensure_cursor_visible();
                 self.preview_image_cache.borrow_mut().clear();
@@ -2696,6 +3214,7 @@ impl Editor {
         self.cursor_col = 0;
         self.scroll_offset = 0;
         self.horizontal_scroll = 0;
+        self.invalidate_buffer_caches();
         self.preview_image_cache.borrow_mut().clear();
     }
 
@@ -2724,24 +3243,36 @@ impl Editor {
     }
 
     /// Parse the document for wiki links and block references
-    fn parse_document(&mut self) {
-        self.links.clear();
-        self.block_refs.clear();
-
+    fn parse_document(&self) {
+        let mut links = Vec::new();
+        let mut block_refs = HashMap::new();
         let text = self.buffer.to_string();
         for (line_idx, line) in text.lines().enumerate() {
-            self.links
-                .extend(Self::parse_wiki_embeds_in_line(line_idx, line));
-            self.links
-                .extend(Self::parse_wiki_links_in_line(line_idx, line));
-            self.links
-                .extend(Self::parse_markdown_images_in_line(line_idx, line));
-            self.links
-                .extend(Self::parse_markdown_links_in_line(line_idx, line));
+            links.extend(Self::parse_wiki_embeds_in_line(line_idx, line));
+            links.extend(Self::parse_wiki_links_in_line(line_idx, line));
+            links.extend(Self::parse_markdown_images_in_line(line_idx, line));
+            links.extend(Self::parse_markdown_links_in_line(line_idx, line));
             for block_ref in Self::parse_block_refs_in_line(line_idx, line) {
-                self.block_refs.insert(block_ref.id.clone(), block_ref);
+                block_refs.insert(block_ref.id.clone(), block_ref);
             }
         }
+
+        *self.links.borrow_mut() = links;
+        *self.block_refs.borrow_mut() = block_refs;
+        self.document_index_dirty.set(false);
+    }
+
+    fn ensure_document_index(&self) {
+        if self.document_index_dirty.get() {
+            self.parse_document();
+        }
+    }
+
+    fn invalidate_buffer_caches(&self) {
+        self.document_index_dirty.set(true);
+        self.document_version
+            .set(self.document_version.get().wrapping_add(1));
+        self.preview_render_cache.borrow_mut().clear();
     }
 
     fn parse_wiki_embeds_in_line(line_idx: usize, line: &str) -> Vec<EditorLink> {
@@ -2935,6 +3466,22 @@ impl Editor {
 
     fn parse_block_refs_in_line(line_idx: usize, line: &str) -> Vec<BlockRef> {
         let mut refs = Vec::new();
+        for (_, _, id) in Self::parse_block_ref_hits_in_line(line_idx, line) {
+            if !id.is_empty() {
+                refs.push(BlockRef {
+                    id,
+                    file_path: String::new(),
+                    line: line_idx,
+                    content: line.trim().to_string(),
+                });
+            }
+        }
+
+        refs
+    }
+
+    fn parse_block_ref_hits_in_line(line_idx: usize, line: &str) -> Vec<(usize, usize, String)> {
+        let mut hits = Vec::new();
         let mut search_start = 0;
 
         while let Some(offset) = line[search_start..].find("((") {
@@ -2945,18 +3492,19 @@ impl Editor {
             };
             let end_byte = start_byte + 2 + close_offset + 2;
             let id = rest[..close_offset].trim().to_string();
-            if !id.is_empty() {
-                refs.push(BlockRef {
-                    id,
-                    file_path: String::new(),
-                    line: line_idx,
-                    content: line.trim().to_string(),
-                });
-            }
+            hits.push((
+                Self::byte_to_char_index(line, start_byte),
+                Self::byte_to_char_index(line, end_byte),
+                id,
+            ));
             search_start = end_byte;
         }
 
-        refs
+        if line_idx > 0 && hits.is_empty() {
+            return Vec::new();
+        }
+
+        hits
     }
 
     fn byte_to_char_index(line: &str, byte_idx: usize) -> usize {
@@ -3051,6 +3599,10 @@ impl Editor {
         self.ensure_cursor_visible();
     }
 
+    fn is_word_char(c: char) -> bool {
+        c.is_alphanumeric() || matches!(c, '_' | '-')
+    }
+
     fn display_width_for_char_index(text: &str, char_idx: usize) -> usize {
         text.chars()
             .take(char_idx)
@@ -3135,7 +3687,7 @@ impl Editor {
                 self.load_file(path);
             }
             EditorAction::NavigateToBlock(block_id) => {
-                if let Some(block_ref) = self.block_refs.get(block_id) {
+                if let Some(block_ref) = self.block_ref_by_id(block_id) {
                     self.set_cursor_position(block_ref.line, 0);
                 }
             }
@@ -3177,7 +3729,7 @@ impl Editor {
         self.buffer.insert(pos, c.to_string().as_str());
         self.cursor_col += 1;
         self.is_modified = true;
-        self.parse_document();
+        self.invalidate_buffer_caches();
         self.ensure_cursor_visible();
     }
 
@@ -3189,7 +3741,7 @@ impl Editor {
         self.cursor_line += 1;
         self.cursor_col = 0;
         self.is_modified = true;
-        self.parse_document();
+        self.invalidate_buffer_caches();
         self.ensure_cursor_visible();
     }
 
@@ -3201,7 +3753,7 @@ impl Editor {
             self.buffer.remove(pos..pos + 1);
             self.cursor_col -= 1;
             self.is_modified = true;
-            self.parse_document();
+            self.invalidate_buffer_caches();
             self.ensure_cursor_visible();
         } else if self.cursor_line > 0 {
             let prev_line = self.cursor_line - 1;
@@ -3211,7 +3763,7 @@ impl Editor {
             self.cursor_line -= 1;
             self.cursor_col = self.line_len_chars(self.cursor_line);
             self.is_modified = true;
-            self.parse_document();
+            self.invalidate_buffer_caches();
             self.ensure_cursor_visible();
         }
     }
@@ -3223,7 +3775,7 @@ impl Editor {
         if pos < self.buffer.len_chars() {
             self.buffer.remove(pos..pos + 1);
             self.is_modified = true;
-            self.parse_document();
+            self.invalidate_buffer_caches();
             self.ensure_cursor_visible();
         }
     }
@@ -3280,10 +3832,15 @@ impl Editor {
 
     /// Render the editor
     pub fn render(&self, f: &mut Frame<'_>, area: Rect) {
-        let lines: Vec<Line> = self
-            .buffer
-            .lines()
-            .map(|line| self.render_line(&line.to_string()))
+        let visible_height = area.height.saturating_sub(2).max(1) as usize;
+        let max_line = self.max_line_index();
+        let start_line = self.scroll_offset.min(max_line);
+        let end_line = (start_line + visible_height).min(max_line + 1);
+        let lines: Vec<Line> = (start_line..end_line)
+            .map(|line| {
+                let text = self.line_text(line);
+                self.render_line(&text)
+            })
             .collect();
 
         let text = Text::from(lines);
@@ -3291,7 +3848,10 @@ impl Editor {
         let paragraph = Paragraph::new(text)
             .block(
                 Block::default()
-                    .title(" Editor ")
+                    .title(format!(
+                        " {} ",
+                        self.language.translator().text(TextKey::EditorTitle)
+                    ))
                     .borders(ratatui::widgets::Borders::ALL)
                     .title_style(Style::default().fg(Color::Rgb(139, 148, 158))),
             )
@@ -3300,7 +3860,7 @@ impl Editor {
                     .bg(Color::Rgb(13, 17, 23))
                     .fg(Color::Rgb(201, 209, 217)),
             )
-            .scroll((self.scroll_offset as u16, self.horizontal_scroll as u16));
+            .scroll((0, self.horizontal_scroll as u16));
 
         f.render_widget(paragraph, area);
     }
@@ -3499,7 +4059,7 @@ impl Editor {
     }
 
     /// Render the preview pane with Markdown rendering
-    pub fn render_preview(&self, f: &mut Frame<'_>, area: Rect, scroll_offset: usize) {
+    pub fn render_preview(&self, f: &mut Frame<'_>, area: Rect, preview_scroll: usize) {
         f.render_widget(Clear, area);
 
         let render = self.preview_render_for_width(area.width.saturating_sub(2));
@@ -3508,12 +4068,14 @@ impl Editor {
         let max_scroll = lines
             .len()
             .saturating_sub(area.height.saturating_sub(2) as usize);
-        let synced_scroll =
-            map_preview_scroll(scroll_offset, self.max_vertical_scroll(), max_scroll);
+        let synced_scroll = preview_scroll.min(max_scroll);
         let preview = Paragraph::new(Text::from(lines))
             .block(
                 Block::default()
-                    .title(" Preview ")
+                    .title(format!(
+                        " {} ",
+                        self.language.translator().text(TextKey::PreviewTitle)
+                    ))
                     .borders(ratatui::widgets::Borders::ALL)
                     .title_style(Style::default().fg(Color::Rgb(139, 148, 158))),
             )
@@ -3555,11 +4117,22 @@ impl Editor {
     }
 
     fn preview_render_for_width(&self, width: u16) -> PreviewRender {
-        let blocks = parse_markdown(&self.buffer.to_string());
-        if blocks.is_empty() {
+        let width = width.max(1);
+        let document_version = self.document_version.get();
+        if let Some(cached) = self.preview_render_cache.borrow().get(&width) {
+            if cached.document_version == document_version {
+                return cached.render.clone();
+            }
+        }
+
+        let blocks = normalize_blocks_for_preview(&parse_markdown(&self.buffer.to_string()));
+        let render = if blocks.is_empty() {
             PreviewRender {
                 lines: vec![styled_text_line(
-                    "Nothing to preview".to_string(),
+                    self.language
+                        .translator()
+                        .text(TextKey::EditorNothingToPreview)
+                        .to_string(),
                     Style::default().fg(Color::Rgb(139, 148, 158)),
                 )],
                 hits: Vec::new(),
@@ -3567,7 +4140,17 @@ impl Editor {
             }
         } else {
             self.build_preview_render_with_images(&blocks, width)
-        }
+        };
+
+        self.preview_render_cache.borrow_mut().insert(
+            width,
+            PreviewRenderCacheValue {
+                document_version,
+                render: render.clone(),
+            },
+        );
+
+        render
     }
 
     fn build_preview_render_with_images(&self, blocks: &[MdBlock], width: u16) -> PreviewRender {
@@ -3661,7 +4244,7 @@ impl Editor {
         }
     }
 
-    fn resolve_image_path(&self, src: &str) -> Option<PathBuf> {
+    pub(crate) fn resolve_image_path(&self, src: &str) -> Option<PathBuf> {
         let trimmed = src.trim();
         if trimmed.is_empty() || trimmed.contains("://") {
             return None;
@@ -3720,7 +4303,18 @@ impl crate::components::Component for Editor {
     fn init(&mut self) {
         // Initialize editor state
         if self.buffer.len_bytes() == 0 {
-            self.buffer = Rope::from_str("# New Document\n\nStart writing here...\n");
+            self.buffer = Rope::from_str(
+                format!(
+                    "{}\n\n{}\n",
+                    self.language
+                        .translator()
+                        .text(TextKey::EditorNewDocumentHeading),
+                    self.language
+                        .translator()
+                        .text(TextKey::EditorNewDocumentBody)
+                )
+                .as_str(),
+            );
         }
     }
 
@@ -3742,6 +4336,20 @@ impl crate::components::Component for Editor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn render_text(render: &PreviewRender) -> String {
+        render
+            .lines
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
 
     #[test]
     fn test_parse_markdown_heading_and_paragraph() {
@@ -4005,6 +4613,31 @@ mod tests {
     }
 
     #[test]
+    fn test_preview_render_normalizes_footnotes() {
+        let blocks = normalize_blocks_for_preview(&parse_markdown(
+            "Footnote here[^note1]\n\n[^note1]: explanation",
+        ));
+        let render = build_preview_render(&blocks, 80);
+        let text = render_text(&render);
+
+        assert!(text.contains("[1]"));
+        assert!(!text.contains("[^note1]"));
+    }
+
+    #[test]
+    fn test_preview_render_escaped_markdown_link_stays_plain_text() {
+        let blocks = parse_markdown(r"\[这不是链接\](https://example.com)");
+        let render = build_preview_render(&blocks, 80);
+        let text = render_text(&render);
+
+        assert!(text.contains("[这不是链接](https://example.com)"));
+        assert!(!render
+            .hits
+            .iter()
+            .any(|hit| hit.kind == PreviewTargetKind::MarkdownLink));
+    }
+
+    #[test]
     fn test_parse_markdown_mermaid_image_and_html_fallbacks() {
         let md = "```mermaid\ngraph TD\n```\n\n![Alt](img.png)\n\n<div>raw</div>";
         let blocks = parse_markdown(md);
@@ -4141,13 +4774,14 @@ mod tests {
         let mut editor = Editor::new();
         editor.buffer = Rope::from_str("![[assets/diagram.png]]\n![Alt](img/photo.jpg)\n");
         editor.parse_document();
+        let links = editor.links.borrow();
 
-        assert!(editor.links.iter().any(|link| {
+        assert!(links.iter().any(|link| {
             link.kind == EditorLinkKind::Image
                 && link.target == "assets/diagram.png"
                 && link.label.as_deref() == Some("diagram")
         }));
-        assert!(editor.links.iter().any(|link| {
+        assert!(links.iter().any(|link| {
             link.kind == EditorLinkKind::Image
                 && link.target == "img/photo.jpg"
                 && link.label.as_deref() == Some("Alt")

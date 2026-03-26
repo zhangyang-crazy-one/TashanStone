@@ -44,6 +44,18 @@ pub struct WorkspaceIndex {
 }
 
 impl WorkspaceIndex {
+    fn should_skip_entry(name: &str, is_dir: bool) -> bool {
+        if name.starts_with('.') {
+            return true;
+        }
+
+        is_dir
+            && matches!(
+                name,
+                "target" | "node_modules" | "dist" | "build" | ".turbo" | ".next"
+            )
+    }
+
     pub fn build(root: &Path) -> Self {
         let root_path = root.to_path_buf();
         let mut index = Self::empty(root_path.clone());
@@ -331,17 +343,16 @@ impl WorkspaceIndex {
 
         for entry in entries.flatten() {
             let path = entry.path();
-            let is_hidden = path
+            let name = path
                 .file_name()
-                .and_then(|name| name.to_str())
-                .map(|name| name.starts_with('.'))
-                .unwrap_or(false);
-
-            if is_hidden {
+                .and_then(|value| value.to_str())
+                .unwrap_or("");
+            let is_dir = path.is_dir();
+            if Self::should_skip_entry(name, is_dir) {
                 continue;
             }
 
-            if path.is_dir() {
+            if is_dir {
                 files.extend(Self::collect_markdown_files(&path));
             } else if path.extension().and_then(|ext| ext.to_str()) == Some("md") {
                 files.push(path);

@@ -1,6 +1,7 @@
 //! Confirmation dialog component.
 
 use crate::action::Action;
+use crate::i18n::{Language, TextKey};
 use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{
     layout::Rect,
@@ -24,6 +25,7 @@ pub struct ConfirmDialog {
     confirm_label: String,
     focus: ConfirmFocus,
     action: Option<Action>,
+    language: Language,
 }
 
 impl ConfirmDialog {
@@ -33,9 +35,21 @@ impl ConfirmDialog {
             title: String::new(),
             message: String::new(),
             warning: String::new(),
-            confirm_label: String::from("确认"),
+            confirm_label: String::from("Confirm"),
             focus: ConfirmFocus::Cancel,
             action: None,
+            language: Language::En,
+        }
+    }
+
+    pub fn set_language(&mut self, language: Language) {
+        self.language = language;
+        if self.confirm_label.is_empty() {
+            self.confirm_label = self
+                .language
+                .translator()
+                .text(TextKey::DialogConfirm)
+                .to_string();
         }
     }
 
@@ -167,7 +181,7 @@ impl ConfirmDialog {
         self.render_button(
             f,
             layout.cancel_button,
-            "取消",
+            self.language.translator().text(TextKey::DialogCancel),
             self.focus == ConfirmFocus::Cancel,
             false,
         );

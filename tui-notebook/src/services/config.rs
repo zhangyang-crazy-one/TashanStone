@@ -3,8 +3,26 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ShortcutProfile {
+    #[default]
+    TerminalLeader,
+    IdeCompatible,
+}
+
+impl ShortcutProfile {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::TerminalLeader => "Terminal Leader",
+            Self::IdeCompatible => "IDE Compatible",
+        }
+    }
+}
+
 /// Application settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AppSettings {
     /// AI provider configuration
     pub ai_provider: String,
@@ -18,6 +36,12 @@ pub struct AppSettings {
     pub workspace_path: String,
     /// Language setting (en/zh)
     pub language: String,
+    /// Keyboard shortcut profile
+    pub shortcut_profile: ShortcutProfile,
+    /// Whether to show shortcut hints in the status bar
+    pub show_shortcut_hints: bool,
+    /// Whether preview focus should follow the current editor location
+    pub preview_focus_follows_editor: bool,
 }
 
 impl Default for AppSettings {
@@ -31,6 +55,9 @@ impl Default for AppSettings {
             font_size: 14,
             workspace_path: ".".to_string(),
             language: "en".to_string(),
+            shortcut_profile: ShortcutProfile::TerminalLeader,
+            show_shortcut_hints: true,
+            preview_focus_follows_editor: true,
         }
     }
 }

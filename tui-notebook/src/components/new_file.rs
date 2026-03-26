@@ -1,6 +1,7 @@
 //! New file modal dialog.
 
 use crate::action::{Action, FileAction};
+use crate::i18n::{Language, TextKey};
 use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{
     layout::Rect,
@@ -24,6 +25,7 @@ pub struct NewFileDialog {
     file_name: String,
     focus: NewFileFocus,
     is_editing: bool,
+    language: Language,
 }
 
 impl NewFileDialog {
@@ -34,7 +36,12 @@ impl NewFileDialog {
             file_name: String::new(),
             focus: NewFileFocus::FileName,
             is_editing: false,
+            language: Language::En,
         }
+    }
+
+    pub fn set_language(&mut self, language: Language) {
+        self.language = language;
     }
 
     pub fn open(&mut self, directory: Option<String>) {
@@ -206,7 +213,7 @@ impl NewFileDialog {
 
         let header = Paragraph::new(Line::from(vec![
             Span::styled(
-                "新建文件",
+                self.language.translator().text(TextKey::NewFileTitle),
                 Style::default()
                     .fg(Color::Rgb(201, 209, 217))
                     .add_modifier(Modifier::BOLD),
@@ -220,7 +227,7 @@ impl NewFileDialog {
         self.render_label(
             f,
             layout.directory_label,
-            "目录",
+            self.language.translator().text(TextKey::NewFileDirectory),
             Style::default().fg(Color::Rgb(139, 148, 158)),
         );
         self.render_input(
@@ -238,7 +245,7 @@ impl NewFileDialog {
         self.render_label(
             f,
             layout.file_label,
-            "文件",
+            self.language.translator().text(TextKey::NewFileFile),
             Style::default().fg(Color::Rgb(139, 148, 158)),
         );
         self.render_input(
@@ -252,14 +259,14 @@ impl NewFileDialog {
         self.render_button(
             f,
             layout.cancel_button,
-            "取消",
+            self.language.translator().text(TextKey::DialogCancel),
             self.focus == NewFileFocus::Cancel,
             false,
         );
         self.render_button(
             f,
             layout.create_button,
-            "创建",
+            self.language.translator().text(TextKey::DialogCreate),
             self.focus == NewFileFocus::Create,
             true,
         );
@@ -271,10 +278,10 @@ impl NewFileDialog {
                 _ => layout.file_input,
             };
             let offset = self.active_field().chars().count() as u16;
-            f.set_cursor(
+            f.set_cursor_position((
                 input.x + 2 + offset.min(input.width.saturating_sub(4)),
                 input.y + 1,
-            );
+            ));
         }
     }
 

@@ -10,6 +10,7 @@
 mod action;
 mod app;
 mod components;
+mod i18n;
 mod models;
 mod services;
 mod theme;

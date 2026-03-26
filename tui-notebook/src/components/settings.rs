@@ -1,6 +1,7 @@
 //! Settings modal component aligned with the Pencil design draft.
 
-use crate::services::config::{AppSettings, ConfigService};
+use crate::i18n::{Language, TextKey};
+use crate::services::config::{AppSettings, ConfigService, ShortcutProfile};
 use crate::theme::{Theme, ThemeManager};
 use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{
@@ -15,6 +16,7 @@ use ratatui::{
 enum SettingsTab {
     AI,
     UI,
+    Keyboard,
     About,
 }
 
@@ -22,7 +24,8 @@ impl SettingsTab {
     fn next(self) -> Self {
         match self {
             Self::AI => Self::UI,
-            Self::UI => Self::About,
+            Self::UI => Self::Keyboard,
+            Self::Keyboard => Self::About,
             Self::About => Self::AI,
         }
     }
@@ -31,6 +34,7 @@ impl SettingsTab {
         match self {
             Self::AI => "AI",
             Self::UI => "UI",
+            Self::Keyboard => "键盘",
             Self::About => "关于",
         }
     }
@@ -47,12 +51,16 @@ pub struct SettingsModal {
     workspace_path: String,
     font_size: u8,
     language: String,
+    shortcut_profile: ShortcutProfile,
+    show_shortcut_hints: bool,
+    preview_focus_follows_editor: bool,
     is_open: bool,
     cursor_position: usize,
     is_editing: bool,
     editing_field: String,
     is_dirty: bool,
     applied_settings: Option<AppSettings>,
+    ui_language: Language,
 }
 
 impl SettingsModal {
@@ -70,13 +78,21 @@ impl SettingsModal {
             workspace_path: settings.workspace_path.clone(),
             font_size: settings.font_size,
             language: settings.language.clone(),
+            shortcut_profile: settings.shortcut_profile,
+            show_shortcut_hints: settings.show_shortcut_hints,
+            preview_focus_follows_editor: settings.preview_focus_follows_editor,
             is_open: false,
             cursor_position: 0,
             is_editing: false,
             editing_field: String::new(),
             is_dirty: false,
             applied_settings: None,
+            ui_language: Language::En,
         }
+    }
+
+    pub fn set_language(&mut self, language: Language) {
+        self.ui_language = language;
     }
 
     pub fn open(&mut self) {
@@ -88,12 +104,15 @@ impl SettingsModal {
         self.workspace_path = settings.workspace_path.clone();
         self.font_size = settings.font_size;
         self.language = settings.language.clone();
+        self.shortcut_profile = settings.shortcut_profile;
+        self.show_shortcut_hints = settings.show_shortcut_hints;
+        self.preview_focus_follows_editor = settings.preview_focus_follows_editor;
         self.theme_manager.set_theme(if settings.theme == "light" {
             Theme::Light
         } else {
             Theme::Dark
         });
-        self.selected_tab = SettingsTab::UI;
+        self.selected_tab = SettingsTab::Keyboard;
         self.cursor_position = 0;
         self.is_open = true;
         self.is_editing = false;
@@ -221,6 +240,7 @@ impl SettingsModal {
                 self.selected_tab = match index {
                     0 => SettingsTab::AI,
                     1 => SettingsTab::UI,
+                    2 => SettingsTab::Keyboard,
                     _ => SettingsTab::About,
                 };
                 self.cursor_position = 0;
@@ -292,6 +312,28 @@ impl SettingsModal {
                 }
             }
             SettingsTab::About => {}
+            SettingsTab::Keyboard => {
+                if Self::contains(layout.keyboard_profile, point) {
+                    self.cursor_position = 0;
+                    self.cycle_value(1);
+                    return true;
+                }
+                if Self::contains(layout.keyboard_hints, point) {
+                    self.cursor_position = 1;
+                    self.cycle_value(1);
+                    return true;
+                }
+                if Self::contains(layout.keyboard_preview_follow, point) {
+                    self.cursor_position = 2;
+                    self.cycle_value(1);
+                    return true;
+                }
+                if Self::contains(layout.save_button, point) {
+                    self.cursor_position = 3;
+                    self.save_and_close();
+                    return true;
+                }
+            }
         }
 
         true
@@ -317,7 +359,7 @@ impl SettingsModal {
 
         let header = Paragraph::new(Line::from(vec![
             Span::styled(
-                "设置",
+                self.ui_language.translator().text(TextKey::SettingsTitle),
                 Style::default()
                     .fg(Color::Rgb(201, 209, 217))
                     .add_modifier(Modifier::BOLD),
@@ -328,12 +370,17 @@ impl SettingsModal {
         .style(Style::default().bg(Color::Rgb(22, 27, 34)));
         f.render_widget(header, layout.header);
 
-        let tabs = [SettingsTab::AI, SettingsTab::UI, SettingsTab::About];
+        let tabs = [
+            SettingsTab::AI,
+            SettingsTab::UI,
+            SettingsTab::Keyboard,
+            SettingsTab::About,
+        ];
         for (index, tab) in tabs.iter().enumerate() {
             self.render_tab_button(
                 f,
                 layout.tabs[index],
-                tab.label(),
+            self.tab_label(*tab),
                 *tab == self.selected_tab,
             );
         }
@@ -341,6 +388,7 @@ impl SettingsModal {
         match self.selected_tab {
             SettingsTab::AI => self.render_ai_tab(f, &layout),
             SettingsTab::UI => self.render_ui_tab(f, &layout),
+            SettingsTab::Keyboard => self.render_keyboard_tab(f, &layout),
             SettingsTab::About => self.render_about_tab(f, &layout),
         }
 
@@ -350,6 +398,7 @@ impl SettingsModal {
             match self.selected_tab {
                 SettingsTab::AI => self.cursor_position == 4,
                 SettingsTab::UI => self.cursor_position == 5,
+                SettingsTab::Keyboard => self.cursor_position == 3,
                 SettingsTab::About => false,
             },
         );
@@ -357,16 +406,20 @@ impl SettingsModal {
         if self.is_editing {
             if let Some(input_rect) = self.editing_input_rect(&layout) {
                 let offset = self.editing_field.chars().count() as u16;
-                f.set_cursor(
+                f.set_cursor_position((
                     input_rect.x + 2 + offset.min(input_rect.width.saturating_sub(4)),
                     input_rect.y + 1,
-                );
+                ));
             }
         }
     }
 
     fn render_ai_tab(&self, f: &mut Frame<'_>, layout: &SettingsLayout) {
-        self.render_label(f, layout.ai_provider_label, "Provider");
+        self.render_label(
+            f,
+            layout.ai_provider_label,
+            self.ui_language.translator().text(TextKey::SettingsProvider),
+        );
         self.render_input(
             f,
             layout.ai_provider,
@@ -376,7 +429,11 @@ impl SettingsModal {
             true,
         );
 
-        self.render_label(f, layout.ai_model_label, "Model");
+        self.render_label(
+            f,
+            layout.ai_model_label,
+            self.ui_language.translator().text(TextKey::SettingsModel),
+        );
         self.render_input(
             f,
             layout.ai_model,
@@ -386,7 +443,11 @@ impl SettingsModal {
             false,
         );
 
-        self.render_label(f, layout.ai_api_key_label, "API Key");
+        self.render_label(
+            f,
+            layout.ai_api_key_label,
+            self.ui_language.translator().text(TextKey::SettingsApiKey),
+        );
         let api_key = if self.is_editing && self.cursor_position == 2 {
             self.editing_field.as_str()
         } else if self.ai_api_key.is_empty() {
@@ -403,7 +464,11 @@ impl SettingsModal {
             false,
         );
 
-        self.render_label(f, layout.ai_base_url_label, "Base URL");
+        self.render_label(
+            f,
+            layout.ai_base_url_label,
+            self.ui_language.translator().text(TextKey::SettingsBaseUrl),
+        );
         self.render_input(
             f,
             layout.ai_base_url,
@@ -415,7 +480,11 @@ impl SettingsModal {
     }
 
     fn render_ui_tab(&self, f: &mut Frame<'_>, layout: &SettingsLayout) {
-        self.render_label(f, layout.ui_workspace_label, "Workspace");
+        self.render_label(
+            f,
+            layout.ui_workspace_label,
+            self.ui_language.translator().text(TextKey::SettingsWorkspace),
+        );
         self.render_input(
             f,
             layout.ui_workspace,
@@ -425,7 +494,11 @@ impl SettingsModal {
             false,
         );
 
-        self.render_label(f, layout.ui_font_size_label, "Font Size");
+        self.render_label(
+            f,
+            layout.ui_font_size_label,
+            self.ui_language.translator().text(TextKey::SettingsFontSize),
+        );
         let font_value = if self.is_editing && self.cursor_position == 1 {
             self.editing_field.clone()
         } else {
@@ -440,28 +513,35 @@ impl SettingsModal {
             false,
         );
 
-        self.render_label(f, layout.ui_theme_label, "Theme");
+        self.render_label(
+            f,
+            layout.ui_theme_label,
+            self.ui_language.translator().text(TextKey::SettingsTheme),
+        );
         self.render_theme_button(
             f,
             layout.ui_theme_dark,
-            "Dark",
+            self.ui_language.translator().text(TextKey::SettingsThemeDark),
             self.theme_manager.theme() == Theme::Dark,
             self.cursor_position == 2,
         );
         self.render_theme_button(
             f,
             layout.ui_theme_light,
-            "Light",
+            self.ui_language.translator().text(TextKey::SettingsThemeLight),
             self.theme_manager.theme() == Theme::Light,
             self.cursor_position == 3,
         );
 
-        self.render_label(f, layout.ui_language_label, "Language");
-        let language = if self.language == "zh" {
-            "中文"
-        } else {
-            "English"
-        };
+        self.render_label(
+            f,
+            layout.ui_language_label,
+            self.ui_language.translator().text(TextKey::SettingsLanguage),
+        );
+        let language = self
+            .ui_language
+            .translator()
+            .language_name(Language::from_code(&self.language));
         self.render_input(
             f,
             layout.ui_language,
@@ -482,17 +562,100 @@ impl SettingsModal {
             )]),
             Line::from(""),
             Line::from(vec![Span::styled(
-                "Markdown editing, AI chat, knowledge search and SRS.",
+                self.ui_language
+                    .translator()
+                    .text(TextKey::SettingsAboutDescription),
                 Style::default().fg(Color::Rgb(139, 148, 158)),
             )]),
             Line::from(""),
             Line::from(vec![Span::styled(
-                "Built with Rust + Ratatui",
+                self.ui_language
+                    .translator()
+                    .text(TextKey::SettingsAboutBuiltWith),
                 Style::default().fg(Color::Rgb(63, 185, 80)),
             )]),
         ];
         let paragraph = Paragraph::new(about);
         f.render_widget(paragraph, layout.about_area);
+    }
+
+    fn render_keyboard_tab(&self, f: &mut Frame<'_>, layout: &SettingsLayout) {
+        self.render_label(
+            f,
+            layout.keyboard_profile_label,
+            self.ui_language.translator().text(TextKey::SettingsProfile),
+        );
+        self.render_input(
+            f,
+            layout.keyboard_profile,
+            self.ui_language
+                .translator()
+                .shortcut_profile_label(self.shortcut_profile),
+            self.cursor_position == 0,
+            false,
+            true,
+        );
+
+        self.render_label(
+            f,
+            layout.keyboard_hints_label,
+            self.ui_language.translator().text(TextKey::SettingsStatusHints),
+        );
+        self.render_input(
+            f,
+            layout.keyboard_hints,
+            if self.show_shortcut_hints {
+                self.ui_language.translator().text(TextKey::SettingsOn)
+            } else {
+                self.ui_language.translator().text(TextKey::SettingsOff)
+            },
+            self.cursor_position == 1,
+            false,
+            true,
+        );
+
+        self.render_label(
+            f,
+            layout.keyboard_preview_follow_label,
+            self.ui_language.translator().text(TextKey::SettingsPreviewFollow),
+        );
+        self.render_input(
+            f,
+            layout.keyboard_preview_follow,
+            if self.preview_focus_follows_editor {
+                self.ui_language
+                    .translator()
+                    .text(TextKey::SettingsFollowEditor)
+            } else {
+                self.ui_language
+                    .translator()
+                    .text(TextKey::SettingsKeepPreviewScroll)
+            },
+            self.cursor_position == 2,
+            false,
+            true,
+        );
+
+        let notes = vec![
+            Line::from(vec![Span::styled(
+                self.ui_language
+                    .translator()
+                    .text(TextKey::KeyboardNoteTerminalLeader),
+                Style::default().fg(Color::Rgb(139, 148, 158)),
+            )]),
+            Line::from(vec![Span::styled(
+                self.ui_language
+                    .translator()
+                    .text(TextKey::KeyboardNoteIdeCompatible),
+                Style::default().fg(Color::Rgb(139, 148, 158)),
+            )]),
+            Line::from(""),
+            Line::from(vec![Span::styled(
+                self.ui_language.translator().text(TextKey::KeyboardNoteEscape),
+                Style::default().fg(Color::Rgb(63, 185, 80)),
+            )]),
+        ];
+        f.render_widget(Paragraph::new(notes), layout.keyboard_notes);
     }
 
     fn render_label(&self, f: &mut Frame<'_>, area: Rect, label: &str) {
@@ -610,7 +773,7 @@ impl SettingsModal {
             .border_style(Style::default().fg(border))
             .style(Style::default().bg(Color::Rgb(35, 134, 54)));
         f.render_widget(block, area);
-        let text = Paragraph::new("保存")
+        let text = Paragraph::new(self.ui_language.translator().text(TextKey::SettingsSave))
             .style(
                 Style::default()
                     .fg(Color::Rgb(201, 209, 217))
@@ -633,6 +796,7 @@ impl SettingsModal {
                 1 => self.font_size.to_string(),
                 _ => String::new(),
             },
+            SettingsTab::Keyboard => String::new(),
             SettingsTab::About => String::new(),
         };
         self.is_editing = !self.editing_field.is_empty()
@@ -659,6 +823,11 @@ impl SettingsModal {
                 }
                 4 => self.cycle_value(1),
                 5 => self.save_and_close(),
+                _ => {}
+            },
+            SettingsTab::Keyboard => match self.cursor_position {
+                0..=2 => self.cycle_value(1),
+                3 => self.save_and_close(),
                 _ => {}
             },
             SettingsTab::About => {}
@@ -715,6 +884,24 @@ impl SettingsModal {
                 }
                 _ => {}
             },
+            SettingsTab::Keyboard => match self.cursor_position {
+                0 => {
+                    self.shortcut_profile = match self.shortcut_profile {
+                        ShortcutProfile::TerminalLeader => ShortcutProfile::IdeCompatible,
+                        ShortcutProfile::IdeCompatible => ShortcutProfile::TerminalLeader,
+                    };
+                    self.is_dirty = true;
+                }
+                1 => {
+                    self.show_shortcut_hints = !self.show_shortcut_hints;
+                    self.is_dirty = true;
+                }
+                2 => {
+                    self.preview_focus_follows_editor = !self.preview_focus_follows_editor;
+                    self.is_dirty = true;
+                }
+                _ => {}
+            },
             SettingsTab::About => {}
         }
     }
@@ -736,6 +923,7 @@ impl SettingsModal {
                 }
                 _ => {}
             },
+            SettingsTab::Keyboard => {}
             SettingsTab::About => {}
         }
         self.is_dirty = true;
@@ -779,6 +967,9 @@ impl SettingsModal {
             font_size: self.font_size,
             workspace_path: self.workspace_path.clone(),
             language: self.language.clone(),
+            shortcut_profile: self.shortcut_profile,
+            show_shortcut_hints: self.show_shortcut_hints,
+            preview_focus_follows_editor: self.preview_focus_follows_editor,
         };
         self.applied_settings = Some(settings);
     }
@@ -793,10 +984,23 @@ impl SettingsModal {
         }
     }
 
+    fn tab_label(&self, tab: SettingsTab) -> &'static str {
+        match tab {
+            SettingsTab::AI => self.ui_language.translator().text(TextKey::SettingsTabAi),
+            SettingsTab::UI => self.ui_language.translator().text(TextKey::SettingsTabUi),
+            SettingsTab::Keyboard => self
+                .ui_language
+                .translator()
+                .text(TextKey::SettingsTabKeyboard),
+            SettingsTab::About => self.ui_language.translator().text(TextKey::SettingsTabAbout),
+        }
+    }
+
     fn max_cursor_position(&self) -> usize {
         match self.selected_tab {
             SettingsTab::AI => 4,
             SettingsTab::UI => 5,
+            SettingsTab::Keyboard => 3,
             SettingsTab::About => 0,
         }
     }
@@ -814,6 +1018,7 @@ impl SettingsModal {
                 1 => Some(layout.ui_font_size),
                 _ => None,
             },
+            SettingsTab::Keyboard => None,
             SettingsTab::About => None,
         }
     }
@@ -860,8 +1065,9 @@ impl SettingsModal {
         let header = Rect::new(modal.x + 1, modal.y + 1, modal.width - 2, 1);
         let tabs = [
             Rect::new(modal.x + 4, modal.y + 4, 10, 3),
-            Rect::new(modal.x + 17, modal.y + 4, 10, 3),
-            Rect::new(modal.x + 30, modal.y + 4, 10, 3),
+            Rect::new(modal.x + 16, modal.y + 4, 10, 3),
+            Rect::new(modal.x + 28, modal.y + 4, 12, 3),
+            Rect::new(modal.x + 42, modal.y + 4, 10, 3),
         ];
         let save_button = Rect::new(
             modal.x + modal.width - 16,
@@ -898,6 +1104,13 @@ impl SettingsModal {
             ui_theme_light: Rect::new(modal.x + 30, modal.y + 16, 10, 3),
             ui_language_label: Rect::new(modal.x + 4, modal.y + 21, 12, 1),
             ui_language: Rect::new(modal.x + 17, modal.y + 20, 16, 3),
+            keyboard_profile_label: Rect::new(modal.x + 4, modal.y + 9, 12, 1),
+            keyboard_profile: Rect::new(modal.x + 17, modal.y + 8, 24, 3),
+            keyboard_hints_label: Rect::new(modal.x + 4, modal.y + 13, 12, 1),
+            keyboard_hints: Rect::new(modal.x + 17, modal.y + 12, 16, 3),
+            keyboard_preview_follow_label: Rect::new(modal.x + 4, modal.y + 17, 12, 1),
+            keyboard_preview_follow: Rect::new(modal.x + 17, modal.y + 16, 24, 3),
+            keyboard_notes: Rect::new(modal.x + 4, modal.y + 20, modal.width - 8, 5),
             save_button,
             about_area: Rect::new(modal.x + 4, modal.y + 9, modal.width - 8, 10),
         }
@@ -914,7 +1127,7 @@ struct SettingsLayout {
     modal: Rect,
     header: Rect,
     close_button: Rect,
-    tabs: [Rect; 3],
+    tabs: [Rect; 4],
     ai_provider_label: Rect,
     ai_provider: Rect,
     ai_model_label: Rect,
@@ -932,6 +1145,13 @@ struct SettingsLayout {
     ui_theme_light: Rect,
     ui_language_label: Rect,
     ui_language: Rect,
+    keyboard_profile_label: Rect,
+    keyboard_profile: Rect,
+    keyboard_hints_label: Rect,
+    keyboard_hints: Rect,
+    keyboard_preview_follow_label: Rect,
+    keyboard_preview_follow: Rect,
+    keyboard_notes: Rect,
     save_button: Rect,
     about_area: Rect,
 }

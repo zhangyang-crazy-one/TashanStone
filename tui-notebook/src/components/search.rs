@@ -1,6 +1,7 @@
 //! Search panel component
 
 use crate::action::{Action, SearchAction};
+use crate::i18n::{Language, TextKey};
 use crossterm::event::KeyEvent;
 use ratatui::{
     layout::Rect,
@@ -25,6 +26,8 @@ pub struct SearchPanel {
     is_regex: bool,
     /// Is case sensitive
     is_case_sensitive: bool,
+    /// Current UI language
+    language: Language,
 }
 
 /// Search result
@@ -46,7 +49,12 @@ impl SearchPanel {
             selected_index: 0,
             is_regex: false,
             is_case_sensitive: false,
+            language: Language::En,
         }
+    }
+
+    pub fn set_language(&mut self, language: Language) {
+        self.language = language;
     }
 
     /// Check if search is open
@@ -217,16 +225,29 @@ impl crate::components::Component for SearchPanel {
         let search_box = Paragraph::new(format!(
             "/{}{}{}",
             query_text,
-            if self.is_regex { "  [regex]" } else { "" },
-            if self.is_case_sensitive {
-                "  [case]"
+            if self.is_regex {
+                format!(
+                    "  [{}]",
+                    self.language.translator().text(TextKey::SearchFlagRegex)
+                )
             } else {
-                ""
+                String::new()
+            },
+            if self.is_case_sensitive {
+                format!(
+                    "  [{}]",
+                    self.language.translator().text(TextKey::SearchFlagCase)
+                )
+            } else {
+                String::new()
             },
         ))
         .block(
             Block::default()
-                .title(" Search ")
+                .title(format!(
+                    " {} ",
+                    self.language.translator().text(TextKey::SearchTitle)
+                ))
                 .borders(ratatui::widgets::Borders::ALL),
         )
         .style(
@@ -270,7 +291,11 @@ impl crate::components::Component for SearchPanel {
             let list = List::new(items)
                 .block(
                     Block::default()
-                        .title(format!(" Results ({} found) ", self.results.len()))
+                        .title(
+                            self.language
+                                .translator()
+                                .search_results_title(self.results.len()),
+                        )
                         .borders(ratatui::widgets::Borders::ALL),
                 )
                 .style(

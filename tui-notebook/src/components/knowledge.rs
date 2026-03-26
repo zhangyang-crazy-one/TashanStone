@@ -1,6 +1,7 @@
 //! Knowledge panel - semantic search and RAG
 
 use crate::action::{Action, ComponentId, FileAction, KnowledgeAction, SearchAction, SearchResult};
+use crate::i18n::{Language, TextKey};
 use crate::services::workspace::{DocumentKnowledgeContext, KnowledgeReference};
 use crossterm::event::KeyEvent;
 use ratatui::{
@@ -49,6 +50,8 @@ pub struct KnowledgePanel {
     index_progress: f32,
     /// Index job handle for cancellation
     index_path: Option<String>,
+    /// Current UI language
+    language: Language,
 }
 
 impl KnowledgePanel {
@@ -62,7 +65,12 @@ impl KnowledgePanel {
             is_indexing: false,
             index_progress: 0.0,
             index_path: None,
+            language: Language::En,
         }
+    }
+
+    pub fn set_language(&mut self, language: Language) {
+        self.language = language;
     }
 
     /// Check if panel is open
@@ -279,12 +287,15 @@ impl KnowledgePanel {
         }
     }
 
-    fn item_prefix(kind: KnowledgeItemKind) -> &'static str {
+    fn item_prefix(&self, kind: KnowledgeItemKind) -> &'static str {
         match kind {
-            KnowledgeItemKind::Link => "LINK",
-            KnowledgeItemKind::Backlink => "BACK",
-            KnowledgeItemKind::TagMatch => "TAG",
-            KnowledgeItemKind::Semantic => "RAG",
+            KnowledgeItemKind::Link => self.language.translator().text(TextKey::KnowledgeBadgeLink),
+            KnowledgeItemKind::Backlink => self
+                .language
+                .translator()
+                .text(TextKey::KnowledgeBadgeBacklink),
+            KnowledgeItemKind::TagMatch => self.language.translator().text(TextKey::KnowledgeBadgeTag),
+            KnowledgeItemKind::Semantic => self.language.translator().text(TextKey::KnowledgeBadgeRag),
         }
     }
 }
@@ -312,21 +323,18 @@ impl crate::components::Component for KnowledgePanel {
         }
 
         let title = if self.is_indexing {
-            format!(
-                " Knowledge (Indexing... {:.0}%) ",
-                self.index_progress * 100.0
-            )
+            self.language
+                .translator()
+                .knowledge_title_indexing(self.index_progress)
         } else if self.query.len_chars() > 0 {
-            format!(
-                " Knowledge Search ({} results) ",
-                self.semantic_results.len()
-            )
+            self.language
+                .translator()
+                .knowledge_title_search(self.semantic_results.len())
         } else {
-            format!(
-                " Knowledge ({}/{}/{}) ",
+            self.language.translator().knowledge_title_overview(
                 self.document_context.outgoing_links.len(),
                 self.document_context.backlinks.len(),
-                self.document_context.related_tags.len()
+                self.document_context.related_tags.len(),
             )
         };
 
@@ -352,19 +360,16 @@ impl crate::components::Component for KnowledgePanel {
                 ),
             ]),
             Line::from(vec![Span::styled(
-                if self.document_context.tags.is_empty() {
-                    "Tags: none".to_string()
-                } else {
-                    format!("Tags: {}", self.document_context.tags.join("  "))
-                },
+                self.language
+                    .translator()
+                    .knowledge_tags_line(&self.document_context.tags),
                 Style::default().fg(Color::Rgb(255, 212, 59)),
             )]),
             Line::from(vec![Span::styled(
-                format!(
-                    "Links {}  Backlinks {}  Related {}",
+                self.language.translator().knowledge_counts_line(
                     self.document_context.outgoing_links.len(),
                     self.document_context.backlinks.len(),
-                    self.document_context.related_tags.len()
+                    self.document_context.related_tags.len(),
                 ),
                 Style::default().fg(Color::Rgb(139, 148, 158)),
             )]),
@@ -374,7 +379,10 @@ impl crate::components::Component for KnowledgePanel {
         f.render_widget(header, sections[0]);
 
         let query = if self.query.len_chars() == 0 {
-            "Type query and press Enter for semantic search".to_string()
+            self.language
+                .translator()
+                .text(TextKey::KnowledgeQueryPlaceholder)
+                .to_string()
         } else {
             self.query_text()
         };
@@ -385,7 +393,10 @@ impl crate::components::Component for KnowledgePanel {
         };
         let query_box = Paragraph::new(query).style(query_style).block(
             Block::default()
-                .title(" Query ")
+                .title(format!(
+                    " {} ",
+                    self.language.translator().text(TextKey::KnowledgeQueryTitle)
+                ))
                 .borders(Borders::ALL)
                 .style(Style::default().bg(Color::Rgb(22, 27, 34))),
         );
@@ -393,8 +404,19 @@ impl crate::components::Component for KnowledgePanel {
 
         let items = self.active_items();
         if items.is_empty() && !self.is_indexing {
-            let empty = Paragraph::new("No note links or semantic matches yet.")
-                .block(Block::default().title(" Items ").borders(Borders::ALL))
+            let empty = Paragraph::new(
+                self.language
+                    .translator()
+                    .text(TextKey::KnowledgeEmpty),
+            )
+                .block(
+                    Block::default()
+                        .title(format!(
+                            " {} ",
+                            self.language.translator().text(TextKey::KnowledgeItemsTitle)
+                        ))
+                        .borders(Borders::ALL),
+                )
                 .style(Style::default().bg(Color::Rgb(13, 17, 23)).fg(Color::White));
             f.render_widget(empty, sections[2]);
             return;
@@ -412,7 +434,7 @@ impl crate::components::Component for KnowledgePanel {
                 };
 
                 let title_line = Line::from(vec![
-                    Span::styled(format!("[{}] ", Self::item_prefix(item.kind)), badge_style),
+                    Span::styled(format!("[{}] ", self.item_prefix(item.kind)), badge_style),
                     Span::styled(item.title.as_str(), style),
                     Span::raw("  "),
                     Span::styled(
@@ -422,7 +444,7 @@ impl crate::components::Component for KnowledgePanel {
                     Span::raw("  "),
                     Span::styled(
                         item.line_number
-                            .map(|line| format!("Ln {line}"))
+                            .map(|line| self.language.translator().knowledge_line_number(line))
                             .or_else(|| item.score.map(|score| format!("{score:.2}")))
                             .unwrap_or_default(),
                         Style::default().fg(Color::Rgb(139, 148, 158)),
@@ -439,7 +461,14 @@ impl crate::components::Component for KnowledgePanel {
             .collect();
 
         let list = List::new(rendered_items)
-            .block(Block::default().title(" Items ").borders(Borders::ALL))
+            .block(
+                Block::default()
+                    .title(format!(
+                        " {} ",
+                        self.language.translator().text(TextKey::KnowledgeItemsTitle)
+                    ))
+                    .borders(Borders::ALL),
+            )
             .style(Style::default().bg(Color::Rgb(13, 17, 23)).fg(Color::White));
         f.render_widget(list, sections[2]);
     }

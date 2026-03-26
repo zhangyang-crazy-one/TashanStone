@@ -1,6 +1,7 @@
 //! Sidebar component - file tree navigation
 
 use crate::action::{Action, FileAction};
+use crate::i18n::{Language, TextKey};
 use crossterm::event::KeyEvent;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -44,9 +45,23 @@ pub struct Sidebar {
     expanded_paths: HashMap<String, bool>,
     /// Current directory
     current_path: String,
+    /// Current UI language
+    language: Language,
 }
 
 impl Sidebar {
+    fn should_skip_entry(name: &str, is_dir: bool) -> bool {
+        if name.starts_with('.') {
+            return true;
+        }
+
+        is_dir
+            && matches!(
+                name,
+                "target" | "node_modules" | "dist" | "build" | ".turbo" | ".next"
+            )
+    }
+
     pub fn new() -> Self {
         Self {
             files: Vec::new(),
@@ -54,7 +69,12 @@ impl Sidebar {
             list_state: ListState::default(),
             expanded_paths: HashMap::new(),
             current_path: String::from("."),
+            language: Language::En,
         }
+    }
+
+    pub fn set_language(&mut self, language: Language) {
+        self.language = language;
     }
 
     /// Initialize the sidebar with default files
@@ -89,7 +109,7 @@ impl Sidebar {
             .file_name()
             .and_then(|name| name.to_str())
             .filter(|name| !name.is_empty())
-            .unwrap_or("workspace")
+            .unwrap_or(self.language.translator().text(TextKey::SidebarWorkspaceFallback))
             .to_string()
     }
 
@@ -161,13 +181,11 @@ impl Sidebar {
                 if let Ok(metadata) = entry.metadata() {
                     let name = entry.file_name().to_string_lossy().to_string();
                     let file_path = entry.path().to_string_lossy().to_string();
-
-                    // Skip hidden files and non-markdown files at root
-                    if name.starts_with('.') {
+                    let is_dir = metadata.is_dir();
+                    if Self::should_skip_entry(&name, is_dir) {
                         continue;
                     }
 
-                    let is_dir = metadata.is_dir();
                     // Only read subdirectories, not all nested content
                     let children = if is_dir && depth < 3 {
                         self.read_directory(&file_path, depth + 1)
@@ -431,7 +449,10 @@ impl crate::components::Component for Sidebar {
         let list = List::new(items)
             .block(
                 Block::default()
-                    .title(" Files ")
+                    .title(format!(
+                        " {} ",
+                        self.language.translator().text(TextKey::ComponentFiles)
+                    ))
                     .borders(ratatui::widgets::Borders::NONE),
             )
             .style(Style::default().bg(Color::Rgb(13, 17, 23)).fg(Color::White))
