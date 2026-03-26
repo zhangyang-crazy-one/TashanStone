@@ -323,11 +323,25 @@ pub enum TextKey {
     KeyboardNoteEscape,
     GraphTitle,
     GraphSubtitle,
+    GraphViewTree,
+    GraphViewCanvas,
     GraphBadgeLocal,
     GraphBadgePinned,
     GraphTreeTitle,
+    GraphCanvasTitle,
     GraphSelectedNodeTitle,
     GraphExplorerStateTitle,
+    GraphCanvasFocusedNodeTitle,
+    GraphCanvasSessionTitle,
+    GraphCanvasSessionActions,
+    GraphCanvasPreviewTitle,
+    GraphCanvasFallbackTitle,
+    GraphCanvasFallbackBody,
+    GraphCanvasEmpty,
+    GraphCanvasZoom,
+    GraphCanvasZoomDetail,
+    GraphCanvasZoomStandard,
+    GraphCanvasZoomMacro,
     GraphEmptyNoFile,
     GraphEmptyNoRelations,
     GraphNoSelection,
@@ -335,6 +349,7 @@ pub enum TextKey {
     GraphCycleLabel,
     GraphUnresolvedLabel,
     GraphFooterHint,
+    GraphFooterHintCanvas,
     GraphStateFollowCurrent,
     GraphStatePinned,
     GraphStatePressPin,
@@ -493,19 +508,40 @@ fn en_text(key: TextKey) -> &'static str {
         TextKey::KeyboardNoteEscape => "Esc always returns or closes without requiring the mouse.",
         TextKey::GraphTitle => "Graph Explorer",
         TextKey::GraphSubtitle => "Connected notes around the current note",
-        TextKey::GraphBadgeLocal => "LOCAL GRAPH",
-        TextKey::GraphBadgePinned => "PINNED",
+        TextKey::GraphViewTree => "Tree",
+        TextKey::GraphViewCanvas => "Canvas",
+        TextKey::GraphBadgeLocal => "Local Graph",
+        TextKey::GraphBadgePinned => "Pinned",
         TextKey::GraphTreeTitle => "TREE • CURRENT NOTE",
+        TextKey::GraphCanvasTitle => "CANVAS • LOCAL CONSTELLATION",
         TextKey::GraphSelectedNodeTitle => "SELECTED NODE",
         TextKey::GraphExplorerStateTitle => "EXPLORER STATE",
+        TextKey::GraphCanvasFocusedNodeTitle => "FOCUSED NODE",
+        TextKey::GraphCanvasSessionTitle => "CANVAS SESSION",
+        TextKey::GraphCanvasSessionActions => "Actions",
+        TextKey::GraphCanvasPreviewTitle => "PREVIEW CARD",
+        TextKey::GraphCanvasFallbackTitle => "HOW TO READ",
+        TextKey::GraphCanvasFallbackBody => {
+            "Tab cycles nodes. h/j/k/l pans. +/- zooms. Space recenters. Enter opens the focused note."
+        }
+        TextKey::GraphCanvasEmpty => {
+            "No visible relations for this filter. The root note stays available at center."
+        }
+        TextKey::GraphCanvasZoom => "Zoom",
+        TextKey::GraphCanvasZoomDetail => "Detail",
+        TextKey::GraphCanvasZoomStandard => "Standard",
+        TextKey::GraphCanvasZoomMacro => "Macro",
         TextKey::GraphEmptyNoFile => "Open a note to inspect its local graph.",
         TextKey::GraphEmptyNoRelations => "No links, backlinks, or tag relations match this filter.",
         TextKey::GraphNoSelection => "Move selection to inspect a related note.",
-        TextKey::GraphRootLabel => "ROOT",
+        TextKey::GraphRootLabel => "Root",
         TextKey::GraphCycleLabel => "Cycle detected in the current branch.",
         TextKey::GraphUnresolvedLabel => "Target note is unresolved in this workspace.",
         TextKey::GraphFooterHint => {
             "↑↓ Move  → Expand  ← Collapse  o Open  p Pin  f Filter  Esc Close"
+        }
+        TextKey::GraphFooterHintCanvas => {
+            "Tab Cycle  h/j/k/l Pan  +/- Zoom  Space Center  p Preview  f Pin  Enter Open  v Tree"
         }
         TextKey::GraphStateFollowCurrent => "Root follows the current note",
         TextKey::GraphStatePinned => "Pinned keeps this note stable",
@@ -660,9 +696,7 @@ fn zh_text(key: TextKey) -> &'static str {
         TextKey::ShortcutHintGlobalLeader => {
             "Tab 循环  Shift+Tab 返回  Space 1-5 聚焦  Space g 图谱"
         }
-        TextKey::ShortcutHintIde => {
-            "F1-F5 聚焦  F6 搜索  F7 图谱  F9 保存  F10 设置"
-        }
+        TextKey::ShortcutHintIde => "F1-F5 聚焦  F6 搜索  F7 图谱  F9 保存  F10 设置",
         TextKey::ShortcutProfileTerminalLeader => "终端 Leader",
         TextKey::ShortcutProfileIdeCompatible => "IDE 兼容",
         TextKey::KeyboardNoteTerminalLeader => "终端 Leader：Space 引导键 + 类 Vim 编辑导航。",
@@ -670,19 +704,36 @@ fn zh_text(key: TextKey) -> &'static str {
         TextKey::KeyboardNoteEscape => "Esc 始终可返回或关闭，无需鼠标。",
         TextKey::GraphTitle => "关系图谱",
         TextKey::GraphSubtitle => "围绕当前笔记的本地关联",
-        TextKey::GraphBadgeLocal => "LOCAL GRAPH",
-        TextKey::GraphBadgePinned => "PINNED",
+        TextKey::GraphViewTree => "树视图",
+        TextKey::GraphViewCanvas => "画布视图",
+        TextKey::GraphBadgeLocal => "本地图谱",
+        TextKey::GraphBadgePinned => "已固定",
         TextKey::GraphTreeTitle => "树 • 当前笔记",
+        TextKey::GraphCanvasTitle => "画布 • 本地星图",
         TextKey::GraphSelectedNodeTitle => "已选节点",
         TextKey::GraphExplorerStateTitle => "图谱状态",
+        TextKey::GraphCanvasFocusedNodeTitle => "焦点节点",
+        TextKey::GraphCanvasSessionTitle => "画布状态",
+        TextKey::GraphCanvasSessionActions => "操作",
+        TextKey::GraphCanvasPreviewTitle => "预览卡片",
+        TextKey::GraphCanvasFallbackTitle => "使用说明",
+        TextKey::GraphCanvasFallbackBody => {
+            "Tab 切换节点，h/j/k/l 平移，+/- 缩放，Space 回到焦点，Enter 打开当前节点。"
+        }
+        TextKey::GraphCanvasEmpty => "当前筛选下没有可见关联，画布会保留根节点。",
+        TextKey::GraphCanvasZoom => "缩放",
+        TextKey::GraphCanvasZoomDetail => "细节",
+        TextKey::GraphCanvasZoomStandard => "标准",
+        TextKey::GraphCanvasZoomMacro => "全局",
         TextKey::GraphEmptyNoFile => "先打开一篇笔记，再查看它的本地图谱。",
         TextKey::GraphEmptyNoRelations => "当前筛选下没有链接、反链或标签关联。",
         TextKey::GraphNoSelection => "移动选择后，这里会显示节点详情。",
-        TextKey::GraphRootLabel => "ROOT",
+        TextKey::GraphRootLabel => "根节点",
         TextKey::GraphCycleLabel => "当前分支检测到循环引用。",
         TextKey::GraphUnresolvedLabel => "该目标笔记在当前工作区中无法解析。",
-        TextKey::GraphFooterHint => {
-            "↑↓ 移动  → 展开  ← 收起  o 打开  p 固定  f 筛选  Esc 关闭"
+        TextKey::GraphFooterHint => "↑↓ 移动  → 展开  ← 收起  o 打开  p 固定  f 筛选  Esc 关闭",
+        TextKey::GraphFooterHintCanvas => {
+            "Tab 切换  h/j/k/l 平移  +/- 缩放  Space 居中  p 预览  f 固定  Enter 打开  v 树视图"
         }
         TextKey::GraphStateFollowCurrent => "根节点会跟随当前笔记",
         TextKey::GraphStatePinned => "已固定，保持当前上下文不变",

@@ -385,7 +385,8 @@ impl App {
 
     fn sync_graph_explorer_root_from_current_file(&mut self) {
         if self.graph_explorer.is_open() && !self.graph_explorer.is_pinned() {
-            self.graph_explorer.set_root(self.graph_root_for_current_file());
+            self.graph_explorer
+                .set_root(self.graph_root_for_current_file());
         }
     }
 
