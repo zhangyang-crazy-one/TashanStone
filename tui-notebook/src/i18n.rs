@@ -327,6 +327,7 @@ pub enum TextKey {
     PreviewExternalInlineUnavailable,
     PreviewResolvedLoadFailed,
     PreviewNoMatchingNote,
+    PreviewEmptyNote,
     PreviewCurrentFile,
     PreviewMissingBlock,
     PreviewNoMatchingBlock,
@@ -432,9 +433,7 @@ fn en_text(key: TextKey) -> &'static str {
         TextKey::TitleSaved => "Saved",
         TextKey::TitleModified => "Modified",
         TextKey::ShortcutHintInsertLeader => "Esc Normal  Ctrl+K AI  Ctrl+Q Quit  Ctrl+G Help",
-        TextKey::ShortcutHintNormalLeader => {
-            "Space leader  i Insert  p Preview  / Search  ? Help"
-        }
+        TextKey::ShortcutHintNormalLeader => "Space leader  i Insert  p Preview  / Search  ? Help",
         TextKey::ShortcutHintPreview => "j/k Scroll  Tab Next  Enter Open  Esc Back",
         TextKey::ShortcutHintGlobalLeader => "Tab Cycle  Shift+Tab Back  Space 1-5 Focus  ? Help",
         TextKey::ShortcutHintIde => "F1-F5 Focus  F6 Search  F8 Preview  F9 Save  F10 Settings",
@@ -446,9 +445,7 @@ fn en_text(key: TextKey) -> &'static str {
         TextKey::KeyboardNoteIdeCompatible => {
             "IDE Compatible: F1-F12 focus/actions + Ctrl+Q/Ctrl+K fallback."
         }
-        TextKey::KeyboardNoteEscape => {
-            "Esc always returns or closes without requiring the mouse."
-        }
+        TextKey::KeyboardNoteEscape => "Esc always returns or closes without requiring the mouse.",
         TextKey::ConfirmDeleteTitle => "Confirm",
         TextKey::ConfirmDeleteWarning => "This action cannot be undone.",
         TextKey::ConfirmDeleteButton => "Delete",
@@ -467,17 +464,14 @@ fn en_text(key: TextKey) -> &'static str {
         }
         TextKey::PreviewResolvedLoadFailed => "The resolved note could not be loaded.",
         TextKey::PreviewNoMatchingNote => "No matching note was found in the workspace.",
+        TextKey::PreviewEmptyNote => "(empty note)",
         TextKey::PreviewCurrentFile => "Current file",
         TextKey::PreviewMissingBlock => "Missing Block",
         TextKey::PreviewNoMatchingBlock => {
             "No matching block reference was found in the current file."
         }
-        TextKey::PreviewRemoteImageDetected => {
-            "Remote image references are detected correctly."
-        }
-        TextKey::PreviewLocalImagesOnly => {
-            "Preview currently renders only local workspace images."
-        }
+        TextKey::PreviewRemoteImageDetected => "Remote image references are detected correctly.",
+        TextKey::PreviewLocalImagesOnly => "Preview currently renders only local workspace images.",
         TextKey::PreviewLocalImageResolved => "Local image reference resolved successfully.",
         TextKey::PreviewStandaloneImageRenders => {
             "Standalone image blocks render directly in Preview when visible."
@@ -583,18 +577,14 @@ fn zh_text(key: TextKey) -> &'static str {
         TextKey::TitleSaved => "已保存",
         TextKey::TitleModified => "已修改",
         TextKey::ShortcutHintInsertLeader => "Esc 普通  Ctrl+K AI  Ctrl+Q 退出  Ctrl+G 帮助",
-        TextKey::ShortcutHintNormalLeader => {
-            "Space 引导  i 插入  p 预览  / 搜索  ? 帮助"
-        }
+        TextKey::ShortcutHintNormalLeader => "Space 引导  i 插入  p 预览  / 搜索  ? 帮助",
         TextKey::ShortcutHintPreview => "j/k 滚动  Tab 下一个  Enter 打开  Esc 返回",
         TextKey::ShortcutHintGlobalLeader => "Tab 循环  Shift+Tab 返回  Space 1-5 聚焦  ? 帮助",
         TextKey::ShortcutHintIde => "F1-F5 聚焦  F6 搜索  F8 预览  F9 保存  F10 设置",
         TextKey::ShortcutProfileTerminalLeader => "终端 Leader",
         TextKey::ShortcutProfileIdeCompatible => "IDE 兼容",
         TextKey::KeyboardNoteTerminalLeader => "终端 Leader：Space 引导键 + 类 Vim 编辑导航。",
-        TextKey::KeyboardNoteIdeCompatible => {
-            "IDE 兼容：F1-F12 聚焦/动作 + Ctrl+Q/Ctrl+K 兜底。"
-        }
+        TextKey::KeyboardNoteIdeCompatible => "IDE 兼容：F1-F12 聚焦/动作 + Ctrl+Q/Ctrl+K 兜底。",
         TextKey::KeyboardNoteEscape => "Esc 始终可返回或关闭，无需鼠标。",
         TextKey::ConfirmDeleteTitle => "确认",
         TextKey::ConfirmDeleteWarning => "此操作不可撤销。",
@@ -612,6 +602,7 @@ fn zh_text(key: TextKey) -> &'static str {
         TextKey::PreviewExternalInlineUnavailable => "外部 URL 不支持内联预览。",
         TextKey::PreviewResolvedLoadFailed => "已解析的笔记无法加载。",
         TextKey::PreviewNoMatchingNote => "工作区中没有找到匹配的笔记。",
+        TextKey::PreviewEmptyNote => "（空笔记）",
         TextKey::PreviewCurrentFile => "当前文件",
         TextKey::PreviewMissingBlock => "缺失块引用",
         TextKey::PreviewNoMatchingBlock => "当前文件中没有找到对应的块引用。",

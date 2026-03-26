@@ -109,7 +109,11 @@ impl Sidebar {
             .file_name()
             .and_then(|name| name.to_str())
             .filter(|name| !name.is_empty())
-            .unwrap_or(self.language.translator().text(TextKey::SidebarWorkspaceFallback))
+            .unwrap_or(
+                self.language
+                    .translator()
+                    .text(TextKey::SidebarWorkspaceFallback),
+            )
             .to_string()
     }
 

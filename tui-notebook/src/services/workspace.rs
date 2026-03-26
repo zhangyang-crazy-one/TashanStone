@@ -1,5 +1,6 @@
 //! Workspace metadata indexing for wiki links, backlinks, and tags.
 
+use crate::i18n::{Language, TextKey};
 use crate::models::{
     document::{Backlink, LinkType},
     Document, Notebook,
@@ -124,15 +125,17 @@ impl WorkspaceIndex {
 
     pub fn preview_reference(
         &self,
+        language: Language,
         source_path: Option<&str>,
         target: &str,
     ) -> WorkspaceLinkPreview {
+        let t = language.translator();
         let trimmed = target.trim();
         if trimmed.is_empty() {
             return WorkspaceLinkPreview {
-                title: "Empty Link".to_string(),
-                subtitle: "No target".to_string(),
-                body: vec!["The link target is empty.".to_string()],
+                title: t.text(TextKey::PreviewEmptyLink).to_string(),
+                subtitle: t.text(TextKey::PreviewNoTarget).to_string(),
+                body: vec![t.text(TextKey::PreviewNoTarget).to_string()],
                 absolute_path: None,
                 line_number: None,
                 resolved: false,
@@ -141,9 +144,11 @@ impl WorkspaceIndex {
 
         if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
             return WorkspaceLinkPreview {
-                title: "External Link".to_string(),
+                title: t.text(TextKey::PreviewExternalLink).to_string(),
                 subtitle: trimmed.to_string(),
-                body: vec!["Inline preview is not available for external URLs.".to_string()],
+                body: vec![t
+                    .text(TextKey::PreviewExternalInlineUnavailable)
+                    .to_string()],
                 absolute_path: None,
                 line_number: None,
                 resolved: false,
@@ -164,8 +169,11 @@ impl WorkspaceIndex {
                         .and_then(|fragment| Self::find_anchor_line(&document.content, fragment))
                         .or(Some(1));
 
-                    let snippet =
-                        Self::collect_snippet(&document.content, line_number.unwrap_or(1));
+                    let snippet = Self::collect_snippet(
+                        &document.content,
+                        line_number.unwrap_or(1),
+                        language,
+                    );
                     WorkspaceLinkPreview {
                         title: document.title.clone(),
                         subtitle: relative_path.clone(),
@@ -176,9 +184,9 @@ impl WorkspaceIndex {
                     }
                 } else {
                     WorkspaceLinkPreview {
-                        title: "Broken Link".to_string(),
+                        title: t.text(TextKey::PreviewBrokenLink).to_string(),
                         subtitle: trimmed.to_string(),
-                        body: vec!["The resolved note could not be loaded.".to_string()],
+                        body: vec![t.text(TextKey::PreviewResolvedLoadFailed).to_string()],
                         absolute_path: None,
                         line_number: None,
                         resolved: false,
@@ -186,9 +194,9 @@ impl WorkspaceIndex {
                 }
             }
             None => WorkspaceLinkPreview {
-                title: "Unresolved Link".to_string(),
+                title: t.text(TextKey::PreviewUnresolvedLink).to_string(),
                 subtitle: trimmed.to_string(),
-                body: vec!["No matching note was found in the workspace.".to_string()],
+                body: vec![t.text(TextKey::PreviewNoMatchingNote).to_string()],
                 absolute_path: None,
                 line_number: None,
                 resolved: false,
@@ -263,7 +271,7 @@ impl WorkspaceIndex {
                         title: link.label.clone().unwrap_or_else(|| raw_target.to_string()),
                         relative_path: raw_target.to_string(),
                         absolute_path: None,
-                        context: format!("Unresolved wiki link • {}", line_context.trim()),
+                        context: line_context,
                         line_number: None,
                     }
                 };
@@ -514,10 +522,13 @@ impl WorkspaceIndex {
         })
     }
 
-    fn collect_snippet(content: &str, center_line: usize) -> Vec<String> {
+    fn collect_snippet(content: &str, center_line: usize, language: Language) -> Vec<String> {
         let lines: Vec<&str> = content.lines().collect();
         if lines.is_empty() {
-            return vec!["(empty note)".to_string()];
+            return vec![language
+                .translator()
+                .text(TextKey::PreviewEmptyNote)
+                .to_string()];
         }
 
         let start = center_line.saturating_sub(2).max(1);

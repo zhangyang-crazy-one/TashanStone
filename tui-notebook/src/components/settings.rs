@@ -29,15 +29,6 @@ impl SettingsTab {
             Self::About => Self::AI,
         }
     }
-
-    fn label(self) -> &'static str {
-        match self {
-            Self::AI => "AI",
-            Self::UI => "UI",
-            Self::Keyboard => "键盘",
-            Self::About => "关于",
-        }
-    }
 }
 
 pub struct SettingsModal {
@@ -87,7 +78,7 @@ impl SettingsModal {
             editing_field: String::new(),
             is_dirty: false,
             applied_settings: None,
-            ui_language: Language::En,
+            ui_language: Language::from_code(&settings.language),
         }
     }
 
@@ -104,6 +95,7 @@ impl SettingsModal {
         self.workspace_path = settings.workspace_path.clone();
         self.font_size = settings.font_size;
         self.language = settings.language.clone();
+        self.ui_language = Language::from_code(&settings.language);
         self.shortcut_profile = settings.shortcut_profile;
         self.show_shortcut_hints = settings.show_shortcut_hints;
         self.preview_focus_follows_editor = settings.preview_focus_follows_editor;
@@ -380,7 +372,7 @@ impl SettingsModal {
             self.render_tab_button(
                 f,
                 layout.tabs[index],
-            self.tab_label(*tab),
+                self.tab_label(*tab),
                 *tab == self.selected_tab,
             );
         }
@@ -418,7 +410,9 @@ impl SettingsModal {
         self.render_label(
             f,
             layout.ai_provider_label,
-            self.ui_language.translator().text(TextKey::SettingsProvider),
+            self.ui_language
+                .translator()
+                .text(TextKey::SettingsProvider),
         );
         self.render_input(
             f,
@@ -483,7 +477,9 @@ impl SettingsModal {
         self.render_label(
             f,
             layout.ui_workspace_label,
-            self.ui_language.translator().text(TextKey::SettingsWorkspace),
+            self.ui_language
+                .translator()
+                .text(TextKey::SettingsWorkspace),
         );
         self.render_input(
             f,
@@ -497,7 +493,9 @@ impl SettingsModal {
         self.render_label(
             f,
             layout.ui_font_size_label,
-            self.ui_language.translator().text(TextKey::SettingsFontSize),
+            self.ui_language
+                .translator()
+                .text(TextKey::SettingsFontSize),
         );
         let font_value = if self.is_editing && self.cursor_position == 1 {
             self.editing_field.clone()
@@ -521,14 +519,18 @@ impl SettingsModal {
         self.render_theme_button(
             f,
             layout.ui_theme_dark,
-            self.ui_language.translator().text(TextKey::SettingsThemeDark),
+            self.ui_language
+                .translator()
+                .text(TextKey::SettingsThemeDark),
             self.theme_manager.theme() == Theme::Dark,
             self.cursor_position == 2,
         );
         self.render_theme_button(
             f,
             layout.ui_theme_light,
-            self.ui_language.translator().text(TextKey::SettingsThemeLight),
+            self.ui_language
+                .translator()
+                .text(TextKey::SettingsThemeLight),
             self.theme_manager.theme() == Theme::Light,
             self.cursor_position == 3,
         );
@@ -536,7 +538,9 @@ impl SettingsModal {
         self.render_label(
             f,
             layout.ui_language_label,
-            self.ui_language.translator().text(TextKey::SettingsLanguage),
+            self.ui_language
+                .translator()
+                .text(TextKey::SettingsLanguage),
         );
         let language = self
             .ui_language
@@ -599,7 +603,9 @@ impl SettingsModal {
         self.render_label(
             f,
             layout.keyboard_hints_label,
-            self.ui_language.translator().text(TextKey::SettingsStatusHints),
+            self.ui_language
+                .translator()
+                .text(TextKey::SettingsStatusHints),
         );
         self.render_input(
             f,
@@ -617,7 +623,9 @@ impl SettingsModal {
         self.render_label(
             f,
             layout.keyboard_preview_follow_label,
-            self.ui_language.translator().text(TextKey::SettingsPreviewFollow),
+            self.ui_language
+                .translator()
+                .text(TextKey::SettingsPreviewFollow),
         );
         self.render_input(
             f,
@@ -651,7 +659,9 @@ impl SettingsModal {
             )]),
             Line::from(""),
             Line::from(vec![Span::styled(
-                self.ui_language.translator().text(TextKey::KeyboardNoteEscape),
+                self.ui_language
+                    .translator()
+                    .text(TextKey::KeyboardNoteEscape),
                 Style::default().fg(Color::Rgb(63, 185, 80)),
             )]),
         ];
@@ -880,6 +890,7 @@ impl SettingsModal {
                         .unwrap_or(0);
                     let next = Self::cycle_index(idx, values.len(), direction);
                     self.language = values[next].to_string();
+                    self.ui_language = Language::from_code(&self.language);
                     self.is_dirty = true;
                 }
                 _ => {}
@@ -992,7 +1003,10 @@ impl SettingsModal {
                 .ui_language
                 .translator()
                 .text(TextKey::SettingsTabKeyboard),
-            SettingsTab::About => self.ui_language.translator().text(TextKey::SettingsTabAbout),
+            SettingsTab::About => self
+                .ui_language
+                .translator()
+                .text(TextKey::SettingsTabAbout),
         }
     }
 

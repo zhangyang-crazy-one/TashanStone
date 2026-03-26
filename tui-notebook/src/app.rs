@@ -33,6 +33,7 @@ use crate::components::{
     status::{StatusBar, StatusMode},
     Component,
 };
+use crate::i18n::{Language, TextKey};
 use crate::services::ai::{AiService, ChatMessage, MessageRole};
 use crate::services::config::{AppSettings, ConfigService, ShortcutProfile};
 use crate::services::vector::VectorService;
@@ -58,6 +59,7 @@ struct Components<'a> {
     link_preview: Option<&'a LinkPreviewState>,
     shortcut_profile: ShortcutProfile,
     shortcut_help_open: bool,
+    language: Language,
 }
 
 struct LinkPreviewState {
@@ -151,6 +153,9 @@ pub struct App {
     /// Active shortcut profile
     shortcut_profile: ShortcutProfile,
 
+    /// Current UI language
+    language: Language,
+
     /// Whether the status bar should show shortcut hints
     show_shortcut_hints: bool,
 
@@ -218,6 +223,7 @@ impl App {
             vector_service: Arc::new(VectorService::new()),
             theme_manager: ThemeManager::new(),
             shortcut_profile: ShortcutProfile::TerminalLeader,
+            language: Language::En,
             show_shortcut_hints: true,
             preview_focus_follows_editor: true,
             link_preview: None,
@@ -252,11 +258,21 @@ impl App {
 
     /// Apply runtime settings that impact loaded workspace and UI state.
     fn apply_runtime_settings(&mut self, settings: &AppSettings) {
+        self.language = Language::from_code(&settings.language);
         self.workspace_root = PathBuf::from(&settings.workspace_path);
         if !self.workspace_root.exists() {
             self.workspace_root = PathBuf::from(".");
         }
         self.editor.set_workspace_root(self.workspace_root.clone());
+        self.sidebar.set_language(self.language);
+        self.editor.set_language(self.language);
+        self.search.set_language(self.language);
+        self.chat.set_language(self.language);
+        self.knowledge.set_language(self.language);
+        self.status.set_language(self.language);
+        self.settings_modal.set_language(self.language);
+        self.new_file_dialog.set_language(self.language);
+        self.confirm_dialog.set_language(self.language);
 
         self.sidebar
             .load_directory(self.workspace_root.to_string_lossy().as_ref());
@@ -283,17 +299,23 @@ impl App {
 
     /// Keep derived status bar data aligned with the current editor state.
     fn sync_status_bar(&mut self) {
+        let t = self.language.translator();
         self.status.set_editor_state(
             self.editor.cursor_line_number(),
             self.editor.cursor_column_number(),
-            "Markdown",
+            t.text(TextKey::StatusMarkdown),
         );
         self.status.set_mode(self.status_mode());
 
         let ai_status = if self.chat.is_open() {
-            format!("● {}", self.chat.get_provider_display())
+            let provider = self.chat.get_provider_display();
+            if provider.trim().is_empty() {
+                t.text(TextKey::StatusAiReady).to_string()
+            } else {
+                format!("● {provider}")
+            }
         } else {
-            "● AI idle".to_string()
+            t.text(TextKey::StatusAiIdle).to_string()
         };
         self.status.set_ai_status(ai_status);
         self.status
@@ -304,29 +326,20 @@ impl App {
                 .workspace_index
                 .document_context_for_path(Path::new(&path))
             {
-                self.status.set_message(Some(format!(
-                    "{} tags • {} links • {} backlinks",
+                self.status.set_message(Some(t.status_document_summary(
                     context.tags.len(),
                     context.outgoing_links.len(),
-                    context.backlinks.len()
+                    context.backlinks.len(),
                 )));
                 return;
             }
         }
 
-        let workspace_summary = if self.workspace_index_loading {
-            format!(
-                "{} notes • {} tags • indexing…",
-                self.workspace_index.document_count(),
-                self.workspace_index.tag_count()
-            )
-        } else {
-            format!(
-                "{} notes • {} tags",
-                self.workspace_index.document_count(),
-                self.workspace_index.tag_count()
-            )
-        };
+        let workspace_summary = t.status_workspace_summary(
+            self.workspace_index.document_count(),
+            self.workspace_index.tag_count(),
+            self.workspace_index_loading,
+        );
         self.status.set_message(Some(workspace_summary));
     }
 
@@ -415,23 +428,18 @@ impl App {
             return String::new();
         }
 
+        let t = self.language.translator();
         match self.shortcut_profile {
             ShortcutProfile::TerminalLeader => match self.focus_manager.focused() {
                 ComponentId::Editor => match self.editor_mode {
-                    EditorMode::Insert => {
-                        "Esc Normal  Ctrl+K AI  Ctrl+Q Quit  Ctrl+G Help".to_string()
-                    }
-                    EditorMode::Normal => {
-                        "Space leader  i Insert  p Preview  / Search  ? Help".to_string()
-                    }
-                    EditorMode::Preview => "j/k Scroll  Tab Next  Enter Open  Esc Back".to_string(),
+                    EditorMode::Insert => t.text(TextKey::ShortcutHintInsertLeader).to_string(),
+                    EditorMode::Normal => t.text(TextKey::ShortcutHintNormalLeader).to_string(),
+                    EditorMode::Preview => t.text(TextKey::ShortcutHintPreview).to_string(),
                 },
-                ComponentId::Preview => "j/k Scroll  Tab Next  Enter Open  Esc Back".to_string(),
-                _ => "Tab Cycle  Shift+Tab Back  Space 1-5 Focus  ? Help".to_string(),
+                ComponentId::Preview => t.text(TextKey::ShortcutHintPreview).to_string(),
+                _ => t.text(TextKey::ShortcutHintGlobalLeader).to_string(),
             },
-            ShortcutProfile::IdeCompatible => {
-                "F1-F5 Focus  F6 Search  F8 Preview  F9 Save  F10 Settings".to_string()
-            }
+            ShortcutProfile::IdeCompatible => t.text(TextKey::ShortcutHintIde).to_string(),
         }
     }
 
@@ -454,17 +462,11 @@ impl App {
         components
     }
 
-    fn focus_label(&self) -> &'static str {
-        match self.focus_manager.focused() {
-            ComponentId::Sidebar => "Files",
-            ComponentId::Editor => "Editor",
-            ComponentId::Chat => "AI",
-            ComponentId::Knowledge => "Knowledge",
-            ComponentId::Search => "Search",
-            ComponentId::Settings => "Settings",
-            ComponentId::Preview => "Preview",
-            ComponentId::Status => "Status",
-        }
+    fn focus_label(&self) -> String {
+        self.language
+            .translator()
+            .component_label(self.focus_manager.focused())
+            .to_string()
     }
 
     fn focus_component(&mut self, component: ComponentId) {
@@ -580,10 +582,14 @@ impl App {
 
         self.clear_link_preview();
         self.confirm_dialog.open(
-            "确认",
-            format!("确定要删除文件  {label}  吗？"),
-            "此操作不可撤销。",
-            "删除",
+            self.language.translator().text(TextKey::ConfirmDeleteTitle),
+            self.language.translator().delete_file_message(&label),
+            self.language
+                .translator()
+                .text(TextKey::ConfirmDeleteWarning),
+            self.language
+                .translator()
+                .text(TextKey::ConfirmDeleteButton),
             Action::File(crate::action::FileAction::Delete(path)),
         );
     }
@@ -634,19 +640,16 @@ impl App {
 
     fn image_preview_state(&self, target: &str, label: &str) -> WorkspaceLinkPreview {
         let trimmed = target.trim();
-        let title = if label.trim().is_empty() {
-            "Image".to_string()
-        } else {
-            format!("Image: {label}")
-        };
+        let t = self.language.translator();
+        let title = t.image_preview_title(label);
 
         if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
             return WorkspaceLinkPreview {
                 title,
                 subtitle: trimmed.to_string(),
                 body: vec![
-                    "Remote image references are detected correctly.".to_string(),
-                    "Preview currently renders only local workspace images.".to_string(),
+                    t.text(TextKey::PreviewRemoteImageDetected).to_string(),
+                    t.text(TextKey::PreviewLocalImagesOnly).to_string(),
                 ],
                 absolute_path: None,
                 line_number: None,
@@ -665,8 +668,8 @@ impl App {
                     subtitle
                 },
                 body: vec![
-                    "Local image reference resolved successfully.".to_string(),
-                    "Standalone image blocks render directly in Preview when visible.".to_string(),
+                    t.text(TextKey::PreviewLocalImageResolved).to_string(),
+                    t.text(TextKey::PreviewStandaloneImageRenders).to_string(),
                 ],
                 absolute_path: None,
                 line_number: None,
@@ -678,8 +681,8 @@ impl App {
             title,
             subtitle: trimmed.to_string(),
             body: vec![
-                "Local image reference could not be resolved.".to_string(),
-                "Check the path relative to the current note or workspace root.".to_string(),
+                t.text(TextKey::PreviewLocalImageUnresolved).to_string(),
+                t.text(TextKey::PreviewCheckRelativePath).to_string(),
             ],
             absolute_path: None,
             line_number: None,
@@ -689,20 +692,31 @@ impl App {
 
     fn editor_preview_state_for_link(&self, link: &EditorLink) -> WorkspaceLinkPreview {
         match link.kind {
-            EditorLinkKind::Wiki | EditorLinkKind::Markdown => self
-                .workspace_index
-                .preview_reference(self.editor.current_file().as_deref(), &link.target),
-            EditorLinkKind::Image => {
-                self.image_preview_state(&link.target, link.label.as_deref().unwrap_or("Image"))
+            EditorLinkKind::Wiki | EditorLinkKind::Markdown => {
+                self.workspace_index.preview_reference(
+                    self.language,
+                    self.editor.current_file().as_deref(),
+                    &link.target,
+                )
             }
+            EditorLinkKind::Image => self.image_preview_state(
+                &link.target,
+                link.label
+                    .as_deref()
+                    .unwrap_or(self.language.translator().text(TextKey::PreviewImage)),
+            ),
         }
     }
 
     fn preview_state_for_hit(&self, hit: &PreviewHit) -> WorkspaceLinkPreview {
         match hit.kind {
-            PreviewTargetKind::MarkdownLink | PreviewTargetKind::WikiLink => self
-                .workspace_index
-                .preview_reference(self.editor.current_file().as_deref(), &hit.target),
+            PreviewTargetKind::MarkdownLink | PreviewTargetKind::WikiLink => {
+                self.workspace_index.preview_reference(
+                    self.language,
+                    self.editor.current_file().as_deref(),
+                    &hit.target,
+                )
+            }
             PreviewTargetKind::BlockRef => {
                 if let Some(reference) = self.editor.block_ref_by_id(&hit.target) {
                     let subtitle = self
@@ -710,10 +724,18 @@ impl App {
                         .current_file()
                         .map(|path| self.workspace_relative_path(&path))
                         .filter(|path| !path.is_empty())
-                        .unwrap_or_else(|| "Current file".to_string());
+                        .unwrap_or_else(|| {
+                            self.language
+                                .translator()
+                                .text(TextKey::PreviewCurrentFile)
+                                .to_string()
+                        });
 
                     WorkspaceLinkPreview {
-                        title: format!("Block {}", reference.id),
+                        title: self
+                            .language
+                            .translator()
+                            .block_preview_title(&reference.id),
                         subtitle,
                         body: vec![reference.content],
                         absolute_path: self.editor.current_file(),
@@ -722,9 +744,16 @@ impl App {
                     }
                 } else {
                     WorkspaceLinkPreview {
-                        title: "Missing Block".to_string(),
+                        title: self
+                            .language
+                            .translator()
+                            .text(TextKey::PreviewMissingBlock)
+                            .to_string(),
                         subtitle: hit.target.clone(),
-                        body: vec!["No matching block reference was found in the current file."
+                        body: vec![self
+                            .language
+                            .translator()
+                            .text(TextKey::PreviewNoMatchingBlock)
                             .to_string()],
                         absolute_path: None,
                         line_number: None,
@@ -893,6 +922,7 @@ impl App {
                 link_preview: self.link_preview.as_ref(),
                 shortcut_profile: self.shortcut_profile,
                 shortcut_help_open: self.shortcut_help_open,
+                language: self.language,
             };
             self.tui.draw(|f| {
                 let preview_scroll = if components.focused == ComponentId::Preview {
@@ -2006,7 +2036,7 @@ impl App {
             end_col: 0,
             kind: PreviewTargetKind::BlockRef,
             target: block_ref.id,
-            label: "Block".to_string(),
+            label: block_ref.content,
         };
         self.link_preview = Some(LinkPreviewState {
             preview: self.preview_state_for_hit(&hit),
@@ -2035,10 +2065,10 @@ impl App {
     fn open_quit_dialog(&mut self) {
         self.clear_link_preview();
         self.confirm_dialog.open(
-            "退出",
-            "确定要退出 TUI Notebook 吗？",
-            "未保存的改动可能会丢失。",
-            "退出",
+            self.language.translator().text(TextKey::ConfirmQuitTitle),
+            self.language.translator().text(TextKey::ConfirmQuitMessage),
+            self.language.translator().text(TextKey::ConfirmQuitWarning),
+            self.language.translator().text(TextKey::ConfirmQuitButton),
             Action::Quit,
         );
     }
@@ -2173,6 +2203,7 @@ impl App {
             link_preview: self.link_preview.as_ref(),
             shortcut_profile: self.shortcut_profile,
             shortcut_help_open: self.shortcut_help_open,
+            language: self.language,
         };
         let preview_scroll = layout
             .get("preview")
@@ -2206,6 +2237,7 @@ impl App {
                 *area,
                 components.editor,
                 components.focused == ComponentId::Editor,
+                components.language,
             );
         }
 
@@ -2271,7 +2303,12 @@ impl App {
             && !components.confirm.is_open()
             && components.shortcut_help_open
         {
-            Self::render_shortcut_help(f, f.area(), components.shortcut_profile);
+            Self::render_shortcut_help(
+                f,
+                f.area(),
+                components.shortcut_profile,
+                components.language,
+            );
         }
 
         if !components.settings.is_open()
@@ -2405,7 +2442,13 @@ impl App {
             ComponentId::Preview => {
                 if let Some(area) = layout.get("preview").copied() {
                     let label = Line::from(vec![Span::styled(
-                        " Keyboard Preview ",
+                        format!(
+                            " {} ",
+                            components
+                                .language
+                                .translator()
+                                .text(TextKey::AppKeyboardPreview)
+                        ),
                         Style::default().fg(Color::Rgb(88, 166, 255)),
                     )]);
                     f.render_widget(Paragraph::new(label), Rect::new(area.x + 2, area.y, 20, 1));
@@ -2422,7 +2465,12 @@ impl App {
         }
     }
 
-    fn render_shortcut_help(f: &mut Frame<'_>, screen: Rect, profile: ShortcutProfile) {
+    fn render_shortcut_help(
+        f: &mut Frame<'_>,
+        screen: Rect,
+        profile: ShortcutProfile,
+        language: Language,
+    ) {
         let width = {
             let available = screen.width.saturating_sub(2);
             if available >= 40 {
@@ -2445,39 +2493,21 @@ impl App {
             width,
             height,
         );
-        let lines = match profile {
-            ShortcutProfile::TerminalLeader => vec![
-                Line::from("Terminal Leader"),
-                Line::from(""),
-                Line::from("Esc normal/back   Tab cycle focus"),
-                Line::from("Space 1-5 focus   Space s save"),
-                Line::from("Space / search    Space , settings"),
-                Line::from("Space k AI        Space l knowledge"),
-                Line::from("i/a/o insert      h j k l move"),
-                Line::from("w/b words         0/$ line"),
-                Line::from("gg/G top/bottom   Ctrl+u/d half page"),
-                Line::from("p preview         Enter open target"),
-                Line::from(""),
-                Line::from("Ctrl+Q quit   Ctrl+K AI   Ctrl+G help"),
-            ],
-            ShortcutProfile::IdeCompatible => vec![
-                Line::from("IDE Compatible"),
-                Line::from(""),
-                Line::from("F1 Files     F2 Editor    F3 Preview"),
-                Line::from("F4 AI        F5 Knowledge F6 Search"),
-                Line::from("F7 Index     F8 Preview   F9 Save"),
-                Line::from("F10 Settings F12 Quit"),
-                Line::from(""),
-                Line::from("Esc back/close  Tab cycle focus"),
-                Line::from("Ctrl+Q quit    Ctrl+K AI"),
-            ],
-        };
+        let lines = language
+            .translator()
+            .shortcut_help_lines(profile)
+            .into_iter()
+            .map(Line::from)
+            .collect::<Vec<_>>();
 
         f.render_widget(Clear, area);
         f.render_widget(
             Paragraph::new(lines).block(
                 Block::default()
-                    .title(" Shortcuts ")
+                    .title(format!(
+                        " {} ",
+                        language.translator().text(TextKey::AppShortcutHelpTitle)
+                    ))
                     .borders(Borders::ALL)
                     .border_style(Style::default().fg(Color::Rgb(88, 166, 255)))
                     .style(Style::default().bg(Color::Rgb(15, 20, 28))),
@@ -2491,6 +2521,7 @@ impl App {
         area: ratatui::layout::Rect,
         editor: &Editor,
         focused: bool,
+        language: Language,
     ) {
         let file_name = editor.current_file_name();
         let status_fill = if editor.is_modified() {
@@ -2499,9 +2530,9 @@ impl App {
             Color::Rgb(35, 134, 54)
         };
         let status_text = if editor.is_modified() {
-            "Modified"
+            language.translator().text(TextKey::TitleModified)
         } else {
-            "Saved"
+            language.translator().text(TextKey::TitleSaved)
         };
 
         let line = Line::from(vec![

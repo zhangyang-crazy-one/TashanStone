@@ -648,13 +648,13 @@ fn default_image_label(target: &str) -> String {
         .file_stem()
         .and_then(|name| name.to_str())
         .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| {
+        .or_else(|| {
             Path::new(path_part)
                 .file_name()
                 .and_then(|name| name.to_str())
                 .filter(|name| !name.is_empty())
-                .unwrap_or("Image")
         })
+        .unwrap_or_default()
         .to_string()
 }
 
@@ -1160,7 +1160,7 @@ fn parse_markdown(md_text: &str) -> Vec<MdBlock> {
                     let alt_text = plain_text_from_lines(&image.alt.take_lines(), " ");
                     let image_segment = make_segment(
                         if alt_text.trim().is_empty() {
-                            "Image".to_string()
+                            default_image_label(&image.src)
                         } else {
                             alt_text
                         },
@@ -1428,7 +1428,7 @@ fn preview_inline_style(segment: &InlineSegment) -> Style {
 
 fn preview_segment_text(segment: &InlineSegment) -> String {
     match segment.role {
-        InlineRole::Image => format!("[image: {}]", segment.text),
+        InlineRole::Image => format!("[{}]", segment.text),
         InlineRole::Kbd => format!(" {} ", segment.text.trim()),
         _ => segment.text.clone(),
     }
@@ -1881,7 +1881,10 @@ fn callout_styles(kind: Option<CalloutKind>) -> (String, Style, Style) {
     callout_styles_localized(kind, Language::En)
 }
 
-fn callout_styles_localized(kind: Option<CalloutKind>, language: Language) -> (String, Style, Style) {
+fn callout_styles_localized(
+    kind: Option<CalloutKind>,
+    language: Language,
+) -> (String, Style, Style) {
     let t = language.translator();
     match kind {
         Some(CalloutKind::Note) => (
@@ -4167,7 +4170,7 @@ impl Editor {
                 MdBlock::Image { alt, src } => {
                     self.preview_image_render_with_overlay(alt, src, width)
                 }
-                _ => preview_block_to_render(block, width),
+                _ => preview_block_to_render_localized(block, width, self.language),
             };
             append_preview_render(&mut output, render);
             previous_was_list = current_is_list;
@@ -4182,7 +4185,8 @@ impl Editor {
         src: &str,
         width: u16,
     ) -> PreviewRender {
-        let mut render = preview_image_render(alt, src, width.max(1) as usize);
+        let mut render =
+            preview_image_render_localized(alt, src, width.max(1) as usize, self.language);
         let Some((path, image_height)) = self.preview_image_layout(src, width) else {
             return render;
         };
@@ -4200,7 +4204,10 @@ impl Editor {
                 kind: PreviewTargetKind::Image,
                 target: src.to_string(),
                 label: if label.trim().is_empty() {
-                    "Image".to_string()
+                    self.language
+                        .translator()
+                        .text(TextKey::PreviewImage)
+                        .to_string()
                 } else {
                     label.clone()
                 },

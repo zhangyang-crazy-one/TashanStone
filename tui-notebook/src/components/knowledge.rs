@@ -294,8 +294,12 @@ impl KnowledgePanel {
                 .language
                 .translator()
                 .text(TextKey::KnowledgeBadgeBacklink),
-            KnowledgeItemKind::TagMatch => self.language.translator().text(TextKey::KnowledgeBadgeTag),
-            KnowledgeItemKind::Semantic => self.language.translator().text(TextKey::KnowledgeBadgeRag),
+            KnowledgeItemKind::TagMatch => {
+                self.language.translator().text(TextKey::KnowledgeBadgeTag)
+            }
+            KnowledgeItemKind::Semantic => {
+                self.language.translator().text(TextKey::KnowledgeBadgeRag)
+            }
         }
     }
 }
@@ -395,7 +399,9 @@ impl crate::components::Component for KnowledgePanel {
             Block::default()
                 .title(format!(
                     " {} ",
-                    self.language.translator().text(TextKey::KnowledgeQueryTitle)
+                    self.language
+                        .translator()
+                        .text(TextKey::KnowledgeQueryTitle)
                 ))
                 .borders(Borders::ALL)
                 .style(Style::default().bg(Color::Rgb(22, 27, 34))),
@@ -404,16 +410,14 @@ impl crate::components::Component for KnowledgePanel {
 
         let items = self.active_items();
         if items.is_empty() && !self.is_indexing {
-            let empty = Paragraph::new(
-                self.language
-                    .translator()
-                    .text(TextKey::KnowledgeEmpty),
-            )
+            let empty = Paragraph::new(self.language.translator().text(TextKey::KnowledgeEmpty))
                 .block(
                     Block::default()
                         .title(format!(
                             " {} ",
-                            self.language.translator().text(TextKey::KnowledgeItemsTitle)
+                            self.language
+                                .translator()
+                                .text(TextKey::KnowledgeItemsTitle)
                         ))
                         .borders(Borders::ALL),
                 )
@@ -465,7 +469,9 @@ impl crate::components::Component for KnowledgePanel {
                 Block::default()
                     .title(format!(
                         " {} ",
-                        self.language.translator().text(TextKey::KnowledgeItemsTitle)
+                        self.language
+                            .translator()
+                            .text(TextKey::KnowledgeItemsTitle)
                     ))
                     .borders(Borders::ALL),
             )
