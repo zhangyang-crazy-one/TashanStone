@@ -10,7 +10,7 @@ use ratatui::{
     symbols::Marker,
     text::{Line as TextLine, Span},
     widgets::{
-        canvas::{Canvas, Line as CanvasLine, Points},
+        canvas::{Canvas, Line as CanvasLine},
         Block, Borders, Clear, Paragraph, Wrap,
     },
     Frame,
@@ -32,12 +32,19 @@ const TEXT_MUTED: Color = Color::Rgb(139, 148, 158);
 const TEXT_SUBTLE: Color = Color::Rgb(110, 118, 129);
 const ACCENT: Color = Color::Rgb(88, 166, 255);
 const SUCCESS: Color = Color::Rgb(63, 185, 80);
-const TAG: Color = Color::Rgb(210, 153, 34);
 const WARNING: Color = Color::Rgb(248, 81, 73);
 const ROW_SELECTED_BG: Color = Color::Rgb(31, 43, 70);
 const ROOT_CARD_BG: Color = Color::Rgb(20, 27, 42);
 const TAB_ACTIVE_BG: Color = Color::Rgb(38, 56, 88);
 const TAB_INACTIVE_BG: Color = Color::Rgb(24, 30, 44);
+const NODE_ROOT_BG: Color = Color::Rgb(37, 46, 68);
+const NODE_LINK_BG: Color = Color::Rgb(170, 212, 255);
+const NODE_BACKLINK_BG: Color = Color::Rgb(183, 242, 198);
+const NODE_TAG_BG: Color = Color::Rgb(243, 212, 140);
+const NODE_FOCUS_BG: Color = Color::Rgb(53, 63, 90);
+const NODE_DANGER_BG: Color = Color::Rgb(104, 44, 39);
+const NODE_TEXT_DARK: Color = Color::Rgb(27, 34, 50);
+const EDGE_TAG: Color = Color::Rgb(225, 183, 85);
 
 #[derive(Debug, Clone)]
 struct VisibleGraphRow {
@@ -117,10 +124,8 @@ struct CanvasNode {
 
 #[derive(Debug, Clone)]
 struct CanvasEdge {
-    x1: f64,
-    y1: f64,
-    x2: f64,
-    y2: f64,
+    from_id: String,
+    to_id: String,
     color: Color,
 }
 
@@ -908,41 +913,27 @@ impl GraphExplorer {
         let focus_id = model.focused_node().map(|node| node.id.clone());
         let canvas = Canvas::default()
             .background_color(CANVAS_BG)
-            .marker(Marker::Dot)
+            .marker(Marker::Braille)
             .x_bounds(x_bounds)
             .y_bounds(y_bounds)
             .paint(move |ctx| {
                 for edge in &edges {
-                    ctx.draw(&CanvasLine::new(
-                        edge.x1, edge.y1, edge.x2, edge.y2, edge.color,
-                    ));
-                }
-                ctx.layer();
+                    let Some(source) = nodes.iter().find(|node| node.id == edge.from_id) else {
+                        continue;
+                    };
+                    let Some(target) = nodes.iter().find(|node| node.id == edge.to_id) else {
+                        continue;
+                    };
 
-                for node in &nodes {
-                    let coords = [(node.x, node.y)];
-                    ctx.draw(&Points {
-                        coords: &coords,
-                        color: Self::canvas_node_color(
-                            node,
-                            focus_id.as_deref() == Some(node.id.as_str()),
-                        ),
-                    });
-                }
-                ctx.layer();
-
-                for node in &nodes {
-                    ctx.print(
-                        node.x + 0.7,
-                        node.y + 0.55,
-                        Self::canvas_label_line(
-                            node,
-                            focus_id.as_deref() == Some(node.id.as_str()),
-                        ),
-                    );
+                    for (x1, y1, x2, y2) in
+                        Self::canvas_edge_segments(source, target, focus_id.as_deref())
+                    {
+                        ctx.draw(&CanvasLine::new(x1, y1, x2, y2, edge.color));
+                    }
                 }
             });
         f.render_widget(canvas, area);
+        self.render_canvas_node_cards(f, area, model, x_bounds, y_bounds);
 
         if model.nodes.len() <= 1 && area.width > 8 && area.height > 3 {
             let notice = Rect::new(
@@ -1441,10 +1432,8 @@ impl GraphExplorer {
                     resolved: row.node.resolved,
                 });
                 edges.push(CanvasEdge {
-                    x1: parent_x,
-                    y1: parent_y,
-                    x2: x,
-                    y2: y,
+                    from_id: parent_id.to_string(),
+                    to_id: row.key.clone(),
                     color: Self::edge_color(row.node.kind),
                 });
 
@@ -1605,7 +1594,7 @@ impl GraphExplorer {
         match kind {
             GraphEdgeKind::Link => ACCENT,
             GraphEdgeKind::Backlink => SUCCESS,
-            GraphEdgeKind::Tag => TAG,
+            GraphEdgeKind::Tag => EDGE_TAG,
         }
     }
 
@@ -1680,18 +1669,6 @@ impl GraphExplorer {
         start + step * index as f64
     }
 
-    fn canvas_node_color(node: &CanvasNode, focused: bool) -> Color {
-        if focused {
-            Color::Rgb(248, 248, 248)
-        } else if node.is_root {
-            Color::Rgb(110, 184, 255)
-        } else if node.is_cycle || !node.resolved {
-            WARNING
-        } else {
-            node.kind.map(Self::edge_color).unwrap_or(ACCENT)
-        }
-    }
-
     fn canvas_node_badge_color(node: &CanvasNode) -> Color {
         if node.is_cycle || !node.resolved {
             WARNING
@@ -1728,31 +1705,6 @@ impl GraphExplorer {
         } else {
             node.context.clone()
         }
-    }
-
-    fn canvas_label_line(node: &CanvasNode, focused: bool) -> TextLine<'static> {
-        let label = Self::truncate_label(&node.title, if node.is_root { 18 } else { 16 });
-        let style = if focused {
-            Style::default()
-                .fg(Color::Black)
-                .bg(Color::Rgb(166, 213, 255))
-                .add_modifier(Modifier::BOLD)
-        } else if node.is_root {
-            Style::default()
-                .fg(TEXT_PRIMARY)
-                .bg(ROOT_CARD_BG)
-                .add_modifier(Modifier::BOLD)
-        } else if node.is_cycle || !node.resolved {
-            Style::default()
-                .fg(Color::White)
-                .bg(Color::Rgb(92, 42, 32))
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(TEXT_PRIMARY)
-        };
-
-        let prefix = if node.is_root { "◆" } else { "•" };
-        TextLine::from(Span::styled(format!("{prefix} {label}"), style))
     }
 
     fn canvas_preview_lines(&self, node: &CanvasNode) -> Vec<TextLine<'static>> {
@@ -1809,6 +1761,333 @@ impl GraphExplorer {
         Span::styled(format!(" {} ", t.text(label_key)), style)
     }
 
+    fn render_canvas_node_cards(
+        &self,
+        f: &mut Frame<'_>,
+        area: Rect,
+        model: &CanvasGraphModel,
+        x_bounds: [f64; 2],
+        y_bounds: [f64; 2],
+    ) {
+        let focus_id = model.focused_node().map(|node| node.id.as_str());
+
+        for node in model
+            .nodes
+            .iter()
+            .filter(|node| !node.is_root && focus_id != Some(node.id.as_str()))
+        {
+            self.render_canvas_node_card(f, area, node, false, x_bounds, y_bounds);
+        }
+
+        if let Some(root) = model.nodes.iter().find(|node| node.is_root) {
+            self.render_canvas_node_card(
+                f,
+                area,
+                root,
+                focus_id == Some(root.id.as_str()),
+                x_bounds,
+                y_bounds,
+            );
+        }
+
+        if let Some(node) = model.focused_node().filter(|node| !node.is_root) {
+            self.render_canvas_node_card(f, area, node, true, x_bounds, y_bounds);
+        }
+    }
+
+    fn render_canvas_node_card(
+        &self,
+        f: &mut Frame<'_>,
+        area: Rect,
+        node: &CanvasNode,
+        focused: bool,
+        x_bounds: [f64; 2],
+        y_bounds: [f64; 2],
+    ) {
+        let Some(card_rect) = self.canvas_node_screen_rect(area, node, focused, x_bounds, y_bounds)
+        else {
+            return;
+        };
+
+        let (block_style, icon_style, text_style, border_style) =
+            self.canvas_card_styles(node, focused);
+        if card_rect.height > 1 {
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .border_style(border_style)
+                .style(block_style);
+            f.render_widget(block, card_rect);
+            f.render_widget(
+                Paragraph::new(self.canvas_card_lines(node, icon_style, text_style))
+                    .wrap(Wrap { trim: true }),
+                Self::inner_rect(card_rect),
+            );
+        } else {
+            f.render_widget(Block::default().style(block_style), card_rect);
+            f.render_widget(
+                Paragraph::new(self.canvas_chip_line(node, icon_style, text_style)),
+                card_rect,
+            );
+        }
+    }
+
+    fn canvas_node_screen_rect(
+        &self,
+        area: Rect,
+        node: &CanvasNode,
+        focused: bool,
+        x_bounds: [f64; 2],
+        y_bounds: [f64; 2],
+    ) -> Option<Rect> {
+        let (screen_x, screen_y) = Self::world_to_screen(area, node.x, node.y, x_bounds, y_bounds)?;
+        let (width_u16, height_u16) = Self::canvas_card_size(node, focused);
+        let width = width_u16.min(area.width.saturating_sub(1)).max(8) as i32;
+        let height = height_u16.min(area.height.saturating_sub(1).max(1)) as i32;
+        let area_left = area.x as i32;
+        let area_right = area.x as i32 + area.width as i32;
+        let area_top = area.y as i32;
+        let area_bottom = area.y as i32 + area.height as i32;
+
+        let mut x = if node.is_root {
+            screen_x - width / 2
+        } else {
+            match node.kind.unwrap_or(GraphEdgeKind::Link) {
+                GraphEdgeKind::Link => screen_x + 2,
+                GraphEdgeKind::Backlink => screen_x - width,
+                GraphEdgeKind::Tag => screen_x - width / 2,
+            }
+        };
+
+        let mut y = if node.is_root {
+            screen_y - height / 2
+        } else if focused {
+            match node.kind.unwrap_or(GraphEdgeKind::Link) {
+                GraphEdgeKind::Tag => screen_y - height,
+                _ => screen_y - height / 2,
+            }
+        } else {
+            match node.kind.unwrap_or(GraphEdgeKind::Link) {
+                GraphEdgeKind::Tag => screen_y - 1,
+                _ => screen_y,
+            }
+        };
+
+        if x + width <= area_left || x >= area_right || y + height <= area_top || y >= area_bottom {
+            return None;
+        }
+
+        x = x.clamp(area_left, area_right - width.max(1));
+        y = y.clamp(area_top, area_bottom - height.max(1));
+
+        Some(Rect::new(x as u16, y as u16, width as u16, height as u16))
+    }
+
+    fn world_to_screen(
+        area: Rect,
+        world_x: f64,
+        world_y: f64,
+        x_bounds: [f64; 2],
+        y_bounds: [f64; 2],
+    ) -> Option<(i32, i32)> {
+        let x_span = x_bounds[1] - x_bounds[0];
+        let y_span = y_bounds[1] - y_bounds[0];
+        if x_span <= f64::EPSILON || y_span <= f64::EPSILON {
+            return None;
+        }
+
+        let x_ratio = (world_x - x_bounds[0]) / x_span;
+        let y_ratio = (world_y - y_bounds[0]) / y_span;
+        if !(0.0..=1.0).contains(&x_ratio) || !(0.0..=1.0).contains(&y_ratio) {
+            return None;
+        }
+
+        let screen_x = area.x as f64 + x_ratio * area.width.saturating_sub(1) as f64;
+        let screen_y = area.y as f64 + (1.0 - y_ratio) * area.height.saturating_sub(1) as f64;
+        Some((screen_x.round() as i32, screen_y.round() as i32))
+    }
+
+    fn canvas_card_styles(&self, node: &CanvasNode, focused: bool) -> (Style, Style, Style, Style) {
+        if focused {
+            return (
+                Style::default().bg(NODE_FOCUS_BG),
+                Style::default()
+                    .fg(Self::canvas_icon_color(node))
+                    .bg(NODE_FOCUS_BG)
+                    .add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(TEXT_PRIMARY)
+                    .bg(NODE_FOCUS_BG)
+                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(ACCENT).bg(NODE_FOCUS_BG),
+            );
+        }
+
+        if node.is_cycle || !node.resolved {
+            return (
+                Style::default().bg(NODE_DANGER_BG),
+                Style::default()
+                    .fg(Color::White)
+                    .bg(NODE_DANGER_BG)
+                    .add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::White)
+                    .bg(NODE_DANGER_BG)
+                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(WARNING).bg(NODE_DANGER_BG),
+            );
+        }
+
+        let background = if node.is_root {
+            NODE_ROOT_BG
+        } else {
+            match node.kind.unwrap_or(GraphEdgeKind::Link) {
+                GraphEdgeKind::Link => NODE_LINK_BG,
+                GraphEdgeKind::Backlink => NODE_BACKLINK_BG,
+                GraphEdgeKind::Tag => NODE_TAG_BG,
+            }
+        };
+        let text_color = if node.is_root {
+            TEXT_PRIMARY
+        } else {
+            NODE_TEXT_DARK
+        };
+        (
+            Style::default().bg(background),
+            Style::default()
+                .fg(Self::canvas_icon_color(node))
+                .bg(background)
+                .add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(text_color)
+                .bg(background)
+                .add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(if node.is_root { BORDER } else { background })
+                .bg(background),
+        )
+    }
+
+    fn canvas_chip_line(
+        &self,
+        node: &CanvasNode,
+        icon_style: Style,
+        text_style: Style,
+    ) -> TextLine<'static> {
+        let label = Self::truncate_label(&node.title, if node.is_root { 28 } else { 22 });
+        let icon = if node.is_root { "◆" } else { "●" };
+        TextLine::from(vec![
+            Span::styled(" ", text_style),
+            Span::styled(icon.to_string(), icon_style),
+            Span::styled(" ", text_style),
+            Span::styled(label, text_style),
+            Span::styled(" ", text_style),
+        ])
+    }
+
+    fn canvas_card_lines(
+        &self,
+        node: &CanvasNode,
+        icon_style: Style,
+        text_style: Style,
+    ) -> Vec<TextLine<'static>> {
+        let title = Self::truncate_label(&node.title, if node.is_root { 26 } else { 24 });
+        let subtitle =
+            Self::truncate_label(&node.relative_path, if node.is_root { 28 } else { 26 });
+        let icon = if node.is_root { "◆" } else { "●" };
+        vec![
+            TextLine::from(vec![
+                Span::styled(icon.to_string(), icon_style),
+                Span::styled(" ", text_style),
+                Span::styled(title, text_style),
+            ]),
+            TextLine::from(Span::styled(
+                subtitle,
+                text_style.add_modifier(Modifier::DIM),
+            )),
+        ]
+    }
+
+    fn canvas_icon_color(node: &CanvasNode) -> Color {
+        if node.is_cycle || !node.resolved {
+            Color::White
+        } else if node.is_root {
+            Color::Rgb(152, 196, 255)
+        } else {
+            match node.kind.unwrap_or(GraphEdgeKind::Link) {
+                GraphEdgeKind::Link => ACCENT,
+                GraphEdgeKind::Backlink => SUCCESS,
+                GraphEdgeKind::Tag => EDGE_TAG,
+            }
+        }
+    }
+
+    fn canvas_card_size(node: &CanvasNode, focused: bool) -> (u16, u16) {
+        if node.is_root || focused {
+            let label = Self::truncate_label(&node.title, if node.is_root { 26 } else { 24 });
+            let subtitle = Self::truncate_label(&node.relative_path, 28);
+            let width = (Self::display_width(&label).max(Self::display_width(&subtitle)) + 4)
+                .clamp(if node.is_root { 24 } else { 22 }, 34) as u16;
+            (width, 4)
+        } else {
+            let label = Self::truncate_label(&node.title, 22);
+            let width = (Self::display_width(&label) + 5).clamp(10, 28) as u16;
+            (width, 1)
+        }
+    }
+
+    fn canvas_card_world_half_size(node: &CanvasNode, focused: bool) -> (f64, f64) {
+        if node.is_root || focused {
+            (6.2, 1.7)
+        } else {
+            match node.kind.unwrap_or(GraphEdgeKind::Link) {
+                GraphEdgeKind::Link => (4.4, 0.55),
+                GraphEdgeKind::Backlink => (4.4, 0.55),
+                GraphEdgeKind::Tag => (4.0, 0.55),
+            }
+        }
+    }
+
+    fn canvas_edge_segments(
+        source: &CanvasNode,
+        target: &CanvasNode,
+        focus_id: Option<&str>,
+    ) -> Vec<(f64, f64, f64, f64)> {
+        let source_focused = focus_id == Some(source.id.as_str());
+        let target_focused = focus_id == Some(target.id.as_str());
+        let (source_half_w, source_half_h) =
+            Self::canvas_card_world_half_size(source, source_focused);
+        let (target_half_w, target_half_h) =
+            Self::canvas_card_world_half_size(target, target_focused);
+        let dx = target.x - source.x;
+        let dy = target.y - source.y;
+
+        if dx.abs() >= dy.abs() {
+            let direction = if dx >= 0.0 { 1.0 } else { -1.0 };
+            let start_x = source.x + source_half_w * direction;
+            let start_y = source.y;
+            let end_x = target.x - target_half_w * direction;
+            let end_y = target.y;
+            let mid_x = start_x + (end_x - start_x) * 0.55;
+            vec![
+                (start_x, start_y, mid_x, start_y),
+                (mid_x, start_y, mid_x, end_y),
+                (mid_x, end_y, end_x, end_y),
+            ]
+        } else {
+            let direction = if dy >= 0.0 { 1.0 } else { -1.0 };
+            let start_x = source.x;
+            let start_y = source.y + source_half_h * direction;
+            let end_x = target.x;
+            let end_y = target.y - target_half_h * direction;
+            let mid_y = start_y + (end_y - start_y) * 0.5;
+            vec![
+                (start_x, start_y, start_x, mid_y),
+                (start_x, mid_y, end_x, mid_y),
+                (end_x, mid_y, end_x, end_y),
+            ]
+        }
+    }
+
     fn truncate_label(label: &str, max_width: usize) -> String {
         let mut width = 0;
         let mut output = String::new();
@@ -1822,6 +2101,12 @@ impl GraphExplorer {
             width += char_width;
         }
         output
+    }
+
+    fn display_width(text: &str) -> usize {
+        text.chars()
+            .map(|ch| UnicodeWidthChar::width(ch).unwrap_or(1))
+            .sum()
     }
 
     fn row_key(parent_key: Option<&str>, depth: usize, node: &GraphNodeRef) -> String {
