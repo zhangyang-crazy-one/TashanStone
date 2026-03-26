@@ -1,17 +1,17 @@
 //! Sidebar component - file tree navigation
 
-use crate::action::{Action, FileAction, NavigationAction};
+use crate::action::{Action, FileAction};
 use crossterm::event::KeyEvent;
 use ratatui::{
-    layout::Rect,
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
-    text::{Line, Text},
-    widgets::{Block, List, ListItem, ListState},
+    text::{Line, Span},
+    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
     Frame,
 };
 use std::collections::HashMap;
 
-/// File tree item
+/// File tree item with flat representation for rendering
 #[derive(Debug, Clone)]
 pub struct FileItem {
     pub name: String,
@@ -21,10 +21,23 @@ pub struct FileItem {
     pub is_expanded: bool,
 }
 
+/// Flattened tree item for rendering
+#[derive(Debug, Clone)]
+struct FlatItem {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub depth: usize,
+    pub is_expanded: bool,
+    pub has_children: bool,
+}
+
 /// Sidebar state
 pub struct Sidebar {
     /// File tree
     files: Vec<FileItem>,
+    /// Flattened items for rendering
+    flat_items: Vec<FlatItem>,
     /// Selection state
     list_state: ListState,
     /// Expanded directories
@@ -37,6 +50,7 @@ impl Sidebar {
     pub fn new() -> Self {
         Self {
             files: Vec::new(),
+            flat_items: Vec::new(),
             list_state: ListState::default(),
             expanded_paths: HashMap::new(),
             current_path: String::from("."),
@@ -45,7 +59,6 @@ impl Sidebar {
 
     /// Initialize the sidebar with default files
     pub fn init(&mut self) {
-        // Load current directory
         self.load_directory(".");
     }
 
@@ -53,8 +66,89 @@ impl Sidebar {
     pub fn load_directory(&mut self, path: &str) {
         self.current_path = path.to_string();
         self.files = self.read_directory(path, 0);
-        if !self.files.is_empty() {
+        self.rebuild_flat_list();
+        if !self.flat_items.is_empty() {
             self.list_state.select(Some(0));
+        }
+    }
+
+    /// Refresh the current workspace tree.
+    pub fn reload(&mut self) {
+        let current = self.current_path.clone();
+        self.load_directory(&current);
+    }
+
+    /// Get the current workspace root path.
+    pub fn workspace_path(&self) -> &str {
+        &self.current_path
+    }
+
+    /// Get the current workspace display name.
+    pub fn workspace_name(&self) -> String {
+        std::path::Path::new(&self.current_path)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .filter(|name| !name.is_empty())
+            .unwrap_or("workspace")
+            .to_string()
+    }
+
+    /// Get the currently selected path.
+    pub fn selected_path(&self) -> Option<String> {
+        self.list_state
+            .selected()
+            .and_then(|idx| self.flat_items.get(idx))
+            .map(|item| item.path.clone())
+    }
+
+    /// Get the selected directory, or the parent directory of a selected file.
+    pub fn selected_directory(&self) -> Option<String> {
+        self.list_state
+            .selected()
+            .and_then(|idx| self.flat_items.get(idx))
+            .map(|item| {
+                if item.is_dir {
+                    item.path.clone()
+                } else {
+                    std::path::Path::new(&item.path)
+                        .parent()
+                        .map(|path| path.to_string_lossy().to_string())
+                        .unwrap_or_else(|| self.current_path.clone())
+                }
+            })
+    }
+
+    /// Rebuild the flattened list from tree
+    fn rebuild_flat_list(&mut self) {
+        self.flat_items.clear();
+        let files = self.files.clone();
+        let expanded_paths = self.expanded_paths.clone();
+        self.flatten_tree_impl(&files, 0, &expanded_paths);
+    }
+
+    /// Flatten tree into list recursively
+    fn flatten_tree_impl(
+        &mut self,
+        items: &[FileItem],
+        depth: usize,
+        expanded_paths: &HashMap<String, bool>,
+    ) {
+        for item in items {
+            let has_children = !item.children.is_empty();
+            let is_expanded = expanded_paths.get(&item.path).copied().unwrap_or(false);
+
+            self.flat_items.push(FlatItem {
+                name: item.name.clone(),
+                path: item.path.clone(),
+                is_dir: item.is_dir,
+                depth,
+                is_expanded,
+                has_children,
+            });
+
+            if item.is_dir && is_expanded {
+                self.flatten_tree_impl(&item.children, depth + 1, expanded_paths);
+            }
         }
     }
 
@@ -68,13 +162,14 @@ impl Sidebar {
                     let name = entry.file_name().to_string_lossy().to_string();
                     let file_path = entry.path().to_string_lossy().to_string();
 
-                    // Skip hidden files
+                    // Skip hidden files and non-markdown files at root
                     if name.starts_with('.') {
                         continue;
                     }
 
                     let is_dir = metadata.is_dir();
-                    let children = if is_dir && depth < 2 {
+                    // Only read subdirectories, not all nested content
+                    let children = if is_dir && depth < 3 {
                         self.read_directory(&file_path, depth + 1)
                     } else {
                         Vec::new()
@@ -110,28 +205,111 @@ impl Sidebar {
         match key.code {
             crossterm::event::KeyCode::Up => {
                 self.move_up();
-                Some(Action::Navigation(NavigationAction::FocusPrev))
+                None // Don't trigger focus change, just move selection
             }
             crossterm::event::KeyCode::Down => {
                 self.move_down();
-                Some(Action::Navigation(NavigationAction::FocusNext))
+                None // Don't trigger focus change, just move selection
             }
             crossterm::event::KeyCode::Enter => {
-                let selected = self.get_selected_file().cloned();
-                if let Some(selected) = selected {
-                    if selected.is_dir {
-                        self.toggle_expand(&selected.path);
-                    } else {
-                        return Some(Action::File(FileAction::Select(selected.path.clone())));
-                    }
+                // Get the path before borrowing mutably
+                let path_to_toggle = self.get_selected_path_if_dir();
+                if let Some(path) = path_to_toggle {
+                    self.toggle_expand(&path);
+                    self.rebuild_flat_list();
+                    None
+                } else if let Some(path) = self.get_selected_path_if_file() {
+                    Some(Action::File(FileAction::Select(path)))
+                } else {
+                    None
+                }
+            }
+            crossterm::event::KeyCode::Left => {
+                // Collapse directory if expanded
+                if let Some(path) = self.get_selected_path_if_expanded_dir() {
+                    self.toggle_expand(&path);
+                    self.rebuild_flat_list();
                 }
                 None
             }
-            crossterm::event::KeyCode::Char('n') if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
-                Some(Action::File(FileAction::Create("new_file.md".to_string())))
+            crossterm::event::KeyCode::Right => {
+                // Expand directory if collapsed
+                if let Some(path) = self.get_selected_path_if_collapsed_dir() {
+                    self.toggle_expand(&path);
+                    self.rebuild_flat_list();
+                }
+                None
             }
+            crossterm::event::KeyCode::Char('n')
+                if key
+                    .modifiers
+                    .contains(crossterm::event::KeyModifiers::CONTROL) =>
+            {
+                Some(Action::File(FileAction::OpenCreateDialog {
+                    directory: self.selected_directory(),
+                }))
+            }
+            crossterm::event::KeyCode::Delete => self
+                .get_selected_path_if_file()
+                .map(|path| Action::File(FileAction::OpenDeleteDialog(path))),
             _ => None,
         }
+    }
+
+    /// Get selected path if it's a directory
+    fn get_selected_path_if_dir(&self) -> Option<String> {
+        self.list_state
+            .selected()
+            .and_then(|idx| self.flat_items.get(idx))
+            .and_then(|item| {
+                if item.is_dir {
+                    Some(item.path.clone())
+                } else {
+                    None
+                }
+            })
+    }
+
+    /// Get selected path if it's a file
+    fn get_selected_path_if_file(&self) -> Option<String> {
+        self.list_state
+            .selected()
+            .and_then(|idx| self.flat_items.get(idx))
+            .and_then(|item| {
+                if !item.is_dir {
+                    Some(item.path.clone())
+                } else {
+                    None
+                }
+            })
+    }
+
+    /// Get selected path if it's an expanded directory
+    fn get_selected_path_if_expanded_dir(&self) -> Option<String> {
+        self.list_state
+            .selected()
+            .and_then(|idx| self.flat_items.get(idx))
+            .and_then(|item| {
+                if item.is_dir && item.is_expanded {
+                    Some(item.path.clone())
+                } else {
+                    None
+                }
+            })
+    }
+
+    /// Get selected path if it's a collapsed directory with children
+    fn get_selected_path_if_collapsed_dir(&self) -> Option<String> {
+        self.list_state
+            .selected()
+            .and_then(|idx| self.flat_items.get(idx))
+            .and_then(|item| {
+                if item.is_dir && !item.is_expanded && item.has_children {
+                    Some(item.path.clone())
+                } else {
+                    None
+                }
+            })
     }
 
     /// Move selection up
@@ -146,7 +324,7 @@ impl Sidebar {
     /// Move selection down
     fn move_down(&mut self) {
         if let Some(idx) = self.list_state.selected() {
-            if idx < self.files.len().saturating_sub(1) {
+            if idx < self.flat_items.len().saturating_sub(1) {
                 self.list_state.select(Some(idx + 1));
             }
         }
@@ -161,9 +339,11 @@ impl Sidebar {
         }
     }
 
-    /// Get currently selected file
-    fn get_selected_file(&self) -> Option<&FileItem> {
-        self.list_state.selected().and_then(|idx| self.files.get(idx))
+    /// Get currently selected flat item
+    fn get_selected_flat(&self) -> Option<&FlatItem> {
+        self.list_state
+            .selected()
+            .and_then(|idx| self.flat_items.get(idx))
     }
 
     /// Delete a file
@@ -201,13 +381,50 @@ impl crate::components::Component for Sidebar {
     }
 
     fn render(&self, f: &mut Frame<'_>, area: Rect) {
+        let sections = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(3), Constraint::Min(1)])
+            .split(area);
+
+        let header = Paragraph::new(vec![
+            Line::from(vec![Span::styled(
+                format!("◆ {}", self.workspace_name()),
+                Style::default().fg(Color::Cyan),
+            )]),
+            Line::from(vec![Span::styled(
+                self.current_path.as_str(),
+                Style::default().fg(Color::DarkGray),
+            )]),
+        ])
+        .block(Block::default().borders(Borders::BOTTOM))
+        .style(Style::default().bg(Color::Rgb(22, 27, 34)).fg(Color::White));
+        f.render_widget(header, sections[0]);
+
         let items: Vec<ListItem> = self
-            .files
+            .flat_items
             .iter()
-            .map(|file| {
-                let prefix = if file.is_dir { "[DIR] " } else { "[ ] " };
-                let name = format!("{}{}", prefix, file.name);
-                ListItem::new(name)
+            .map(|item| {
+                // Tree lines and icons
+                let indent = "  ".repeat(item.depth);
+                let connector = if item.is_dir {
+                    if item.is_expanded {
+                        "▼ "
+                    } else if item.has_children {
+                        "▶ "
+                    } else {
+                        "• "
+                    }
+                } else {
+                    "· "
+                };
+
+                let name = format!("{}{}{}", indent, connector, item.name);
+                let color = if item.is_dir {
+                    Color::Rgb(139, 148, 158)
+                } else {
+                    Color::Rgb(201, 209, 217)
+                };
+                ListItem::new(name).style(Style::default().fg(color))
             })
             .collect();
 
@@ -215,11 +432,16 @@ impl crate::components::Component for Sidebar {
             .block(
                 Block::default()
                     .title(" Files ")
-                    .borders(ratatui::widgets::Borders::ALL),
+                    .borders(ratatui::widgets::Borders::NONE),
             )
-            .style(Style::default().fg(Color::White))
-            .highlight_style(Style::default().bg(Color::Blue).fg(Color::White));
+            .style(Style::default().bg(Color::Rgb(13, 17, 23)).fg(Color::White))
+            .highlight_style(
+                Style::default()
+                    .bg(Color::Rgb(30, 41, 59))
+                    .fg(Color::Rgb(201, 209, 217)),
+            )
+            .highlight_symbol("▸ ");
 
-        f.render_stateful_widget(list, area, &mut self.list_state.clone());
+        f.render_stateful_widget(list, sections[1], &mut self.list_state.clone());
     }
 }

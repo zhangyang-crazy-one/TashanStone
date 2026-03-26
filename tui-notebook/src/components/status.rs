@@ -17,6 +17,18 @@ pub struct StatusBar {
     mode: StatusMode,
     /// Message
     message: Option<String>,
+    /// Current file line
+    line: usize,
+    /// Current file column
+    column: usize,
+    /// Current document label
+    document_kind: String,
+    /// AI connectivity label
+    ai_status: String,
+    /// Current focus region label
+    focus_label: String,
+    /// Focus shortcut hint
+    focus_shortcuts: String,
 }
 
 /// Status mode
@@ -35,6 +47,12 @@ impl StatusBar {
             height: 24,
             mode: StatusMode::Normal,
             message: None,
+            line: 1,
+            column: 1,
+            document_kind: "Markdown".to_string(),
+            ai_status: "● AI ready".to_string(),
+            focus_label: "Editor".to_string(),
+            focus_shortcuts: "Ctrl+1 Files  Ctrl+2 Editor  Ctrl+3 AI  Ctrl+Tab Cycle".to_string(),
         }
     }
 
@@ -52,6 +70,28 @@ impl StatusBar {
     /// Set mode
     pub fn set_mode(&mut self, mode: StatusMode) {
         self.mode = mode;
+    }
+
+    /// Set editor status details.
+    pub fn set_editor_state(&mut self, line: usize, column: usize, document_kind: &str) {
+        self.line = line;
+        self.column = column;
+        self.document_kind = document_kind.to_string();
+    }
+
+    /// Set AI service status text.
+    pub fn set_ai_status(&mut self, ai_status: impl Into<String>) {
+        self.ai_status = ai_status.into();
+    }
+
+    /// Set current focus label and shortcut hint.
+    pub fn set_focus_state(
+        &mut self,
+        focus_label: impl Into<String>,
+        focus_shortcuts: impl Into<String>,
+    ) {
+        self.focus_label = focus_label.into();
+        self.focus_shortcuts = focus_shortcuts.into();
     }
 }
 
@@ -78,14 +118,38 @@ impl crate::components::Component for StatusBar {
         };
 
         let left = vec![
-            Span::styled(mode_str, mode_style),
-            Span::raw(" | "),
-            Span::raw("tui-notebook"),
+            Span::styled(
+                self.document_kind.as_str(),
+                Style::default().fg(Color::Gray),
+            ),
+            Span::raw("  "),
+            Span::styled(
+                format!("Ln {}", self.line),
+                Style::default().fg(Color::DarkGray),
+            ),
+            Span::raw("  "),
+            Span::styled(
+                format!("Col {}", self.column),
+                Style::default().fg(Color::DarkGray),
+            ),
+            Span::raw("  "),
+            Span::styled("UTF-8", Style::default().fg(Color::DarkGray)),
         ];
 
         let right = vec![
-            Span::raw(format!("{}x{}", self.width, self.height)),
-            Span::raw(" | "),
+            Span::styled(
+                format!("Focus {}", self.focus_label),
+                Style::default().fg(Color::Rgb(88, 166, 255)),
+            ),
+            Span::raw("  "),
+            Span::styled(
+                self.focus_shortcuts.as_str(),
+                Style::default().fg(Color::DarkGray),
+            ),
+            Span::raw("  "),
+            Span::styled(self.ai_status.as_str(), Style::default().fg(Color::Green)),
+            Span::raw("  "),
+            Span::styled(mode_str, mode_style),
         ];
 
         // Calculate padding before consuming left
@@ -98,7 +162,8 @@ impl crate::components::Component for StatusBar {
         // Add message if present
         if let Some(msg) = &self.message {
             line.spans.push(Span::raw(" | "));
-            line.spans.push(Span::styled(msg, Style::default().fg(Color::Cyan)));
+            line.spans
+                .push(Span::styled(msg, Style::default().fg(Color::Cyan)));
         }
 
         // Pad to align right content
@@ -113,8 +178,8 @@ impl crate::components::Component for StatusBar {
         let text = Text::from(vec![line]);
 
         let paragraph = ratatui::widgets::Paragraph::new(text)
-            .block(Block::default().borders(ratatui::widgets::Borders::TOP))
-            .style(Style::default().bg(Color::DarkGray).fg(Color::White));
+            .block(Block::default())
+            .style(Style::default().bg(Color::Rgb(26, 26, 46)).fg(Color::White));
 
         f.render_widget(paragraph, area);
     }

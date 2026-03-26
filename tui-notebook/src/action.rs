@@ -21,6 +21,7 @@ pub enum ComponentId {
     Preview,
     Chat,
     Search,
+    Settings,
     Status,
     Knowledge,
 }
@@ -33,6 +34,7 @@ impl std::fmt::Display for ComponentId {
             ComponentId::Preview => write!(f, "Preview"),
             ComponentId::Chat => write!(f, "Chat"),
             ComponentId::Search => write!(f, "Search"),
+            ComponentId::Settings => write!(f, "Settings"),
             ComponentId::Status => write!(f, "Status"),
             ComponentId::Knowledge => write!(f, "Knowledge"),
         }
@@ -42,6 +44,8 @@ impl std::fmt::Display for ComponentId {
 /// File operations
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum FileAction {
+    OpenCreateDialog { directory: Option<String> },
+    OpenDeleteDialog(String),
     Select(String),
     Create(String),
     Delete(String),
@@ -58,14 +62,20 @@ pub enum EditorAction {
     Undo,
     Redo,
     MoveCursor(CursorPosition),
-    Select { start: CursorPosition, end: CursorPosition },
+    Select {
+        start: CursorPosition,
+        end: CursorPosition,
+    },
     Scroll(i32),
     // Wiki link specific
     NavigateToLink(String),
     ShowBacklinks(Vec<Backlink>),
     // Block reference specific
     NavigateToBlock(String),
-    ShowBlockPreview { block_id: String, content: String },
+    ShowBlockPreview {
+        block_id: String,
+        content: String,
+    },
 }
 
 /// Cursor position in the editor
@@ -90,6 +100,10 @@ pub enum SearchAction {
     Open,
     Close,
     SetQuery(String),
+    OpenResult {
+        file_path: String,
+        line_number: usize,
+    },
     Next,
     Previous,
     ToggleRegex,
@@ -114,6 +128,7 @@ pub enum ChatModel {
     OpenAI { model: String },
     Gemini { model: String },
     Ollama { model: String, base_url: String },
+    Anthropic { model: String },
 }
 
 /// Knowledge base actions
@@ -134,6 +149,7 @@ pub struct SearchResult {
     pub score: f32,
     pub excerpt: String,
     pub block_id: Option<String>,
+    pub line_number: Option<usize>,
 }
 
 /// Learning tool actions
@@ -142,8 +158,14 @@ pub enum LearningAction {
     StartReview,
     ShowQuestion(String),
     SubmitAnswer(String),
-    ShowResult { correct: bool, explanation: String },
-    UpdateProgress { card_id: String, quality: ReviewQuality },
+    ShowResult {
+        correct: bool,
+        explanation: String,
+    },
+    UpdateProgress {
+        card_id: String,
+        quality: ReviewQuality,
+    },
 }
 
 /// Review quality rating
@@ -153,6 +175,13 @@ pub enum ReviewQuality {
     Hard,
     Good,
     Easy,
+}
+
+/// Settings actions
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum SettingsAction {
+    Open,
+    Close,
 }
 
 /// Application-wide actions
@@ -179,6 +208,9 @@ pub enum Action {
     // Learning
     Learning(LearningAction),
 
+    // Settings
+    Settings(SettingsAction),
+
     // UI State
     Resize { width: u16, height: u16 },
     Tick,
@@ -197,6 +229,7 @@ impl Action {
             Action::Chat(_) => "Chat",
             Action::Knowledge(_) => "Knowledge",
             Action::Learning(_) => "Learning",
+            Action::Settings(_) => "Settings",
             Action::Resize { .. } => "Resize",
             Action::Tick => "Tick",
             Action::Render => "Render",

@@ -54,15 +54,13 @@ impl StorageService {
             return Err(StorageError::NotFound(full_path));
         }
 
-        tokio::fs::read_to_string(&full_path)
-            .await
-            .map_err(|e| {
-                if e.kind() == std::io::ErrorKind::PermissionDenied {
-                    StorageError::PermissionDenied(full_path.clone())
-                } else {
-                    StorageError::Io(e)
-                }
-            })
+        tokio::fs::read_to_string(&full_path).await.map_err(|e| {
+            if e.kind() == std::io::ErrorKind::PermissionDenied {
+                StorageError::PermissionDenied(full_path.clone())
+            } else {
+                StorageError::Io(e)
+            }
+        })
     }
 
     /// Write a file
@@ -74,15 +72,13 @@ impl StorageService {
             tokio::fs::create_dir_all(parent).await?;
         }
 
-        tokio::fs::write(&full_path, content)
-            .await
-            .map_err(|e| {
-                if e.kind() == std::io::ErrorKind::PermissionDenied {
-                    StorageError::PermissionDenied(full_path.clone())
-                } else {
-                    StorageError::Io(e)
-                }
-            })
+        tokio::fs::write(&full_path, content).await.map_err(|e| {
+            if e.kind() == std::io::ErrorKind::PermissionDenied {
+                StorageError::PermissionDenied(full_path.clone())
+            } else {
+                StorageError::Io(e)
+            }
+        })
     }
 
     /// Delete a file
@@ -93,7 +89,9 @@ impl StorageService {
             return Err(StorageError::NotFound(full_path));
         }
 
-        tokio::fs::remove_file(&full_path).await.map_err(StorageError::Io)
+        tokio::fs::remove_file(&full_path)
+            .await
+            .map_err(StorageError::Io)
     }
 
     /// List files in a directory
@@ -132,7 +130,8 @@ impl StorageService {
 
                 if path.is_dir() {
                     // Skip hidden directories
-                    if path.file_name()
+                    if path
+                        .file_name()
                         .and_then(|n| n.to_str())
                         .map(|n| n.starts_with('.'))
                         .unwrap_or(false)
@@ -158,7 +157,9 @@ impl StorageService {
     /// Create a directory
     pub async fn create_dir(&self, path: &str) -> Result<(), StorageError> {
         let full_path = self.resolve(path);
-        tokio::fs::create_dir_all(&full_path).await.map_err(StorageError::Io)
+        tokio::fs::create_dir_all(&full_path)
+            .await
+            .map_err(StorageError::Io)
     }
 
     /// Rename a file or directory
@@ -175,7 +176,9 @@ impl StorageService {
             tokio::fs::create_dir_all(parent).await?;
         }
 
-        tokio::fs::rename(&old_full, &new_full).await.map_err(StorageError::Io)
+        tokio::fs::rename(&old_full, &new_full)
+            .await
+            .map_err(StorageError::Io)
     }
 
     /// Copy a file
@@ -204,6 +207,8 @@ impl StorageService {
             return Err(StorageError::NotFound(full_path));
         }
 
-        tokio::fs::metadata(&full_path).await.map_err(StorageError::Io)
+        tokio::fs::metadata(&full_path)
+            .await
+            .map_err(StorageError::Io)
     }
 }

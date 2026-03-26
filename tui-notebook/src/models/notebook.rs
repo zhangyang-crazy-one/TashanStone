@@ -54,7 +54,7 @@ pub struct NotebookSettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MarkdownFlavor {
     CommonMark,
-    GFM,       // GitHub Flavored Markdown
+    GFM, // GitHub Flavored Markdown
     Obsidian,
 }
 

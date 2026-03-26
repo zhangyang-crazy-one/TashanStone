@@ -1,23 +1,46 @@
 //! Knowledge panel - semantic search and RAG
 
-use crate::action::{Action, KnowledgeAction, SearchResult};
+use crate::action::{Action, ComponentId, FileAction, KnowledgeAction, SearchAction, SearchResult};
+use crate::services::workspace::{DocumentKnowledgeContext, KnowledgeReference};
 use crossterm::event::KeyEvent;
 use ratatui::{
-    layout::Rect,
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
-    text::{Line, Span, Text},
-    widgets::{Block, List, ListItem, Paragraph},
+    text::{Line, Span},
+    widgets::{Block, Borders, List, ListItem, Paragraph},
     Frame,
 };
+use ropey::Rope;
+
+#[derive(Debug, Clone, Copy)]
+enum KnowledgeItemKind {
+    Link,
+    Backlink,
+    TagMatch,
+    Semantic,
+}
+
+#[derive(Debug, Clone)]
+struct KnowledgeItem {
+    kind: KnowledgeItemKind,
+    title: String,
+    relative_path: String,
+    absolute_path: Option<String>,
+    context: String,
+    line_number: Option<usize>,
+    score: Option<f32>,
+}
 
 /// Knowledge panel state
 pub struct KnowledgePanel {
     /// Is panel open
     is_open: bool,
     /// Search query
-    query: String,
-    /// Search results
-    results: Vec<SearchResult>,
+    query: Rope,
+    /// Semantic search results
+    semantic_results: Vec<SearchResult>,
+    /// Current document knowledge context
+    document_context: DocumentKnowledgeContext,
     /// Selected result index
     selected_index: usize,
     /// Is indexing
@@ -32,8 +55,9 @@ impl KnowledgePanel {
     pub fn new() -> Self {
         Self {
             is_open: false,
-            query: String::new(),
-            results: Vec::new(),
+            query: Rope::new(),
+            semantic_results: Vec::new(),
+            document_context: DocumentKnowledgeContext::default(),
             selected_index: 0,
             is_indexing: false,
             index_progress: 0.0,
@@ -51,11 +75,106 @@ impl KnowledgePanel {
         self.is_open = !self.is_open;
     }
 
+    /// Set the current document context shown in the panel.
+    pub fn set_document_context(&mut self, context: Option<DocumentKnowledgeContext>) {
+        self.document_context = context.unwrap_or_default();
+        self.selected_index = 0;
+    }
+
+    fn query_text(&self) -> String {
+        self.query.to_string()
+    }
+
+    fn active_items(&self) -> Vec<KnowledgeItem> {
+        if !self.query_text().trim().is_empty() {
+            return self
+                .semantic_results
+                .iter()
+                .map(|result| KnowledgeItem {
+                    kind: KnowledgeItemKind::Semantic,
+                    title: result
+                        .file_path
+                        .rsplit('/')
+                        .next()
+                        .unwrap_or(result.file_path.as_str())
+                        .to_string(),
+                    relative_path: result.file_path.clone(),
+                    absolute_path: Some(result.file_path.clone()),
+                    context: result.excerpt.clone(),
+                    line_number: result.line_number,
+                    score: Some(result.score),
+                })
+                .collect();
+        }
+
+        let mut items = Vec::new();
+        items.extend(
+            self.document_context
+                .outgoing_links
+                .iter()
+                .cloned()
+                .map(Self::link_item),
+        );
+        items.extend(
+            self.document_context
+                .backlinks
+                .iter()
+                .cloned()
+                .map(Self::backlink_item),
+        );
+        items.extend(
+            self.document_context
+                .related_tags
+                .iter()
+                .cloned()
+                .map(Self::tag_item),
+        );
+        items
+    }
+
+    fn link_item(reference: KnowledgeReference) -> KnowledgeItem {
+        KnowledgeItem {
+            kind: KnowledgeItemKind::Link,
+            title: reference.title,
+            relative_path: reference.relative_path,
+            absolute_path: reference.absolute_path,
+            context: reference.context,
+            line_number: reference.line_number,
+            score: None,
+        }
+    }
+
+    fn backlink_item(reference: KnowledgeReference) -> KnowledgeItem {
+        KnowledgeItem {
+            kind: KnowledgeItemKind::Backlink,
+            title: reference.title,
+            relative_path: reference.relative_path,
+            absolute_path: reference.absolute_path,
+            context: reference.context,
+            line_number: reference.line_number,
+            score: None,
+        }
+    }
+
+    fn tag_item(reference: KnowledgeReference) -> KnowledgeItem {
+        KnowledgeItem {
+            kind: KnowledgeItemKind::TagMatch,
+            title: reference.title,
+            relative_path: reference.relative_path,
+            absolute_path: reference.absolute_path,
+            context: reference.context,
+            line_number: reference.line_number,
+            score: None,
+        }
+    }
+
     /// Handle key events
     pub fn handle_key_event(&mut self, key: KeyEvent) -> Option<Action> {
         if !self.is_open {
             return None;
         }
+
+        let item_count = self.active_items().len();
 
         match key.code {
             crossterm::event::KeyCode::Up => {
@@ -64,19 +183,57 @@ impl KnowledgePanel {
                 }
             }
             crossterm::event::KeyCode::Down => {
-                if self.selected_index < self.results.len().saturating_sub(1) {
+                if self.selected_index < item_count.saturating_sub(1) {
                     self.selected_index += 1;
                 }
             }
             crossterm::event::KeyCode::Enter => {
-                if let Some(result) = self.results.get(self.selected_index) {
-                    return Some(Action::File(crate::action::FileAction::Select(
-                        result.file_path.clone(),
-                    )));
+                let query = self.query_text();
+                if !query.trim().is_empty() && self.semantic_results.is_empty() {
+                    return Some(Action::Knowledge(KnowledgeAction::Search(query)));
+                }
+
+                if let Some(item) = self.active_items().get(self.selected_index) {
+                    if let Some(path) = item.absolute_path.clone() {
+                        if let Some(line_number) = item.line_number {
+                            return Some(Action::Search(SearchAction::OpenResult {
+                                file_path: path,
+                                line_number,
+                            }));
+                        }
+
+                        return Some(Action::File(FileAction::Select(path)));
+                    }
+                }
+            }
+            crossterm::event::KeyCode::Char(c) => {
+                let pos = self.query.len_chars();
+                self.query.insert(pos, c.to_string().as_str());
+                self.semantic_results.clear();
+                self.selected_index = 0;
+            }
+            crossterm::event::KeyCode::Backspace => {
+                if self.query.len_chars() > 0 {
+                    let pos = self.query.len_chars() - 1;
+                    self.query.remove(pos..pos + 1);
+                    self.semantic_results.clear();
+                    if self.query.len_chars() == 0 {
+                        self.semantic_results.clear();
+                    }
+                    self.selected_index = 0;
                 }
             }
             crossterm::event::KeyCode::Esc => {
-                self.is_open = false;
+                if self.query.len_chars() > 0 {
+                    self.query = Rope::new();
+                    self.semantic_results.clear();
+                    self.selected_index = 0;
+                } else {
+                    self.is_open = false;
+                    return Some(Action::Navigation(
+                        crate::action::NavigationAction::FocusComponent(ComponentId::Editor),
+                    ));
+                }
             }
             _ => {}
         }
@@ -93,11 +250,11 @@ impl KnowledgePanel {
                 tracing::info!("Indexing: {}", path);
             }
             KnowledgeAction::Search(query) => {
-                self.query = query.clone();
+                self.query = Rope::from_str(query);
                 tracing::info!("Semantic search: {}", query);
             }
             KnowledgeAction::SearchResults(results) => {
-                self.results = results.clone();
+                self.semantic_results = results.clone();
                 self.selected_index = 0;
                 self.is_indexing = false;
                 self.index_progress = 1.0;
@@ -106,6 +263,28 @@ impl KnowledgePanel {
                 self.index_progress = *progress;
             }
             _ => {}
+        }
+    }
+
+    fn selected_item_style(kind: KnowledgeItemKind, selected: bool) -> Style {
+        if selected {
+            return Style::default().bg(Color::Rgb(30, 58, 95)).fg(Color::White);
+        }
+
+        match kind {
+            KnowledgeItemKind::Link => Style::default().fg(Color::Rgb(88, 166, 255)),
+            KnowledgeItemKind::Backlink => Style::default().fg(Color::Rgb(63, 185, 80)),
+            KnowledgeItemKind::TagMatch => Style::default().fg(Color::Rgb(255, 212, 59)),
+            KnowledgeItemKind::Semantic => Style::default().fg(Color::Rgb(201, 209, 217)),
+        }
+    }
+
+    fn item_prefix(kind: KnowledgeItemKind) -> &'static str {
+        match kind {
+            KnowledgeItemKind::Link => "LINK",
+            KnowledgeItemKind::Backlink => "BACK",
+            KnowledgeItemKind::TagMatch => "TAG",
+            KnowledgeItemKind::Semantic => "RAG",
         }
     }
 }
@@ -133,47 +312,135 @@ impl crate::components::Component for KnowledgePanel {
         }
 
         let title = if self.is_indexing {
-            format!(" Knowledge (Indexing... {:.0}%) ", self.index_progress * 100.0)
+            format!(
+                " Knowledge (Indexing... {:.0}%) ",
+                self.index_progress * 100.0
+            )
+        } else if self.query.len_chars() > 0 {
+            format!(
+                " Knowledge Search ({} results) ",
+                self.semantic_results.len()
+            )
         } else {
-            format!(" Knowledge ({} results) ", self.results.len())
+            format!(
+                " Knowledge ({}/{}/{}) ",
+                self.document_context.outgoing_links.len(),
+                self.document_context.backlinks.len(),
+                self.document_context.related_tags.len()
+            )
         };
 
-        let block = Block::default()
-            .title(title.as_str())
-            .borders(ratatui::widgets::Borders::ALL);
+        let sections = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(4),
+                Constraint::Length(3),
+                Constraint::Min(1),
+            ])
+            .split(area);
 
-        if self.results.is_empty() && !self.is_indexing {
-            let empty = Paragraph::new("No results. Start typing to search.")
-                .block(block);
-            f.render_widget(empty, area);
+        let header = Paragraph::new(vec![
+            Line::from(vec![
+                Span::styled(
+                    self.document_context.title.as_str(),
+                    Style::default().fg(Color::Rgb(201, 209, 217)),
+                ),
+                Span::raw("  "),
+                Span::styled(
+                    self.document_context.relative_path.as_str(),
+                    Style::default().fg(Color::Rgb(110, 118, 129)),
+                ),
+            ]),
+            Line::from(vec![Span::styled(
+                if self.document_context.tags.is_empty() {
+                    "Tags: none".to_string()
+                } else {
+                    format!("Tags: {}", self.document_context.tags.join("  "))
+                },
+                Style::default().fg(Color::Rgb(255, 212, 59)),
+            )]),
+            Line::from(vec![Span::styled(
+                format!(
+                    "Links {}  Backlinks {}  Related {}",
+                    self.document_context.outgoing_links.len(),
+                    self.document_context.backlinks.len(),
+                    self.document_context.related_tags.len()
+                ),
+                Style::default().fg(Color::Rgb(139, 148, 158)),
+            )]),
+        ])
+        .block(Block::default().title(title.as_str()).borders(Borders::ALL))
+        .style(Style::default().bg(Color::Rgb(17, 24, 39)).fg(Color::White));
+        f.render_widget(header, sections[0]);
+
+        let query = if self.query.len_chars() == 0 {
+            "Type query and press Enter for semantic search".to_string()
         } else {
-            let items: Vec<ListItem> = self
-                .results
-                .iter()
-                .enumerate()
-                .map(|(idx, result)| {
-                    let style = if idx == self.selected_index {
-                        Style::default().bg(Color::Blue).fg(Color::White)
-                    } else {
-                        Style::default()
-                    };
+            self.query_text()
+        };
+        let query_style = if self.query.len_chars() == 0 {
+            Style::default().fg(Color::Rgb(110, 118, 129))
+        } else {
+            Style::default().fg(Color::Rgb(201, 209, 217))
+        };
+        let query_box = Paragraph::new(query).style(query_style).block(
+            Block::default()
+                .title(" Query ")
+                .borders(Borders::ALL)
+                .style(Style::default().bg(Color::Rgb(22, 27, 34))),
+        );
+        f.render_widget(query_box, sections[1]);
 
-                    let line = Line::from(vec![
-                        Span::styled(
-                            format!("[{:.*}] ", 2, result.score),
-                            Style::default().fg(Color::Cyan),
-                        ),
-                        Span::raw(&result.file_path),
-                        Span::raw(" - "),
-                        Span::raw(&result.excerpt),
-                    ]);
-
-                    ListItem::new(line).style(style)
-                })
-                .collect();
-
-            let list = List::new(items).block(block);
-            f.render_widget(list, area);
+        let items = self.active_items();
+        if items.is_empty() && !self.is_indexing {
+            let empty = Paragraph::new("No note links or semantic matches yet.")
+                .block(Block::default().title(" Items ").borders(Borders::ALL))
+                .style(Style::default().bg(Color::Rgb(13, 17, 23)).fg(Color::White));
+            f.render_widget(empty, sections[2]);
+            return;
         }
+
+        let rendered_items: Vec<ListItem> = items
+            .iter()
+            .enumerate()
+            .map(|(idx, item)| {
+                let style = Self::selected_item_style(item.kind, idx == self.selected_index);
+                let badge_style = if idx == self.selected_index {
+                    Style::default().bg(Color::Rgb(30, 58, 95)).fg(Color::White)
+                } else {
+                    Style::default().fg(Color::Rgb(139, 148, 158))
+                };
+
+                let title_line = Line::from(vec![
+                    Span::styled(format!("[{}] ", Self::item_prefix(item.kind)), badge_style),
+                    Span::styled(item.title.as_str(), style),
+                    Span::raw("  "),
+                    Span::styled(
+                        item.relative_path.as_str(),
+                        Style::default().fg(Color::Rgb(110, 118, 129)),
+                    ),
+                    Span::raw("  "),
+                    Span::styled(
+                        item.line_number
+                            .map(|line| format!("Ln {line}"))
+                            .or_else(|| item.score.map(|score| format!("{score:.2}")))
+                            .unwrap_or_default(),
+                        Style::default().fg(Color::Rgb(139, 148, 158)),
+                    ),
+                ]);
+
+                let context_line = Line::from(vec![Span::styled(
+                    item.context.as_str(),
+                    Style::default().fg(Color::Rgb(139, 148, 158)),
+                )]);
+
+                ListItem::new(vec![title_line, context_line]).style(style)
+            })
+            .collect();
+
+        let list = List::new(rendered_items)
+            .block(Block::default().title(" Items ").borders(Borders::ALL))
+            .style(Style::default().bg(Color::Rgb(13, 17, 23)).fg(Color::White));
+        f.render_widget(list, sections[2]);
     }
 }

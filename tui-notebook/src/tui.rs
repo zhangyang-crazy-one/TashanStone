@@ -2,8 +2,13 @@
 
 use anyhow::Result;
 use crossterm::{
-    event::{DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture, Event as CrosstermEvent},
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, SetTitle},
+    event::{
+        DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+        Event as CrosstermEvent,
+    },
+    terminal::{
+        disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen, SetTitle,
+    },
 };
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
@@ -26,13 +31,12 @@ impl Tui {
         // Enable bracketed paste
         crossterm::execute!(terminal.backend_mut(), EnableBracketedPaste)?;
 
-        Ok(Self {
-            terminal,
-        })
+        Ok(Self { terminal })
     }
 
     /// Enter the alternate screen
     pub fn enter(&mut self) -> Result<()> {
+        enable_raw_mode()?;
         crossterm::execute!(
             self.terminal.backend_mut(),
             EnterAlternateScreen,
@@ -50,6 +54,7 @@ impl Tui {
             DisableMouseCapture,
             DisableBracketedPaste,
         )?;
+        disable_raw_mode()?;
         Ok(())
     }
 
@@ -82,7 +87,10 @@ impl Tui {
 
     /// Get the terminal size
     pub fn size(&self) -> ratatui::layout::Rect {
-        self.terminal.size().unwrap_or_else(|_| ratatui::layout::Rect::new(0, 0, 80, 24))
+        self.terminal
+            .size()
+            .map(|size| ratatui::layout::Rect::new(0, 0, size.width, size.height))
+            .unwrap_or_else(|_| ratatui::layout::Rect::new(0, 0, 80, 24))
     }
 
     /// Check if the terminal supports true color
@@ -96,7 +104,10 @@ impl Tui {
     pub fn color_depth(&self) -> ColorDepth {
         if self.supports_true_color() {
             ColorDepth::TrueColor
-        } else if std::env::var("TERM").map(|t| t.contains("256")).unwrap_or(false) {
+        } else if std::env::var("TERM")
+            .map(|t| t.contains("256"))
+            .unwrap_or(false)
+        {
             ColorDepth::EightBit
         } else {
             ColorDepth::FourBit

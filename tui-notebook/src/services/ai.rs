@@ -1,6 +1,6 @@
 //! AI service - LLM integration
 //!
-//! Supports OpenAI, Gemini, and Ollama providers.
+//! Supports OpenAI, Gemini, Ollama, and Anthropic providers.
 
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -12,6 +12,7 @@ pub enum AiProvider {
     OpenAI,
     Gemini,
     Ollama,
+    Anthropic,
 }
 
 /// AI model configuration
@@ -113,13 +114,23 @@ impl AiService {
     }
 
     /// Send a chat completion request
-    pub async fn chat(&self, messages: Vec<ChatMessage>) -> Result<ChatCompletionResponse, AiError> {
+    pub async fn chat(
+        &self,
+        messages: Vec<ChatMessage>,
+    ) -> Result<ChatCompletionResponse, AiError> {
         let config = self.config.read().await;
+
+        tracing::info!(
+            "AI chat called with provider: {:?}, model: {}",
+            config.provider,
+            config.model
+        );
 
         match config.provider {
             AiProvider::OpenAI => self.openai_chat(&config, messages).await,
             AiProvider::Gemini => self.gemini_chat(&config, messages).await,
             AiProvider::Ollama => self.ollama_chat(&config, messages).await,
+            AiProvider::Anthropic => self.anthropic_chat(&config, messages).await,
         }
     }
 
@@ -129,11 +140,16 @@ impl AiService {
         config: &ModelConfig,
         messages: Vec<ChatMessage>,
     ) -> Result<ChatCompletionResponse, AiError> {
-        let api_key = config.api_key.as_ref()
+        let api_key = config
+            .api_key
+            .as_ref()
             .ok_or_else(|| AiError::Config("OpenAI API key not set".to_string()))?;
 
         let client = reqwest::Client::new();
-        let base_url = config.base_url.as_deref().unwrap_or("https://api.openai.com");
+        let base_url = config
+            .base_url
+            .as_deref()
+            .unwrap_or("https://api.openai.com");
 
         let request = ChatCompletionRequest {
             model: config.model.clone(),
@@ -178,7 +194,9 @@ impl AiService {
             .await
             .map_err(|e| AiError::Parse(e.to_string()))?;
 
-        let choice = openai_resp.choices.first()
+        let choice = openai_resp
+            .choices
+            .first()
             .ok_or_else(|| AiError::Parse("No choices in response".to_string()))?;
 
         Ok(ChatCompletionResponse {
@@ -194,11 +212,16 @@ impl AiService {
         config: &ModelConfig,
         messages: Vec<ChatMessage>,
     ) -> Result<ChatCompletionResponse, AiError> {
-        let api_key = config.api_key.as_ref()
+        let api_key = config
+            .api_key
+            .as_ref()
             .ok_or_else(|| AiError::Config("Gemini API key not set".to_string()))?;
 
         let client = reqwest::Client::new();
-        let base_url = config.base_url.as_deref().unwrap_or("https://generativelanguage.googleapis.com");
+        let base_url = config
+            .base_url
+            .as_deref()
+            .unwrap_or("https://generativelanguage.googleapis.com");
 
         // Convert messages to Gemini format
         let contents: Vec<serde_json::Value> = messages
@@ -269,7 +292,8 @@ impl AiService {
             .await
             .map_err(|e| AiError::Parse(e.to_string()))?;
 
-        let content = gemini_resp.candidates
+        let content = gemini_resp
+            .candidates
             .first()
             .and_then(|c| c.content.parts.first())
             .map(|p| p.text.clone())
@@ -289,7 +313,10 @@ impl AiService {
         messages: Vec<ChatMessage>,
     ) -> Result<ChatCompletionResponse, AiError> {
         let client = reqwest::Client::new();
-        let base_url = config.base_url.as_deref().unwrap_or("http://localhost:11434");
+        let base_url = config
+            .base_url
+            .as_deref()
+            .unwrap_or("http://localhost:11434");
 
         // Convert messages to Ollama format
         let ollama_messages: Vec<serde_json::Value> = messages
@@ -348,6 +375,91 @@ impl AiService {
             content: ollama_resp.message.content,
             model: config.model.clone(),
             finish_reason: "stop".to_string(),
+        })
+    }
+
+    /// Anthropic chat implementation
+    async fn anthropic_chat(
+        &self,
+        config: &ModelConfig,
+        messages: Vec<ChatMessage>,
+    ) -> Result<ChatCompletionResponse, AiError> {
+        let api_key = config
+            .api_key
+            .as_ref()
+            .ok_or_else(|| AiError::Config("Anthropic API key not set".to_string()))?;
+
+        let client = reqwest::Client::new();
+        let base_url = config
+            .base_url
+            .as_deref()
+            .unwrap_or("https://api.anthropic.com");
+
+        // Convert messages to Anthropic format
+        let anthropic_messages: Vec<serde_json::Value> = messages
+            .into_iter()
+            .filter(|m| m.role != MessageRole::System)
+            .map(|m| {
+                let role = match m.role {
+                    MessageRole::User => "user",
+                    MessageRole::Assistant => "assistant",
+                    MessageRole::System => "user", // Anthropic doesn't have system role
+                };
+                serde_json::json!({
+                    "role": role,
+                    "content": m.content
+                })
+            })
+            .collect();
+
+        let request_body = serde_json::json!({
+            "model": config.model,
+            "messages": anthropic_messages,
+            "max_tokens": 1024,
+        });
+
+        let url = format!("{}/v1/messages", base_url);
+
+        let response = client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", api_key))
+            .header("anthropic-version", "2023-06-01")
+            .header("Content-Type", "application/json")
+            .json(&request_body)
+            .send()
+            .await
+            .map_err(|e| AiError::Network(e.to_string()))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(AiError::Api(format!("{}: {}", status, body)));
+        }
+
+        #[derive(Deserialize)]
+        struct AnthropicResponse {
+            content: Vec<serde_json::Value>,
+            stop_reason: String,
+        }
+
+        let anthropic_resp: AnthropicResponse = response
+            .json()
+            .await
+            .map_err(|e| AiError::Parse(e.to_string()))?;
+
+        // Extract text content from response, handling MiniMax's thinking blocks
+        let content = anthropic_resp
+            .content
+            .iter()
+            .find(|c| c.get("type").and_then(|t| t.as_str()) == Some("text"))
+            .and_then(|c| c.get("text").and_then(|t| t.as_str()))
+            .map(|s| s.to_string())
+            .ok_or_else(|| AiError::Parse("No text content in response".to_string()))?;
+
+        Ok(ChatCompletionResponse {
+            content,
+            model: config.model.clone(),
+            finish_reason: anthropic_resp.stop_reason,
         })
     }
 

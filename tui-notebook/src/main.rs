@@ -17,17 +17,46 @@ mod tui;
 
 use anyhow::Result;
 use std::env;
-use tracing_subscriber::{fmt, EnvFilter};
+use std::path::PathBuf;
+use tracing_appender::non_blocking::WorkerGuard;
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-fn setup_logging() {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info"));
+fn setup_logging() -> WorkerGuard {
+    let log_dir = dirs::data_local_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("tui-notebook")
+        .join("logs");
 
-    fmt()
-        .with_env_filter(filter)
+    // Create log directory if it doesn't exist
+    let _ = std::fs::create_dir_all(&log_dir);
+
+    let log_file = log_dir.join("tui-notebook.log");
+
+    // Create non-blocking file writer
+    let (file_writer, guard) = tracing_appender::non_blocking(
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_file)
+            .expect("Failed to open log file"),
+    );
+
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+
+    // File layer - writes to file
+    let file_layer = fmt::layer()
+        .with_writer(file_writer)
+        .with_ansi(false)
         .with_target(true)
-        .with_thread_ids(true)
+        .with_thread_ids(true);
+
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(file_layer)
         .init();
+
+    tracing::info!("Log file: {:?}", log_file);
+    guard
 }
 
 fn setup_panic_hook() {
@@ -55,7 +84,8 @@ fn setup_panic_hook() {
 }
 
 fn main() -> Result<()> {
-    setup_logging();
+    // Setup logging first - guard must be kept alive
+    let _guard = setup_logging();
     setup_panic_hook();
 
     tracing::info!("Starting tui-notebook v{}", env!("CARGO_PKG_VERSION"));

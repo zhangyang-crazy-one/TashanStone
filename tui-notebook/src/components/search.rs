@@ -5,7 +5,7 @@ use crossterm::event::KeyEvent;
 use ratatui::{
     layout::Rect,
     style::{Color, Style},
-    text::{Line, Span, Text},
+    text::{Line, Span},
     widgets::{Block, List, ListItem, Paragraph},
     Frame,
 };
@@ -54,6 +54,16 @@ impl SearchPanel {
         self.is_open
     }
 
+    /// Whether regex mode is enabled.
+    pub fn is_regex(&self) -> bool {
+        self.is_regex
+    }
+
+    /// Whether case sensitive mode is enabled.
+    pub fn is_case_sensitive(&self) -> bool {
+        self.is_case_sensitive
+    }
+
     /// Handle key events
     pub fn handle_key_event(&mut self, key: KeyEvent) -> Option<Action> {
         if !self.is_open {
@@ -62,17 +72,32 @@ impl SearchPanel {
 
         match key.code {
             crossterm::event::KeyCode::Enter => {
-                if !self.query.to_string().is_empty() {
+                if !self.results.is_empty() {
+                    if let Some(result) = self.results.get(self.selected_index) {
+                        return Some(Action::Search(SearchAction::OpenResult {
+                            file_path: result.file_path.clone(),
+                            line_number: result.line_number,
+                        }));
+                    }
+                } else if !self.query.to_string().is_empty() {
                     return Some(Action::Search(SearchAction::SetQuery(
                         self.query.to_string(),
                     )));
                 }
             }
-            crossterm::event::KeyCode::Char('r') if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
+            crossterm::event::KeyCode::Char('r')
+                if key
+                    .modifiers
+                    .contains(crossterm::event::KeyModifiers::CONTROL) =>
+            {
                 self.is_regex = !self.is_regex;
                 return Some(Action::Search(SearchAction::ToggleRegex));
             }
-            crossterm::event::KeyCode::Char('c') if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
+            crossterm::event::KeyCode::Char('c')
+                if key
+                    .modifiers
+                    .contains(crossterm::event::KeyModifiers::CONTROL) =>
+            {
                 self.is_case_sensitive = !self.is_case_sensitive;
                 return Some(Action::Search(SearchAction::ToggleCaseSensitive));
             }
@@ -101,7 +126,10 @@ impl SearchPanel {
                 }
             }
             crossterm::event::KeyCode::Tab => {
-                if key.modifiers.contains(crossterm::event::KeyModifiers::SHIFT) {
+                if key
+                    .modifiers
+                    .contains(crossterm::event::KeyModifiers::SHIFT)
+                {
                     return Some(Action::Search(SearchAction::Previous));
                 } else {
                     return Some(Action::Search(SearchAction::Next));
@@ -127,6 +155,7 @@ impl SearchPanel {
                 // TODO: Perform search
                 tracing::info!("Searching for: {}", query);
             }
+            SearchAction::OpenResult { .. } => {}
             SearchAction::Next => {
                 if self.selected_index < self.results.len().saturating_sub(1) {
                     self.selected_index += 1;
@@ -145,13 +174,16 @@ impl SearchPanel {
             }
             SearchAction::SearchResults(results) => {
                 // Convert from action::SearchResult to search::SearchResult
-                self.results = results.iter().map(|r| SearchResult {
-                    file_path: r.file_path.clone(),
-                    line_number: 0,
-                    line_content: r.excerpt.clone(),
-                    match_start: 0,
-                    match_end: 0,
-                }).collect();
+                self.results = results
+                    .iter()
+                    .map(|r| SearchResult {
+                        file_path: r.file_path.clone(),
+                        line_number: r.line_number.unwrap_or(0),
+                        line_content: r.excerpt.clone(),
+                        match_start: 0,
+                        match_end: 0,
+                    })
+                    .collect();
                 self.selected_index = 0;
             }
         }
@@ -183,26 +215,31 @@ impl crate::components::Component for SearchPanel {
         // Render search box
         let query_text = self.query.to_string();
         let search_box = Paragraph::new(format!(
-            "/{} {}",
+            "/{}{}{}",
             query_text,
-            if self.is_regex { " (regex)" } else { "" }
+            if self.is_regex { "  [regex]" } else { "" },
+            if self.is_case_sensitive {
+                "  [case]"
+            } else {
+                ""
+            },
         ))
         .block(
             Block::default()
                 .title(" Search ")
                 .borders(ratatui::widgets::Borders::ALL),
+        )
+        .style(
+            Style::default()
+                .bg(Color::Rgb(22, 27, 34))
+                .fg(Color::Rgb(201, 209, 217)),
         );
 
         f.render_widget(search_box, area);
 
         // Render results below
         if !self.results.is_empty() {
-            let results_area = Rect::new(
-                area.x,
-                area.y + 3,
-                area.width,
-                area.height - 3,
-            );
+            let results_area = Rect::new(area.x, area.y + 3, area.width, area.height - 3);
 
             let items: Vec<ListItem> = self
                 .results
@@ -218,7 +255,7 @@ impl crate::components::Component for SearchPanel {
                         "{}{}:{}: {}",
                         prefix,
                         result.file_path,
-                        result.line_number,
+                        result.line_number.max(1),
                         result.line_content
                     );
                     let style = if idx == self.selected_index {
@@ -230,11 +267,17 @@ impl crate::components::Component for SearchPanel {
                 })
                 .collect();
 
-            let list = List::new(items).block(
-                Block::default()
-                    .title(format!(" Results ({} found) ", self.results.len()))
-                    .borders(ratatui::widgets::Borders::ALL),
-            );
+            let list = List::new(items)
+                .block(
+                    Block::default()
+                        .title(format!(" Results ({} found) ", self.results.len()))
+                        .borders(ratatui::widgets::Borders::ALL),
+                )
+                .style(
+                    Style::default()
+                        .bg(Color::Rgb(13, 17, 23))
+                        .fg(Color::Rgb(201, 209, 217)),
+                );
 
             f.render_widget(list, results_area);
         }

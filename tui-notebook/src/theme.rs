@@ -1,15 +1,25 @@
 //! Theme system - Color schemes for light/dark modes
 //!
- //! Provides centralized color definitions for consistent UI.
+//! Provides centralized color definitions for consistent UI.
 
 use ratatui::style::{Color, Modifier, Style};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 /// Application theme
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Theme {
     Dark,
     Light,
+}
+
+impl fmt::Display for Theme {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Theme::Dark => write!(f, "dark"),
+            Theme::Light => write!(f, "light"),
+        }
+    }
 }
 
 impl Default for Theme {
@@ -97,29 +107,29 @@ impl ThemeColors {
     pub fn light() -> Self {
         Self {
             bg_primary: Color::White,
-            bg_secondary: Color::Rgb(200, 200, 200),  // LightGray
+            bg_secondary: Color::Rgb(200, 200, 200), // LightGray
             bg_tertiary: Color::Rgb(128, 128, 128),  // Gray
             text_primary: Color::Black,
-            text_secondary: Color::Rgb(0, 100, 0),   // DarkGreen
-            text_muted: Color::Rgb(128, 128, 128),   // Gray
+            text_secondary: Color::Rgb(0, 100, 0), // DarkGreen
+            text_muted: Color::Rgb(128, 128, 128), // Gray
             accent_primary: Color::Blue,
             accent_secondary: Color::Cyan,
-            success: Color::Rgb(0, 100, 0),          // DarkGreen
-            warning: Color::Rgb(180, 180, 0),        // DarkYellow
-            error: Color::Rgb(180, 0, 0),            // DarkRed
-            border: Color::Rgb(200, 200, 200),       // LightGray
-            highlight: Color::Rgb(173, 216, 230),    // LightBlue
-            selection: Color::Rgb(173, 216, 230),    // LightBlue
-            heading1: Color::Rgb(0, 0, 139),         // DarkBlue
-            heading2: Color::Rgb(0, 100, 0),         // DarkGreen
-            heading3: Color::Rgb(180, 180, 0),        // DarkYellow
-            code: Color::Rgb(139, 0, 139),            // DarkMagenta
-            code_block: Color::Rgb(139, 0, 139),      // DarkMagenta
+            success: Color::Rgb(0, 100, 0),       // DarkGreen
+            warning: Color::Rgb(180, 180, 0),     // DarkYellow
+            error: Color::Rgb(180, 0, 0),         // DarkRed
+            border: Color::Rgb(200, 200, 200),    // LightGray
+            highlight: Color::Rgb(173, 216, 230), // LightBlue
+            selection: Color::Rgb(173, 216, 230), // LightBlue
+            heading1: Color::Rgb(0, 0, 139),      // DarkBlue
+            heading2: Color::Rgb(0, 100, 0),      // DarkGreen
+            heading3: Color::Rgb(180, 180, 0),    // DarkYellow
+            code: Color::Rgb(139, 0, 139),        // DarkMagenta
+            code_block: Color::Rgb(139, 0, 139),  // DarkMagenta
             link: Color::Blue,
-            blockquote: Color::Rgb(128, 128, 128),    // DarkGray
+            blockquote: Color::Rgb(128, 128, 128),   // DarkGray
             list_bullet: Color::Rgb(0, 100, 0),      // DarkGreen
             user_message: Color::Rgb(0, 100, 0),     // DarkGreen
-            ai_message: Color::Rgb(0, 0, 139),      // DarkBlue
+            ai_message: Color::Rgb(0, 0, 139),       // DarkBlue
             system_message: Color::Rgb(180, 180, 0), // DarkYellow
         }
     }

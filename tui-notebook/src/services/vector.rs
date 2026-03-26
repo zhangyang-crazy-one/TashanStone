@@ -118,7 +118,11 @@ impl VectorService {
     }
 
     /// Search for similar chunks
-    pub async fn search(&self, query: &str, top_k: usize) -> Result<Vec<SearchResult>, VectorError> {
+    pub async fn search(
+        &self,
+        query: &str,
+        top_k: usize,
+    ) -> Result<Vec<SearchResult>, VectorError> {
         let query_embedding = self.generate_embedding(query).await;
 
         let embed_store = self.embeddings.read().await;
@@ -144,7 +148,11 @@ impl VectorService {
         }
 
         // Sort by score descending
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         results.truncate(top_k);
 
@@ -239,7 +247,7 @@ impl VectorService {
                 id: format!("chunk_{}", chunk_id),
                 content,
                 file_path: String::new(), // Will be set by caller
-                start_line: start + 1,     // 1-indexed
+                start_line: start + 1,    // 1-indexed
                 end_line: end,
             });
 

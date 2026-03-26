@@ -2,9 +2,9 @@
 //!
 //! Implements spaced repetition for effective learning.
 
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use chrono::{DateTime, Utc, Duration};
 
 /// Flashcard with SRS metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -167,8 +167,14 @@ impl LearningService {
     }
 
     /// Review a card and update its SRS data
-    pub fn review_card(&mut self, card_id: &str, quality: ReviewQuality) -> Result<(), LearningError> {
-        let card = self.cards.get_mut(card_id)
+    pub fn review_card(
+        &mut self,
+        card_id: &str,
+        quality: ReviewQuality,
+    ) -> Result<(), LearningError> {
+        let card = self
+            .cards
+            .get_mut(card_id)
             .ok_or_else(|| LearningError::CardNotFound(card_id.to_string()))?;
 
         card.update_after_review(quality);
@@ -196,7 +202,8 @@ impl LearningService {
 
     /// Update the due cards list
     fn update_due_cards(&mut self) {
-        self.due_cards = self.cards
+        self.due_cards = self
+            .cards
             .values()
             .filter(|c| c.is_due())
             .map(|c| c.id.clone())
@@ -220,18 +227,16 @@ impl LearningService {
 
     /// Save all cards to a JSON file
     pub async fn save_to_file(&self, path: &std::path::Path) -> Result<(), std::io::Error> {
-        let json = serde_json::to_string_pretty(&self.cards).map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::InvalidData, e)
-        })?;
+        let json = serde_json::to_string_pretty(&self.cards)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         tokio::fs::write(path, json).await
     }
 
     /// Load cards from a JSON file
     pub async fn load_from_file(path: &std::path::Path) -> Result<Self, std::io::Error> {
         let json = tokio::fs::read_to_string(path).await?;
-        let cards: HashMap<String, Flashcard> = serde_json::from_str(&json).map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::InvalidData, e)
-        })?;
+        let cards: HashMap<String, Flashcard> = serde_json::from_str(&json)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
 
         let mut service = Self {
             cards,

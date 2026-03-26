@@ -117,7 +117,7 @@ impl Document {
     /// Create a new document
     pub fn new(path: String, content: String) -> Self {
         let now = chrono::Utc::now();
-        let title = Self::extract_title(&content);
+        let title = Self::extract_title(&path, &content);
         let (links, block_refs, tags) = Self::parse_content(&content);
 
         Self {
@@ -136,14 +136,20 @@ impl Document {
     }
 
     /// Extract title from content (first heading)
-    fn extract_title(content: &str) -> String {
+    fn extract_title(path: &str, content: &str) -> String {
         for line in content.lines() {
             let trimmed = line.trim();
             if trimmed.starts_with("# ") {
                 return trimmed[2..].trim().to_string();
             }
         }
-        "Untitled".to_string()
+
+        std::path::Path::new(path)
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .filter(|stem| !stem.is_empty())
+            .unwrap_or("Untitled")
+            .to_string()
     }
 
     /// Parse content to extract links, block references, and tags
@@ -153,82 +159,143 @@ impl Document {
         let mut tags = Vec::new();
 
         for (line_num, line) in content.lines().enumerate() {
-            // Wiki links [[]]
-            if let Some(link) = Self::parse_wiki_link(line, line_num + 1) {
-                links.push(link);
-            }
+            links.extend(Self::parse_wiki_links(line, line_num + 1));
 
-            // Block references ((
-            if let Some(block_ref) = Self::parse_block_ref(line, line_num + 1) {
-                block_refs.push(block_ref);
-            }
+            block_refs.extend(Self::parse_block_refs(line, line_num + 1));
 
-            // Tags #[]
-            if let Some(tag) = Self::parse_tag(line) {
-                tags.push(tag);
-            }
+            tags.extend(Self::parse_tags(line));
         }
 
         (links, block_refs, tags)
     }
 
-    /// Parse a wiki link
-    fn parse_wiki_link(line: &str, line_num: usize) -> Option<Link> {
-        // Simple wiki link detection [[target]] or [[target|label]]
-        if let Some(start) = line.find("[[") {
-            if let Some(end) = line.find("]]") {
-                let inner = &line[start + 2..end];
-                let (target, label) = if let Some(pipe) = inner.find('|') {
-                    (inner[..pipe].to_string(), Some(inner[pipe + 1..].to_string()))
-                } else {
-                    (inner.to_string(), Some(inner.to_string()))
-                };
+    fn parse_wiki_links(line: &str, line_num: usize) -> Vec<Link> {
+        let mut links = Vec::new();
+        let mut cursor = 0;
 
-                return Some(Link {
+        while let Some(start) = line[cursor..].find("[[") {
+            let absolute_start = cursor + start;
+            let rest = &line[absolute_start + 2..];
+            let Some(end) = rest.find("]]") else {
+                break;
+            };
+
+            let inner = &rest[..end];
+            let (target, label) = if let Some(pipe) = inner.find('|') {
+                (
+                    inner[..pipe].trim().to_string(),
+                    Some(inner[pipe + 1..].trim().to_string()),
+                )
+            } else {
+                (inner.trim().to_string(), Some(inner.trim().to_string()))
+            };
+
+            if !target.is_empty() {
+                links.push(Link {
                     link_type: LinkType::Wiki,
                     target,
                     label,
                     line_number: line_num,
                 });
             }
+
+            cursor = absolute_start + 2 + end + 2;
         }
-        None
+
+        links
     }
 
-    /// Parse a block reference
-    fn parse_block_ref(line: &str, line_num: usize) -> Option<BlockReference> {
-        // Block reference ((id))
-        if let Some(start) = line.find("((") {
-            if let Some(end) = line.find("))") {
-                let id = line[start + 2..end].to_string();
-                return Some(BlockReference {
+    fn parse_block_refs(line: &str, line_num: usize) -> Vec<BlockReference> {
+        let mut block_refs = Vec::new();
+        let mut cursor = 0;
+
+        while let Some(start) = line[cursor..].find("((") {
+            let absolute_start = cursor + start;
+            let rest = &line[absolute_start + 2..];
+            let Some(end) = rest.find("))") else {
+                break;
+            };
+
+            let id = rest[..end].trim().to_string();
+            if !id.is_empty() {
+                block_refs.push(BlockReference {
                     id,
                     block_type: BlockType::Paragraph,
                     content: line.to_string(),
                     line_number: line_num,
                 });
             }
+
+            cursor = absolute_start + 2 + end + 2;
         }
-        None
+
+        block_refs
     }
 
-    /// Parse a tag
-    fn parse_tag(line: &str) -> Option<String> {
-        // Tag #[tag-name]
-        if let Some(start) = line.find("#[") {
-            if let Some(rest) = line.get(start + 2..) {
-                if let Some(end) = rest.find(']') {
-                    return Some(rest[..end].to_string());
+    fn parse_tags(line: &str) -> Vec<String> {
+        let chars: Vec<char> = line.chars().collect();
+        let mut tags = Vec::new();
+        let mut index = 0;
+
+        while index < chars.len() {
+            if chars[index] != '#' {
+                index += 1;
+                continue;
+            }
+
+            let previous = index
+                .checked_sub(1)
+                .and_then(|prev| chars.get(prev).copied());
+            if previous
+                .map(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '/' | '-'))
+                .unwrap_or(false)
+            {
+                index += 1;
+                continue;
+            }
+
+            if chars.get(index + 1) == Some(&'[') {
+                let mut end = index + 2;
+                while end < chars.len() && chars[end] != ']' {
+                    end += 1;
+                }
+
+                if end < chars.len() {
+                    let tag: String = chars[index + 2..end].iter().collect();
+                    if !tag.trim().is_empty() {
+                        tags.push(tag.trim().to_string());
+                    }
+                    index = end + 1;
+                    continue;
+                }
+            } else {
+                let mut end = index + 1;
+                while end < chars.len()
+                    && (chars[end].is_ascii_alphanumeric() || matches!(chars[end], '_' | '-' | '/'))
+                {
+                    end += 1;
+                }
+
+                if end > index + 1 {
+                    let tag: String = chars[index + 1..end].iter().collect();
+                    if !tag.trim().is_empty() {
+                        tags.push(tag.trim().to_string());
+                    }
+                    index = end;
+                    continue;
                 }
             }
+
+            index += 1;
         }
-        None
+
+        tags
     }
 
     /// Update content and re-parse
     pub fn update_content(&mut self, content: String) {
         self.content = content;
-        self.title = Self::extract_title(&self.content);
+        self.title = Self::extract_title(&self.path, &self.content);
         let (links, block_refs, tags) = Self::parse_content(&self.content);
         self.links = links;
         self.block_refs = block_refs;
@@ -239,5 +306,35 @@ impl Document {
     /// Add a backlink
     pub fn add_backlink(&mut self, backlink: Backlink) {
         self.backlinks.push(backlink);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Document, LinkType};
+
+    #[test]
+    fn parses_multiple_wiki_links_and_tags() {
+        let document = Document::new(
+            "notes/sample.md".to_string(),
+            "# Sample\n\nLinks [[first]] and [[second|Second]]. Tags #[rust] and #tui.\n"
+                .to_string(),
+        );
+
+        assert_eq!(document.title, "Sample");
+        assert_eq!(document.links.len(), 2);
+        assert!(matches!(document.links[0].link_type, LinkType::Wiki));
+        assert_eq!(document.links[0].target, "first");
+        assert_eq!(document.links[1].target, "second");
+        assert_eq!(document.tags, vec!["rust".to_string(), "tui".to_string()]);
+    }
+
+    #[test]
+    fn falls_back_to_file_stem_for_title() {
+        let document = Document::new(
+            "notes/untitled-note.md".to_string(),
+            "Plain text".to_string(),
+        );
+        assert_eq!(document.title, "untitled-note");
     }
 }

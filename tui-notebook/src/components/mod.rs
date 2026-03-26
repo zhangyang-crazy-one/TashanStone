@@ -4,9 +4,12 @@
 //! rendering, events, and state.
 
 pub mod chat;
+pub mod confirm;
 pub mod editor;
 pub mod knowledge;
+pub mod new_file;
 pub mod search;
+pub mod settings;
 pub mod sidebar;
 pub mod status;
 
