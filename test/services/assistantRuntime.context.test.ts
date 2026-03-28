@@ -2,13 +2,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type {
   AIConfig,
-  AssistantContextAdapter,
   AssistantRuntimeEvent,
   AssistantRuntimeRequest,
+  MarkdownFile,
 } from '../../types';
 import {
   createAssistantRuntime,
-  createContextAssembler,
+  createKnowledgeContextAdapter,
+  createNotebookContextAssembler,
+  createNotebookNotesContextAdapter,
+  createWorkspaceStateContextAdapter,
 } from '../../src/services/assistant-runtime';
 import { DEFAULT_CONTEXT_BUDGET_RATIOS } from '../../src/services/context';
 
@@ -29,50 +32,22 @@ const baseModelConfig: AIConfig = {
   },
 };
 
-const notebookAdapter: AssistantContextAdapter = {
-  adapterId: 'notes',
-  kind: 'notebook',
-  assemble: async input => ({
-    source: 'notebook',
-    sections: [
-      {
-        id: 'note',
-        label: 'Notebook Notes',
-        content: `Active file: ${input.activeFileId ?? 'none'}`,
-      },
-    ],
-  }),
-};
-
-const workspaceAdapter: AssistantContextAdapter = {
-  adapterId: 'workspace',
-  kind: 'workspace',
-  assemble: async input => ({
-    source: 'workspace',
-    sections: [
-      {
-        id: 'workspace-state',
-        label: 'Workspace State',
-        content: `Workspace ${input.workspaceId ?? 'missing'} with ${input.selectedFileIds?.length ?? 0} selected files`,
-      },
-    ],
-  }),
-};
-
-const knowledgeAdapter: AssistantContextAdapter = {
-  adapterId: 'knowledge',
-  kind: 'knowledge',
-  assemble: async input => ({
-    source: 'knowledge',
-    sections: [
-      {
-        id: 'knowledge',
-        label: 'Knowledge Context',
-        content: `Knowledge query: ${input.knowledgeQuery ?? 'none'}`,
-      },
-    ],
-  }),
-};
+const notebookFiles: MarkdownFile[] = [
+  {
+    id: 'daily-note.md',
+    name: 'Daily Note',
+    path: 'Daily Note.md',
+    content: 'Architecture notes\nRuntime extraction details',
+    lastModified: 10,
+  },
+  {
+    id: 'ideas.md',
+    name: 'Ideas',
+    path: 'Ideas.md',
+    content: 'Ideas about future channel adapters',
+    lastModified: 11,
+  },
+];
 
 function createRequest(overrides: Partial<AssistantRuntimeRequest> = {}): AssistantRuntimeRequest {
   return {
@@ -126,20 +101,80 @@ describe('assistant runtime context assembly', () => {
     vi.unstubAllGlobals();
   });
 
-  it('assembles notes, knowledge, and workspace context through adapter inputs', async () => {
-    const assembler = createContextAssembler({
-      adapters: [notebookAdapter, workspaceAdapter, knowledgeAdapter],
+  it('exposes production notebook, workspace, and knowledge adapter builders', async () => {
+    const notebookAdapter = createNotebookNotesContextAdapter({
+      getFiles: notebookFiles,
+    });
+    const workspaceAdapter = createWorkspaceStateContextAdapter({
+      getWorkspaceState: input => ({
+        workspaceId: input.workspaceId,
+        activeFileId: input.activeFileId,
+        selectedFileIds: input.selectedFileIds,
+        selectedText: input.selectedText,
+      }),
+    });
+    const knowledgeAdapter = createKnowledgeContextAdapter({
+      getKnowledgeContext: async input => ({
+        context: `Knowledge query: ${input.knowledgeQuery ?? 'none'}`,
+        results: [
+          {
+            score: 0.92,
+            chunk: {
+              metadata: { fileName: 'Daily Note.md' },
+              text: 'Runtime extraction details',
+            },
+          },
+        ],
+      }),
+    });
+    const assembler = createNotebookContextAssembler({
+      notebookNotes: {
+        getFiles: notebookFiles,
+      },
+      workspaceState: {
+        getWorkspaceState: input => ({
+          workspaceId: input.workspaceId,
+          activeFileId: input.activeFileId,
+          selectedFileIds: input.selectedFileIds,
+          selectedText: input.selectedText,
+        }),
+      },
+      knowledge: {
+        getKnowledgeContext: async input => ({
+          context: `Knowledge query: ${input.knowledgeQuery ?? 'none'}`,
+          results: [
+            {
+              score: 0.92,
+              chunk: {
+                metadata: { fileName: 'Daily Note.md' },
+                text: 'Runtime extraction details',
+              },
+            },
+          ],
+        }),
+      },
     });
 
     const assembled = await assembler.assemble(createRequest());
 
-    expect(assembled.prompt).toContain('Active file: daily-note.md');
-    expect(assembled.prompt).toContain('Workspace workspace-7 with 2 selected files');
+    expect(notebookAdapter.kind).toBe('notebook');
+    expect(workspaceAdapter.kind).toBe('workspace');
+    expect(knowledgeAdapter.kind).toBe('knowledge');
+    expect(assembled.prompt).toContain('Architecture notes');
+    expect(assembled.prompt).toContain('Ideas about future channel adapters');
+    expect(assembled.prompt).toContain('workspace-7');
+    expect(assembled.prompt).toContain('daily-note.md');
     expect(assembled.prompt).toContain('Knowledge query: assistant runtime architecture');
+    expect(assembled.prompt).toContain('Runtime extraction details');
     expect(assembled.payloads.map(payload => payload.source)).toEqual([
       'notebook',
       'workspace',
       'knowledge',
+    ]);
+    expect(assembled.metadata.adapterIds).toEqual([
+      'notebook-notes',
+      'workspace-state',
+      'knowledge-context',
     ]);
     expect(assembled.metadata.budgetRatios).toEqual(DEFAULT_CONTEXT_BUDGET_RATIOS);
   });
@@ -155,21 +190,47 @@ describe('assistant runtime context assembly', () => {
       getItem,
     });
 
-    const assembler = createContextAssembler({
-      adapters: [notebookAdapter],
+    const assembler = createNotebookContextAssembler({
+      notebookNotes: {
+        getFiles: () => notebookFiles,
+      },
     });
 
     const assembled = await assembler.assemble(createRequest());
 
     expect(assembled.prompt).toContain('Focus on the architecture changes.');
+    expect(assembled.prompt).toContain('Architecture notes');
     expect(getItem).not.toHaveBeenCalled();
   });
 
-  it('lets more than one caller shape use the same runtime contract and context path', async () => {
+  it('accepts callback and plain-data providers so non-UI callers can reuse the same context path', async () => {
     const prompts: string[] = [];
     const runtime = createAssistantRuntime({
-      contextAssembler: createContextAssembler({
-        adapters: [notebookAdapter, workspaceAdapter],
+      contextAssembler: createNotebookContextAssembler({
+        notebookNotes: {
+          getFiles: notebookFiles,
+        },
+        workspaceState: {
+          getWorkspaceState: {
+            workspaceId: 'workspace-static',
+            activeFileId: 'daily-note.md',
+            selectedFileIds: ['daily-note.md'],
+          },
+        },
+        knowledge: {
+          getKnowledgeContext: {
+            context: 'Precomputed knowledge context',
+            results: [
+              {
+                score: 0.84,
+                chunk: {
+                  metadata: { fileName: 'Ideas.md' },
+                  text: 'Ideas about future channel adapters',
+                },
+              },
+            ],
+          },
+        },
       }),
       providerExecution: vi.fn(async ({ prompt, request }) => {
         prompts.push(`${request.caller.surface}:${prompt}`);
@@ -205,8 +266,8 @@ describe('assistant runtime context assembly', () => {
     );
 
     expect(prompts).toHaveLength(2);
-    expect(prompts[0]).toContain('Active file: daily-note.md');
-    expect(prompts[1]).toContain('Workspace workspace-7 with 2 selected files');
+    expect(prompts[0]).toContain('Architecture notes');
+    expect(prompts[1]).toContain('Precomputed knowledge context');
     expect(appEvents.at(-2)).toMatchObject({
       type: 'result',
       result: {
