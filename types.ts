@@ -558,6 +558,25 @@ export interface MemoryCandidate {
   messageCount: number;
 }
 
+export type {
+  AssistantContextAdapter,
+  AssistantContextPayload,
+  AssistantContextSection,
+  AssistantNotebookAttachment,
+  AssistantNotebookContextInput,
+  AssistantRuntimeCaller,
+  AssistantRuntimeCallerCapabilities,
+  AssistantRuntimeError,
+  AssistantRuntimeEvent,
+  AssistantRuntimeInput,
+  AssistantRuntimeInputMessage,
+  AssistantRuntimeRequest,
+  AssistantRuntimeResult,
+  AssistantRuntimeToolInvocation,
+  AssistantRuntimeTransportMetadata,
+  AssistantSessionRef,
+} from './src/services/assistant-runtime/types';
+
 // ========================
 // Global Window Extensions
 // ========================
