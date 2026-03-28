@@ -4,6 +4,12 @@ export type {
   AssistantRuntimeDependencies,
   AssistantRuntimeExecutionOptions,
 } from './createAssistantRuntime';
+export { createContextAssembler } from './contextAssembler';
+export type {
+  AssembledAssistantContext,
+  AssistantRuntimeContextAssembler,
+  ContextAssemblerDependencies,
+} from './contextAssembler';
 export { ASSISTANT_SETTINGS_DEFAULTS } from './defaults';
 export { createProviderExecution } from './providerExecution';
 export type {

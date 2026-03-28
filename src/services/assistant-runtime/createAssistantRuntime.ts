@@ -1,6 +1,10 @@
 import type { ToolCallback } from '@/services/ai/providerTypes';
-import type { AssistantRuntimeToolInvocation, ChatMessage, JsonValue, ToolCall } from '@/types';
+import type { AssistantRuntimeToolInvocation, JsonValue, ToolCall } from '@/types';
 
+import {
+  createContextAssembler,
+  type AssistantRuntimeContextAssembler,
+} from './contextAssembler';
 import { createProviderExecution, type AssistantProviderExecution } from './providerExecution';
 import type {
   AssistantRuntimeError,
@@ -22,14 +26,8 @@ export interface AssistantRuntime {
 
 export interface AssistantRuntimeDependencies {
   now?: () => number;
+  contextAssembler?: AssistantRuntimeContextAssembler;
   providerExecution?: AssistantProviderExecution;
-}
-
-interface PreparedRuntimeRequest {
-  prompt: string;
-  systemInstruction?: string;
-  retrievedContext?: string;
-  conversationHistory: ChatMessage[];
 }
 
 interface RuntimeEventQueue {
@@ -109,31 +107,6 @@ function createRuntimeError(error: unknown, details?: Record<string, JsonValue>)
   };
 }
 
-function normalizeConversationHistory(
-  request: AssistantRuntimeRequest,
-  now: () => number,
-): ChatMessage[] {
-  return (request.input.messages ?? []).map((message, index) => ({
-    id: `${request.requestId}-history-${index}`,
-    role: message.role,
-    content: message.content,
-    timestamp: now(),
-  }));
-}
-
-function prepareRuntimeRequest(
-  request: AssistantRuntimeRequest,
-  now: () => number,
-): PreparedRuntimeRequest {
-  const systemInstruction = request.input.instructions?.join('\n\n');
-
-  return {
-    prompt: request.input.prompt,
-    systemInstruction,
-    conversationHistory: normalizeConversationHistory(request, now),
-  };
-}
-
 function toRuntimeToolInvocation(toolCall: ToolCall): AssistantRuntimeToolInvocation {
   return {
     toolCallId: toolCall.id,
@@ -152,6 +125,7 @@ export function createAssistantRuntime(
   dependencies: AssistantRuntimeDependencies = {},
 ): AssistantRuntime {
   const now = dependencies.now ?? (() => Date.now());
+  const contextAssembler = dependencies.contextAssembler ?? createContextAssembler();
   const providerExecution = dependencies.providerExecution ?? createProviderExecution();
 
   return {
@@ -187,17 +161,17 @@ export function createAssistantRuntime(
         try {
           emitLifecycle('queued');
           emitLifecycle('assembling-context');
-          const preparedRequest = prepareRuntimeRequest(request, now);
+          const assembledContext = await contextAssembler.assemble(request);
 
           emitLifecycle('executing');
           let streamingLifecycleEmitted = false;
 
           const providerResult = await providerExecution({
-            prompt: preparedRequest.prompt,
+            prompt: assembledContext.prompt,
             request,
-            systemInstruction: preparedRequest.systemInstruction,
-            retrievedContext: preparedRequest.retrievedContext,
-            conversationHistory: preparedRequest.conversationHistory,
+            systemInstruction: assembledContext.systemInstruction,
+            retrievedContext: assembledContext.retrievedContext,
+            conversationHistory: assembledContext.conversationHistory,
             toolsCallback: options.toolsCallback,
             toolEventCallback: toolCall => {
               const invocation = toRuntimeToolInvocation(toolCall);
