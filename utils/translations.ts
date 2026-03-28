@@ -368,6 +368,60 @@ export const translations = {
       selectLines: 'Select lines by clicking',
       quickLinkHint: 'Link selected text to file'
     },
+    assistantSettings: {
+      phaseLabels: {
+        phase1Ready: 'Phase 1 ready',
+        laterPhase: 'Later phase'
+      },
+      surfaces: {
+        operator: {
+          title: 'AI / Operator',
+          description: 'Runtime-facing controls for providers, safety, routing, and operator tooling.'
+        },
+        notebook: {
+          title: 'Notebook / App',
+          description: 'Notebook-facing preferences that shape editor context, search, and workspace behavior.'
+        }
+      },
+      shortcuts: {
+        openOperatorSettings: 'Open operator settings surface',
+        focusOperatorKeyboard: 'Jump to operator keyboard section',
+        openNotebookShortcuts: 'Open notebook shortcuts section'
+      },
+      operator: {
+        sections: {
+          runtime: { title: 'Runtime', help: 'Shared assistant runtime defaults, request flow, and execution boundaries.' },
+          models: { title: 'Models', help: 'Primary model, fallback chain, and provider selection metadata.' },
+          fallback: { title: 'Fallback', help: 'Recovery policy when a model, tool, or route cannot complete normally.' },
+          tools: { title: 'Tools', help: 'Tool exposure, tool status visibility, and orchestration rules shared by callers.' },
+          agents: { title: 'Agents', help: 'Future multi-agent coordination surfaces beyond the Phase 1 runtime shell.' },
+          scheduling: { title: 'Scheduling', help: 'Deferred job windows, background triggers, and planned execution cadence.' },
+          channels: { title: 'Channels', help: 'External delivery adapters such as WhatsApp and QQ Channel, tracked for later phases.' },
+          media: { title: 'Media', help: 'Deferred inbound and outbound handling for images, audio, and documents.' },
+          safety: { title: 'Safety', help: 'Trust boundaries, operator approvals, and restrictions for high-risk execution.' },
+          observability: { title: 'Observability', help: 'Runtime logs, traces, and diagnostics that arrive after the core contract is stable.' },
+          ui: { title: 'UI', help: 'Minimal shell settings that keep runtime metadata aligned with the operator-facing surfaces.' },
+          keyboard: { title: 'Keyboard', help: 'Operator-specific shortcuts and keyboard-first navigation metadata.' },
+          about: { title: 'About', help: 'Version, capability summary, and runtime surface documentation.' }
+        }
+      },
+      notebook: {
+        sections: {
+          workspace: { title: 'Workspace', help: 'Notebook identity, active workspace rules, and session-scoped context inputs.' },
+          editor: { title: 'Editor', help: 'Editor behavior that influences assistant context capture and notebook editing defaults.' },
+          preview: { title: 'Preview', help: 'Preview rendering preferences that the assistant shell can reference without owning UI state.' },
+          'links-tags': { title: 'Links & Tags', help: 'Deferred metadata surfaces for backlinks, tags, and relationship automation.' },
+          graph: { title: 'Graph', help: 'Deferred notebook graph settings for future assistant-aware graph behaviors.' },
+          'search-index': { title: 'Search & Index', help: 'Knowledge indexing, retrieval scope, and search inputs that feed runtime context.' },
+          'study-srs': { title: 'Study & SRS', help: 'Deferred study-mode and spaced repetition settings outside the Phase 1 runtime contract.' },
+          appearance: { title: 'Appearance', help: 'Notebook-facing visual preferences that need stable ids before full settings pages exist.' },
+          shortcuts: { title: 'Shortcuts', help: 'Keyboard shortcut metadata for the notebook surface and later settings shell.' },
+          'voice-ocr': { title: 'Voice & OCR', help: 'Deferred multimodal capture preferences for transcription and OCR workflows.' },
+          backup: { title: 'Backup', help: 'Backup and restore options that remain translation-backed and shell-ready in Phase 1.' },
+          about: { title: 'About', help: 'Notebook/app version details, support links, and capability summary metadata.' }
+        }
+      }
+    },
     // Compact Memory Prompt translations
     compactMemory: {
       title: 'Save to Memory?',
@@ -757,6 +811,60 @@ export const translations = {
       linkOnly: '仅链接',
       selectLines: '点击选择行',
       quickLinkHint: '将选中文本链接到文件'
+    },
+    assistantSettings: {
+      phaseLabels: {
+        phase1Ready: '第一阶段可用',
+        laterPhase: '后续阶段'
+      },
+      surfaces: {
+        operator: {
+          title: 'AI / 操作员',
+          description: '面向运行时的提供商、安全、路由与操作控制面设置。'
+        },
+        notebook: {
+          title: '笔记 / 应用',
+          description: '面向笔记本的偏好设置，用于约束编辑器上下文、搜索与工作区行为。'
+        }
+      },
+      shortcuts: {
+        openOperatorSettings: '打开操作员设置界面',
+        focusOperatorKeyboard: '跳转到操作员键盘分区',
+        openNotebookShortcuts: '打开笔记快捷键分区'
+      },
+      operator: {
+        sections: {
+          runtime: { title: '运行时', help: '共享助手运行时默认值、请求流与执行边界。' },
+          models: { title: '模型', help: '主模型、回退链路与提供商选择元数据。' },
+          fallback: { title: '回退', help: '当模型、工具或路由失败时的恢复策略。' },
+          tools: { title: '工具', help: '各调用方共享的工具暴露、状态可见性与编排规则。' },
+          agents: { title: '代理', help: '超出第一阶段运行时外壳的未来多代理协同界面。' },
+          scheduling: { title: '调度', help: '延后的任务窗口、后台触发器与计划执行节奏。' },
+          channels: { title: '渠道', help: '后续阶段接入的 WhatsApp、QQ Channel 等外部投递适配器。' },
+          media: { title: '媒体', help: '图片、音频与文档的延后输入输出处理设置。' },
+          safety: { title: '安全', help: '高风险执行的信任边界、审批与限制策略。' },
+          observability: { title: '可观测性', help: '在核心契约稳定后补齐的运行时日志、追踪与诊断。' },
+          ui: { title: '界面', help: '保持运行时元数据与操作员界面对齐的最小外壳设置。' },
+          keyboard: { title: '键盘', help: '面向操作员的快捷键与键盘优先导航元数据。' },
+          about: { title: '关于', help: '版本、能力摘要与运行时界面说明。' }
+        }
+      },
+      notebook: {
+        sections: {
+          workspace: { title: '工作区', help: '笔记本标识、活动工作区规则与会话级上下文输入。' },
+          editor: { title: '编辑器', help: '影响助手上下文采集与编辑默认行为的编辑器设置。' },
+          preview: { title: '预览', help: '可供助手外壳引用而不持有 UI 状态的预览渲染偏好。' },
+          'links-tags': { title: '链接与标签', help: '后续阶段处理反链、标签与关系自动化的元数据界面。' },
+          graph: { title: '图谱', help: '未来助手感知图谱行为所需的延后设置。' },
+          'search-index': { title: '搜索与索引', help: '为运行时上下文提供输入的知识索引、检索范围与搜索设置。' },
+          'study-srs': { title: '学习与 SRS', help: '超出第一阶段运行时契约的延后学习模式与间隔重复设置。' },
+          appearance: { title: '外观', help: '在完整设置页上线前先稳定下来的笔记外观偏好标识。' },
+          shortcuts: { title: '快捷键', help: '笔记本界面与后续设置外壳共用的快捷键元数据。' },
+          'voice-ocr': { title: '语音与 OCR', help: '转写与 OCR 工作流的延后多模态采集偏好。' },
+          backup: { title: '备份', help: '在第一阶段保持可翻译且可落壳的备份与恢复选项。' },
+          about: { title: '关于', help: '笔记 / 应用版本信息、支持链接与能力摘要元数据。' }
+        }
+      }
     },
     // Compact Memory Prompt translations
     compactMemory: {
