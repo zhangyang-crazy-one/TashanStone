@@ -16,6 +16,7 @@ import type {
 
 const {
   createAssistantRuntimeMock,
+  createNotebookContextAssemblerMock,
   generateAIResponseMock,
   generateAIResponseStreamMock,
   compactConversationMock,
@@ -26,6 +27,7 @@ const {
   supportsNativeStreamingToolCallsMock,
 } = vi.hoisted(() => ({
   createAssistantRuntimeMock: vi.fn(),
+  createNotebookContextAssemblerMock: vi.fn(),
   generateAIResponseMock: vi.fn(),
   generateAIResponseStreamMock: vi.fn(),
   compactConversationMock: vi.fn(),
@@ -38,6 +40,7 @@ const {
 
 vi.mock('@/src/services/assistant-runtime', () => ({
   createAssistantRuntime: createAssistantRuntimeMock,
+  createNotebookContextAssembler: createNotebookContextAssemblerMock,
 }));
 
 vi.mock('@/services/aiService', () => ({
@@ -253,6 +256,9 @@ describe('in-app assistant runtime adapter', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     supportsNativeStreamingToolCallsMock.mockReturnValue(false);
+    createNotebookContextAssemblerMock.mockReturnValue({
+      assemble: vi.fn(),
+    });
   });
 
   it('invokes the shared runtime instead of direct aiService execution from the hook', async () => {
@@ -433,6 +439,65 @@ describe('in-app assistant runtime adapter', () => {
           status: 'success',
         }),
       ]),
+    );
+  });
+
+  it('builds the in-app runtime with a production context assembler wired to notebook and knowledge dependencies', async () => {
+    const harness = createHookHarness();
+    const contextAssembler = {
+      assemble: vi.fn(),
+    };
+    createNotebookContextAssemblerMock.mockReturnValue(contextAssembler);
+    createAssistantRuntimeMock.mockReturnValue({
+      execute: vi.fn(async function* (): AsyncGenerator<AssistantRuntimeEvent, void, void> {}),
+    });
+
+    renderHook(() => useAIWorkflow(harness.options));
+
+    expect(createNotebookContextAssemblerMock).toHaveBeenCalledTimes(1);
+    expect(createAssistantRuntimeMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contextAssembler,
+      }),
+    );
+
+    const assemblerInput = createNotebookContextAssemblerMock.mock.calls[0]?.[0];
+    expect(assemblerInput).toEqual(
+      expect.objectContaining({
+        notebookNotes: expect.any(Object),
+        workspaceState: expect.any(Object),
+        knowledge: expect.any(Object),
+      }),
+    );
+
+    const notebook = {
+      notebookId: 'in-app-notebook',
+      workspaceId: 'workspace-7',
+      activeFileId: 'file-1',
+      selectedFileIds: ['file-1'],
+      selectedText: 'Architecture notes',
+      knowledgeQuery: 'runtime bridge',
+    };
+
+    await expect(assemblerInput.notebookNotes.getFiles(notebook)).resolves.toEqual(harness.getFiles());
+    await expect(assemblerInput.workspaceState.getWorkspaceState(notebook)).resolves.toEqual(
+      expect.objectContaining({
+        activeFileId: 'file-1',
+        activeFileName: 'Daily Note',
+        selectedFileIds: ['file-1'],
+        selectedFileNames: ['Daily Note'],
+        selectedText: 'Architecture notes',
+      }),
+    );
+
+    harness.vectorStore.hasFilesToIndex.mockResolvedValue(true);
+    await assemblerInput.knowledge.getKnowledgeContext(notebook);
+
+    expect(harness.handleIndexKnowledgeBase).toHaveBeenCalledWith(harness.filesRef.current);
+    expect(harness.vectorStore.searchWithResults).toHaveBeenCalledWith(
+      'runtime bridge',
+      baseConfig,
+      5,
     );
   });
 });
