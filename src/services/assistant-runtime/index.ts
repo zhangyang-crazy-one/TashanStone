@@ -10,6 +10,22 @@ export type {
   AssistantRuntimeContextAssembler,
   ContextAssemblerDependencies,
 } from './contextAssembler';
+export {
+  createInAppKnowledgeContextDependencies,
+  createKnowledgeContextAdapter,
+  createNotebookContextAssembler,
+  createNotebookNotesContextAdapter,
+  createWorkspaceStateContextAdapter,
+} from './contextAdapters';
+export type {
+  InAppKnowledgeContextDependencies,
+  KnowledgeContextAdapterDependencies,
+  KnowledgeContextSnapshot,
+  NotebookContextAssemblerDependencies,
+  NotebookNotesContextAdapterDependencies,
+  WorkspaceStateContextAdapterDependencies,
+  WorkspaceStateSnapshot,
+} from './contextAdapters';
 export { ASSISTANT_SETTINGS_DEFAULTS } from './defaults';
 export { createProviderExecution } from './providerExecution';
 export type {

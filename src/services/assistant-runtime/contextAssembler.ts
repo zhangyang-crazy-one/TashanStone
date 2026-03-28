@@ -121,17 +121,19 @@ export function createContextAssembler(
     async assemble(request) {
       const notebookInput = request.notebook;
       const payloads = notebookInput
-        ? await Promise.all(
-            adapters.map(adapter =>
-              Promise.resolve(
-                adapter.assemble(notebookInput, {
-                  session: request.session,
-                  caller: request.caller,
-                  input: request.input,
-                }),
+        ? (
+            await Promise.all(
+              adapters.map(adapter =>
+                Promise.resolve(
+                  adapter.assemble(notebookInput, {
+                    session: request.session,
+                    caller: request.caller,
+                    input: request.input,
+                  }),
+                ),
               ),
-            ),
-          )
+            )
+          ).filter(payload => payload.sections.length > 0)
         : [];
 
       const sections = payloads.flatMap(payload => payload.sections);
