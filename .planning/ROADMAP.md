@@ -34,7 +34,7 @@ Plans:
 - [x] 01-01-PLAN.md — Define the shared runtime contracts and the wireframe-aligned settings descriptor catalog.
 - [x] 01-02-PLAN.md — Implement the runtime execution core and notebook-context assembly on top of existing AI/context services.
 - [x] 01-03-PLAN.md — Migrate one real in-app caller and wire minimal config persistence/shell support for the new schema.
-- [ ] 01-04-PLAN.md — Register production notebook/workspace/knowledge context adapters and wire them into the runtime-backed in-app caller.
+- [x] 01-04-PLAN.md — Register production notebook/workspace/knowledge context adapters and wire them into the runtime-backed in-app caller.
 
 ### Phase 2: Session Routing and Persistence
 **Goal**: Conversations run as isolated assistant sessions with consistent routing, activation, and persistence rules across surfaces.
@@ -103,7 +103,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Assistant Runtime Foundation | 3/4 | Gap closure planned | - |
+| 1. Assistant Runtime Foundation | 4/4 | Complete   | 2026-03-28 |
 | 2. Session Routing and Persistence | 0/TBD | Not started | - |
 | 3. Tools and Multimodal Delivery | 0/TBD | Not started | - |
 | 4. In-App Assistant Parity | 0/TBD | Not started | - |
