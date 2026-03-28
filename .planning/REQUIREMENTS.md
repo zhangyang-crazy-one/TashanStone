@@ -7,8 +7,8 @@
 
 ### Runtime Core
 
-- [ ] **CORE-01**: The system exposes a shared assistant runtime independent of the current UI chat panel.
-- [ ] **CORE-02**: The assistant runtime supports provider-agnostic model execution with streaming responses.
+- [x] **CORE-01**: The system exposes a shared assistant runtime independent of the current UI chat panel.
+- [x] **CORE-02**: The assistant runtime supports provider-agnostic model execution with streaming responses.
 - [x] **CORE-03**: The assistant runtime supports notebook-context injection so notes, knowledge data, and workspace state can be assembled into assistant context.
 - [x] **CORE-04**: The assistant runtime exposes a transport-agnostic interface that channel adapters can use without duplicating core logic.
 
@@ -66,8 +66,8 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CORE-01 | Phase 1 | Pending |
-| CORE-02 | Phase 1 | Pending |
+| CORE-01 | Phase 1 | Complete |
+| CORE-02 | Phase 1 | Complete |
 | CORE-03 | Phase 1 | Complete |
 | CORE-04 | Phase 1 | Complete |
 | SESS-01 | Phase 2 | Pending |

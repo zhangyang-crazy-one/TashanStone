@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-01-PLAN.md
-last_updated: "2026-03-28T03:04:01.101Z"
+stopped_at: Completed 01-02-PLAN.md
+last_updated: "2026-03-28T03:22:57.037Z"
 last_activity: 2026-03-28
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 3
-  completed_plans: 1
-  percent: 33
+  completed_plans: 2
+  percent: 67
 ---
 
 # Project State
@@ -26,32 +26,33 @@ See: `.planning/PROJECT.md` (updated 2026-03-27)
 ## Current Position
 
 Phase: 01 (assistant-runtime-foundation) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-03-28
 
-Progress: [███░░░░░░░] 33%
+Progress: [███████░░░] 67%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 1
-- Average duration: 9 min
-- Total execution time: 0.2 hours
+- Total plans completed: 2
+- Average duration: 8.5 min
+- Total execution time: 0.3 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01-assistant-runtime-foundation | 1 | 9 min | 9 min |
+| 01-assistant-runtime-foundation | 2 | 17 min | 8.5 min |
 
 **Recent Trend:**
 
-- Last 5 plans: 01-01 (9 min)
-- Trend: Initial baseline
+- Last 5 plans: 01-02 (8 min), 01-01 (9 min)
+- Trend: Stable
 
 | Phase 01-assistant-runtime-foundation P01 | 9min | 2 tasks | 7 files |
+| Phase 01-assistant-runtime-foundation P02 | 8min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -64,6 +65,9 @@ Recent decisions affecting current work:
 - v1 channel scope remains limited to WhatsApp and QQ Channel.
 - [Phase 01-assistant-runtime-foundation]: Re-export assistant runtime contracts from types.ts so later callers share one import surface.
 - [Phase 01-assistant-runtime-foundation]: Represent operator and notebook settings as translation-backed descriptors with explicit phase metadata instead of implementing full pages in Phase 1.
+- [Phase 01-assistant-runtime-foundation]: Async-generator runtime events now separate execution ownership from UI message state.
+- [Phase 01-assistant-runtime-foundation]: Provider execution now wraps existing aiService streaming and non-streaming paths behind one runtime seam.
+- [Phase 01-assistant-runtime-foundation]: Notebook, workspace, and knowledge context now enter runtime execution through adapters and ContextInjector instead of UI-owned state reads.
 
 ### Pending Todos
 
@@ -75,6 +79,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-28T03:04:01.099Z
-Stopped at: Completed 01-01-PLAN.md
+Last session: 2026-03-28T03:22:22.730Z
+Stopped at: Completed 01-02-PLAN.md
 Resume file: None
