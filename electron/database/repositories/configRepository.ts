@@ -1,6 +1,12 @@
+import type Database from 'better-sqlite3';
+
+import type { AIConfig as SharedAIConfig } from '../../../types';
 import { getDatabase } from '../index.js';
 
 export type AIProvider = 'gemini' | 'ollama' | 'openai';
+export type AIConfig = SharedAIConfig;
+
+const EXTENDED_CONFIG_KEY = 'ai_config:extended';
 
 export interface AIConfigRow {
     id: number;
@@ -13,39 +19,72 @@ export interface AIConfigRow {
     updated_at: number;
 }
 
-export interface AIConfig {
-    provider: AIProvider;
-    model: string;
-    baseUrl?: string;
-    apiKey?: string;
-    temperature: number;
-    language: 'en' | 'zh';
+function mergeAIConfig(baseConfig: AIConfig, overrides?: Partial<AIConfig>): AIConfig {
+    if (!overrides) {
+        return baseConfig;
+    }
+
+    return {
+        ...baseConfig,
+        ...overrides,
+        customPrompts: {
+            ...baseConfig.customPrompts,
+            ...overrides.customPrompts,
+        },
+        backup: overrides.backup ?? baseConfig.backup,
+        security: {
+            ...baseConfig.security,
+            ...overrides.security,
+        },
+        contextEngine: {
+            ...baseConfig.contextEngine,
+            ...overrides.contextEngine,
+        },
+        tagSuggestion: {
+            ...baseConfig.tagSuggestion,
+            ...overrides.tagSuggestion,
+        },
+        assistantSettings: overrides.assistantSettings
+            ? {
+                surface: overrides.assistantSettings.surface,
+                sectionBySurface: {
+                    ...baseConfig.assistantSettings?.sectionBySurface,
+                    ...overrides.assistantSettings.sectionBySurface,
+                },
+            }
+            : baseConfig.assistantSettings,
+    };
 }
 
 export class ConfigRepository {
+    constructor(private readonly databaseProvider: () => Database.Database = getDatabase) {}
+
     getAIConfig(): AIConfig {
-        const db = getDatabase();
+        const db = this.databaseProvider();
         const row = db.prepare(`
             SELECT id, provider, model, base_url, api_key_encrypted, temperature, language, updated_at
             FROM ai_config
             WHERE id = 1
         `).get() as AIConfigRow | undefined;
 
+        const extendedConfig = db.prepare('SELECT value FROM settings WHERE key = ?')
+            .get(EXTENDED_CONFIG_KEY) as { value: string } | undefined;
+        const parsedExtendedConfig = extendedConfig ? this.parseExtendedConfig(extendedConfig.value) : undefined;
+
         if (!row) {
-            // Return default config
-            return {
+            return mergeAIConfig({
                 provider: 'gemini',
                 model: 'gemini-2.5-flash',
                 temperature: 0.7,
                 language: 'en'
-            };
+            }, parsedExtendedConfig);
         }
 
-        return this.rowToConfig(row);
+        return mergeAIConfig(this.rowToConfig(row), parsedExtendedConfig);
     }
 
     setAIConfig(config: AIConfig): AIConfig {
-        const db = getDatabase();
+        const db = this.databaseProvider();
         const now = Date.now();
 
         db.prepare(`
@@ -61,6 +100,11 @@ export class ConfigRepository {
             now
         );
 
+        db.prepare(`
+            INSERT OR REPLACE INTO settings (key, value, updated_at)
+            VALUES (?, ?, ?)
+        `).run(EXTENDED_CONFIG_KEY, JSON.stringify(config), now);
+
         return this.getAIConfig();
     }
 
@@ -73,6 +117,14 @@ export class ConfigRepository {
             temperature: row.temperature,
             language: row.language as 'en' | 'zh'
         };
+    }
+
+    private parseExtendedConfig(rawConfig: string): Partial<AIConfig> | undefined {
+        try {
+            return JSON.parse(rawConfig) as Partial<AIConfig>;
+        } catch {
+            return undefined;
+        }
     }
 }
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, renderHook, screen, waitFor } from '@testing-library/react';
+import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 
@@ -171,7 +171,8 @@ describe('assistant settings persistence', () => {
   });
 
   it('round-trips phase-1 runtime and shell fields through config repository persistence', () => {
-    const repository = new ConfigRepository(() => createFakeDatabase());
+    const fakeDatabase = createFakeDatabase();
+    const repository = new ConfigRepository(() => fakeDatabase);
 
     repository.setAIConfig(persistedConfig);
     const loaded = repository.getAIConfig();
@@ -217,9 +218,11 @@ describe('assistant settings persistence', () => {
       });
     });
 
-    await result.current.handleSettingsSave({
-      ...result.current.aiConfig,
-      temperature: 0.55,
+    await act(async () => {
+      await result.current.handleSettingsSave({
+        ...result.current.aiConfig,
+        temperature: 0.55,
+      });
     });
 
     expect(storage.initialize).toHaveBeenCalled();

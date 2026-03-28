@@ -1,4 +1,5 @@
 import type { AIConfig, AppShortcut, MarkdownFile } from '../../types';
+import { ASSISTANT_SETTINGS_DEFAULTS } from '@/src/services/assistant-runtime/defaults';
 
 export const generateId = () => Math.random().toString(36).substring(2, 11);
 
@@ -36,6 +37,10 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
     truncateThreshold: 0.90,
     messagesToKeep: 3,
     checkpointInterval: 20
+  },
+  assistantSettings: {
+    surface: ASSISTANT_SETTINGS_DEFAULTS.surface,
+    sectionBySurface: { ...ASSISTANT_SETTINGS_DEFAULTS.sectionBySurface }
   }
 };
 

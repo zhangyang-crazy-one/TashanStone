@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 
 import type { AIConfig } from '@/types';
 import { DEFAULT_AI_CONFIG } from '@/src/app/appDefaults';
 import { mcpService } from '@/src/services/mcpService';
+import { getStorageService } from '@/src/services/storage/storageService';
 
 interface UseAppConfigOptions {
   setIsSettingsOpen: Dispatch<SetStateAction<boolean>>;
@@ -17,36 +18,43 @@ interface UseAppConfigResult {
 }
 
 export const useAppConfig = ({ setIsSettingsOpen }: UseAppConfigOptions): UseAppConfigResult => {
-  const [aiConfig, setAiConfig] = useState<AIConfig>(() => {
-    try {
-      const saved = localStorage.getItem('neon-ai-config');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return {
-          ...DEFAULT_AI_CONFIG,
-          ...parsed,
-          customPrompts: { ...DEFAULT_AI_CONFIG.customPrompts, ...parsed.customPrompts },
-          contextEngine: {
-            ...(DEFAULT_AI_CONFIG.contextEngine || {}),
-            ...(parsed.contextEngine || {})
-          }
-        };
-      }
-      return DEFAULT_AI_CONFIG;
-    } catch {
-      return DEFAULT_AI_CONFIG;
-    }
-  });
+  const [aiConfig, setAiConfig] = useState<AIConfig>(DEFAULT_AI_CONFIG);
+  const storageRef = useRef<ReturnType<typeof getStorageService> | null>(null);
 
   useEffect(() => {
-    localStorage.setItem('neon-ai-config', JSON.stringify(aiConfig));
-  }, [aiConfig]);
+    let isMounted = true;
+
+    const loadConfig = async () => {
+      try {
+        const storage = getStorageService();
+        storageRef.current = storage;
+        await storage.initialize();
+        const storedConfig = await storage.getAIConfig();
+
+        if (isMounted) {
+          setAiConfig(storedConfig);
+        }
+      } catch (error) {
+        console.error('[AppConfig] Failed to load stored AI config:', error);
+      }
+    };
+
+    void loadConfig();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleSettingsSave = useCallback(async (config: AIConfig) => {
-    setAiConfig(config);
-    if (config.mcpTools && config.mcpTools.trim() !== '[]' && mcpService.isAvailable()) {
+    const storage = storageRef.current ?? getStorageService();
+    storageRef.current = storage;
+    await storage.initialize();
+    const savedConfig = await storage.setAIConfig(config);
+    setAiConfig(savedConfig);
+    if (savedConfig.mcpTools && savedConfig.mcpTools.trim() !== '[]' && mcpService.isAvailable()) {
       try {
-        const result = await mcpService.loadConfig(config.mcpTools);
+        const result = await mcpService.loadConfig(savedConfig.mcpTools);
         if (result.success) {
           console.log('[MCP] Configuration loaded successfully');
         } else {

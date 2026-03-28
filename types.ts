@@ -174,6 +174,10 @@ export interface AIConfig {
     enabled: boolean;
     autoSuggest: boolean;
   };
+  assistantSettings?: {
+    surface: 'operator' | 'notebook';
+    sectionBySurface: Record<'operator' | 'notebook', string>;
+  };
 }
 
 // ========================

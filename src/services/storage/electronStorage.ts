@@ -1,5 +1,39 @@
 import { StorageService, ExportData, ImportResult } from './types';
 import { MarkdownFile, AIConfig, ChatMessage, AppTheme, MistakeRecord } from '../../../types';
+import { DEFAULT_AI_CONFIG } from '@/src/app/appDefaults';
+
+function normalizeAIConfig(config: AIConfig): AIConfig {
+    return {
+        ...DEFAULT_AI_CONFIG,
+        ...config,
+        customPrompts: {
+            ...DEFAULT_AI_CONFIG.customPrompts,
+            ...config.customPrompts,
+        },
+        backup: config.backup ?? DEFAULT_AI_CONFIG.backup,
+        security: {
+            ...DEFAULT_AI_CONFIG.security,
+            ...config.security,
+        },
+        contextEngine: {
+            ...DEFAULT_AI_CONFIG.contextEngine,
+            ...config.contextEngine,
+        },
+        tagSuggestion: {
+            ...DEFAULT_AI_CONFIG.tagSuggestion,
+            ...config.tagSuggestion,
+        },
+        assistantSettings: config.assistantSettings
+            ? {
+                surface: config.assistantSettings.surface,
+                sectionBySurface: {
+                    ...DEFAULT_AI_CONFIG.assistantSettings?.sectionBySurface,
+                    ...config.assistantSettings.sectionBySurface,
+                },
+            }
+            : DEFAULT_AI_CONFIG.assistantSettings,
+    };
+}
 
 /**
  * Electron storage service - uses IPC to communicate with SQLite in main process
@@ -34,11 +68,13 @@ export class ElectronStorageService implements StorageService {
 
     // ===== AI Config =====
     async getAIConfig(): Promise<AIConfig> {
-        return await window.electronAPI.db.config.get();
+        const config = await window.electronAPI.db.config.get();
+        return normalizeAIConfig(config);
     }
 
     async setAIConfig(config: AIConfig): Promise<AIConfig> {
-        return await window.electronAPI.db.config.set(config);
+        const savedConfig = await window.electronAPI.db.config.set(config);
+        return normalizeAIConfig(savedConfig);
     }
 
     // ===== Chat =====
