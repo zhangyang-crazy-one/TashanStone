@@ -10,7 +10,7 @@ This roadmap turns TashanStone into a notebook-native assistant platform by firs
 - Integer phases (1, 2, 3): Planned milestone work
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
-- [ ] **Phase 1: Assistant Runtime Foundation** - Establish the shared notebook-native runtime that all assistant surfaces will use.
+- [x] **Phase 1: Assistant Runtime Foundation** - Establish the shared notebook-native runtime that all assistant surfaces will use.
 - [ ] **Phase 2: Session Routing and Persistence** - Introduce isolated sessions, routing rules, and durable conversation state.
 - [ ] **Phase 3: Tools and Multimodal Delivery** - Unify tool execution, media normalization, and outbound delivery behavior.
 - [ ] **Phase 4: In-App Assistant Parity** - Move the desktop assistant experience onto the shared runtime without regressing notebook workflows.
@@ -33,7 +33,7 @@ This roadmap turns TashanStone into a notebook-native assistant platform by firs
 Plans:
 - [x] 01-01-PLAN.md — Define the shared runtime contracts and the wireframe-aligned settings descriptor catalog.
 - [x] 01-02-PLAN.md — Implement the runtime execution core and notebook-context assembly on top of existing AI/context services.
-- [ ] 01-03-PLAN.md — Migrate one real in-app caller and wire minimal config persistence/shell support for the new schema.
+- [x] 01-03-PLAN.md — Migrate one real in-app caller and wire minimal config persistence/shell support for the new schema.
 
 ### Phase 2: Session Routing and Persistence
 **Goal**: Conversations run as isolated assistant sessions with consistent routing, activation, and persistence rules across surfaces.
@@ -102,7 +102,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Assistant Runtime Foundation | 2/3 | In Progress | 2026-03-28 |
+| 1. Assistant Runtime Foundation | 3/3 | Complete | 2026-03-28 |
 | 2. Session Routing and Persistence | 0/TBD | Not started | - |
 | 3. Tools and Multimodal Delivery | 0/TBD | Not started | - |
 | 4. In-App Assistant Parity | 0/TBD | Not started | - |
