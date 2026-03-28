@@ -479,8 +479,8 @@ describe('in-app assistant runtime adapter', () => {
       knowledgeQuery: 'runtime bridge',
     };
 
-    await expect(assemblerInput.notebookNotes.getFiles(notebook)).resolves.toEqual(harness.getFiles());
-    await expect(assemblerInput.workspaceState.getWorkspaceState(notebook)).resolves.toEqual(
+    await expect(Promise.resolve(assemblerInput.notebookNotes.getFiles(notebook))).resolves.toEqual(harness.getFiles());
+    await expect(Promise.resolve(assemblerInput.workspaceState.getWorkspaceState(notebook))).resolves.toEqual(
       expect.objectContaining({
         activeFileId: 'file-1',
         activeFileName: 'Daily Note',

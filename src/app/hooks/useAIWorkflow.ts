@@ -21,7 +21,11 @@ import {
 } from '@/services/aiService';
 import { generateId } from '@/src/app/appDefaults';
 import { useStreamingToolCalls } from '@/src/hooks/useStreamingToolCalls';
-import { createAssistantRuntime } from '@/src/services/assistant-runtime';
+import {
+  createAssistantRuntime,
+  createNotebookContextAssembler,
+  type AssistantRuntime,
+} from '@/src/services/assistant-runtime';
 
 type LanguageCode = 'zh' | 'en';
 
@@ -99,6 +103,20 @@ const toUiResultToolCall = (invocation: AssistantRuntimeToolInvocation): ToolCal
     invocation.error?.message,
   );
 
+const findNotebookFile = (files: MarkdownFile[], reference?: string): MarkdownFile | undefined => {
+  if (!reference) {
+    return undefined;
+  }
+
+  return files.find(file =>
+    file.id === reference ||
+    file.path === reference ||
+    file.name === reference ||
+    file.name === reference.replace(/\.md$/i, '') ||
+    file.path?.endsWith(reference),
+  );
+};
+
 export const useAIWorkflow = ({
   aiConfig,
   chatMessages,
@@ -128,7 +146,63 @@ export const useAIWorkflow = ({
     getToolCalls: getStreamingToolCalls
   } = useStreamingToolCalls();
 
-  const runtimeRef = useRef(createAssistantRuntime());
+  const aiConfigRef = useRef(aiConfig);
+  aiConfigRef.current = aiConfig;
+
+  const runtimeRef = useRef<AssistantRuntime | null>(null);
+  if (!runtimeRef.current) {
+    const contextAssembler = createNotebookContextAssembler({
+      notebookNotes: {
+        getFiles: () => filesRef.current,
+      },
+      workspaceState: {
+        getWorkspaceState: input => {
+          const files = filesRef.current;
+          const selectedFiles = (input.selectedFileIds ?? [])
+            .map(fileId => findNotebookFile(files, fileId))
+            .filter((file): file is MarkdownFile => Boolean(file));
+          const activeFile = findNotebookFile(files, input.activeFileId);
+
+          return {
+            notebookId: input.notebookId,
+            workspaceId: input.workspaceId,
+            activeFileId: input.activeFileId,
+            activeFileName: activeFile?.name,
+            selectedFileIds: input.selectedFileIds,
+            selectedFileNames: selectedFiles.map(file => file.name),
+            selectedText: input.selectedText,
+          };
+        },
+      },
+      knowledge: {
+        getKnowledgeContext: async input => {
+          const knowledgeQuery = input.knowledgeQuery?.trim();
+          if (!knowledgeQuery) {
+            return undefined;
+          }
+
+          if (await vectorStore.hasFilesToIndex(filesRef.current)) {
+            await handleIndexKnowledgeBase(filesRef.current);
+          }
+
+          const ragResponse = await vectorStore.searchWithResults(
+            knowledgeQuery,
+            aiConfigRef.current,
+            5,
+          );
+
+          return {
+            context: ragResponse.context,
+            results: ragResponse.results,
+          };
+        },
+      },
+    });
+
+    runtimeRef.current = createAssistantRuntime({
+      contextAssembler,
+    });
+  }
   const stopRequestedRef = useRef(false);
 
   const updateAssistantToolCall = useCallback((messageId: string, toolCall: ToolCall) => {
@@ -433,7 +507,7 @@ export const useAIWorkflow = ({
         },
       };
 
-      for await (const event of runtimeRef.current.execute(runtimeRequest, {
+      for await (const event of runtimeRef.current!.execute(runtimeRequest, {
         toolsCallback: async (toolName, args) => {
           const toolResult = await executeToolUnified(toolName, args);
           return toolResult.result;
