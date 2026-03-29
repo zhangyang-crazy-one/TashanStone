@@ -81,7 +81,7 @@ Plans:
 - [x] 04-01-PLAN.md — Define inspectable runtime/session/context parity contracts and an app-facing inspection bridge.
 - [x] 04-02-PLAN.md — Replace placeholder notebook-context assembly with real workspace state and preserve runtime-backed notebook workflows.
 - [x] 04-03-PLAN.md — Add session-switching and runtime inspection UI to the existing in-app assistant surface.
-- [ ] 04-04-PLAN.md — Lock notebook workflow compatibility and final in-app parity behavior with targeted regression coverage.
+- [x] 04-04-PLAN.md — Lock notebook workflow compatibility and final in-app parity behavior with targeted regression coverage.
 **UI hint**: yes
 
 ### Phase 5: WhatsApp Channel Launch
