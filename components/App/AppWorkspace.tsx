@@ -2,6 +2,8 @@ import React, { memo } from 'react';
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
 
 import type { AIState, ChatMessage, LinkInsertResult, MarkdownFile } from '../../types';
+import type { AssistantRuntimeInspectionState } from '@/src/app/hooks/useAssistantRuntimeInspection';
+import type { AssistantSessionRecord } from '@/src/services/assistant-runtime/sessionTypes';
 import type { Backlink } from '../../src/types/wiki';
 import { ViewMode } from '../../types';
 import type { Language } from '../../utils/translations';
@@ -34,6 +36,13 @@ interface AppWorkspaceProps {
   isStreaming: boolean;
   onStopStreaming?: () => void;
   showToast: (message: string, isError?: boolean) => void;
+  sessions: AssistantSessionRecord[];
+  activeSessionId: string | null;
+  activeSessionTitle?: string | null;
+  onCreateSession: () => Promise<unknown>;
+  onSelectSession: (sessionId: string) => Promise<void>;
+  assistantRuntimeInspection: AssistantRuntimeInspectionState;
+  isSessionLoading?: boolean;
 }
 
 export const AppWorkspace = memo((props: AppWorkspaceProps) => {
@@ -60,7 +69,14 @@ export const AppWorkspace = memo((props: AppWorkspaceProps) => {
     language,
     isStreaming,
     onStopStreaming,
-    showToast
+    showToast,
+    sessions,
+    activeSessionId: assistantSessionId,
+    activeSessionTitle,
+    onCreateSession,
+    onSelectSession,
+    assistantRuntimeInspection,
+    isSessionLoading = false,
   } = props;
 
   const showBacklinks = backlinks.length > 0 && (
@@ -103,6 +119,13 @@ export const AppWorkspace = memo((props: AppWorkspaceProps) => {
         isStreaming={isStreaming}
         onStopStreaming={onStopStreaming}
         showToast={showToast}
+        sessions={sessions}
+        activeSessionId={assistantSessionId}
+        activeSessionTitle={activeSessionTitle}
+        onCreateSession={onCreateSession}
+        onSelectSession={onSelectSession}
+        assistantRuntimeInspection={assistantRuntimeInspection}
+        isSessionLoading={isSessionLoading}
       />
 
       {(aiState.message || aiState.error) && (

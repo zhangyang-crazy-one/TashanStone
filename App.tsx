@@ -129,7 +129,11 @@ const App: React.FC = () => {
   const {
     activeSession,
     activeSessionId,
-    saveSession: saveAssistantSession
+    createSession,
+    isLoading: isAssistantSessionLoading,
+    sessions,
+    saveSession: saveAssistantSession,
+    setActiveSessionId,
   } = useAssistantSessions();
 
   const { chatMessages, setChatMessages } = useChatHistory(activeSessionId);
@@ -477,6 +481,7 @@ const App: React.FC = () => {
   }), [activeSession?.workspaceId, activeSessionId, workspaceContext]);
 
   const {
+    assistantRuntimeInspection,
     handleChatMessage,
     handleStopStreaming,
     handleCompactChat,
@@ -585,7 +590,14 @@ const App: React.FC = () => {
     isStreaming,
     onStopStreaming: handleStopStreaming,
     showToast,
-    language: lang
+    language: lang,
+    sessions,
+    activeSessionId,
+    activeSessionTitle: activeSession?.title ?? null,
+    onCreateSession: createSession,
+    onSelectSession: setActiveSessionId,
+    assistantRuntimeInspection,
+    isSessionLoading: isAssistantSessionLoading,
   });
 
   const overlays = useAppOverlaysState({

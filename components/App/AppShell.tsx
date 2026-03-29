@@ -1,5 +1,7 @@
 import React, { memo } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
+import type { AssistantRuntimeInspectionState } from '@/src/app/hooks/useAssistantRuntimeInspection';
+import type { AssistantSessionRecord } from '@/src/services/assistant-runtime/sessionTypes';
 
 import type {
   AIProvider,
@@ -101,6 +103,13 @@ export interface AppShellProps {
   onStopStreaming?: () => void;
   showToast: (message: string, isError?: boolean) => void;
   language: Language;
+  sessions: AssistantSessionRecord[];
+  activeSessionId: string | null;
+  activeSessionTitle?: string | null;
+  onCreateSession: () => Promise<unknown>;
+  onSelectSession: (sessionId: string) => Promise<void>;
+  assistantRuntimeInspection: AssistantRuntimeInspectionState;
+  isSessionLoading?: boolean;
 }
 
 const MemoSidebar = memo(Sidebar);
@@ -185,7 +194,14 @@ export const AppShell = memo((props: AppShellProps) => {
     isStreaming,
     onStopStreaming,
     showToast,
-    language
+    language,
+    sessions,
+    activeSessionId,
+    activeSessionTitle,
+    onCreateSession,
+    onSelectSession,
+    assistantRuntimeInspection,
+    isSessionLoading = false,
   } = props;
 
   return (
@@ -285,6 +301,13 @@ export const AppShell = memo((props: AppShellProps) => {
           isStreaming={isStreaming}
           onStopStreaming={onStopStreaming}
           showToast={showToast}
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          activeSessionTitle={activeSessionTitle}
+          onCreateSession={onCreateSession}
+          onSelectSession={onSelectSession}
+          assistantRuntimeInspection={assistantRuntimeInspection}
+          isSessionLoading={isSessionLoading}
         />
       </div>
     </>

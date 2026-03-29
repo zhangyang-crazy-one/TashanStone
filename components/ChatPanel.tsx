@@ -2,9 +2,13 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useListRef } from 'react-window';
 
 import type { AIState, ChatMessage } from '../types';
+import type { AssistantSessionRecord } from '@/src/services/assistant-runtime/sessionTypes';
+import type { AssistantRuntimeInspectionState } from '@/src/app/hooks/useAssistantRuntimeInspection';
 import { ChatHeader } from './ChatPanel/ChatHeader';
+import { AssistantSessionBar } from './ChatPanel/AssistantSessionBar';
 import { ChatInput } from './ChatPanel/ChatInput';
 import { MessageList } from './ChatPanel/MessageList';
+import { RuntimeInspectorPanel } from './ChatPanel/RuntimeInspectorPanel';
 import { useChatMemory } from './ChatPanel/useChatMemory';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { CheckpointDrawer } from './context';
@@ -42,6 +46,13 @@ interface ChatPanelProps {
   tokenUsage?: number;
   maxTokens?: number;
   checkpoints?: Checkpoint[];
+  sessions?: AssistantSessionRecord[];
+  activeSessionId?: string | null;
+  activeSessionTitle?: string | null;
+  onCreateSession?: () => Promise<unknown>;
+  onSelectSession?: (sessionId: string) => Promise<void>;
+  assistantRuntimeInspection?: AssistantRuntimeInspectionState;
+  isSessionLoading?: boolean;
 }
 
 export const ChatPanel: React.FC<ChatPanelProps> = ({
@@ -64,10 +75,19 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   tokenUsage = 0,
   maxTokens = 200000,
   checkpoints = [],
+  sessions = [],
+  activeSessionId = null,
+  activeSessionTitle = null,
+  onCreateSession,
+  onSelectSession,
+  assistantRuntimeInspection,
+  isSessionLoading = false,
 }) => {
   const [input, setInput] = useState('');
   const [interimTranscript, setInterimTranscript] = useState('');
   const [compactMode, setCompactMode] = useState(false);
+  const [isCreatingSession, setIsCreatingSession] = useState(false);
+  const [showRuntimeInspector, setShowRuntimeInspector] = useState(false);
   const [showCheckpointDrawer, setShowCheckpointDrawer] = useState(false);
   const listRef = useListRef(null);
   const shouldAutoScrollRef = useRef(true);
@@ -173,6 +193,31 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     setCompactMode(prev => !prev);
   }, []);
 
+  const handleCreateSession = useCallback(async () => {
+    if (!onCreateSession) {
+      return;
+    }
+
+    setIsCreatingSession(true);
+    try {
+      await onCreateSession();
+    } finally {
+      setIsCreatingSession(false);
+    }
+  }, [onCreateSession]);
+
+  const handleSelectSession = useCallback(async (sessionId: string) => {
+    if (!onSelectSession) {
+      return;
+    }
+
+    await onSelectSession(sessionId);
+  }, [onSelectSession]);
+
+  const handleToggleRuntimeInspector = useCallback(() => {
+    setShowRuntimeInspector(prev => !prev);
+  }, []);
+
   useEffect(() => {
     if (!isOpen) return;
     shouldAutoScrollRef.current = true;
@@ -227,9 +272,32 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           injectedMemories={injectedMemories}
           onRemoveInjectedMemory={handleRemoveInjectedMemory}
           onCloseMemoryPanel={handleCloseMemoryPanel}
+          activeSessionTitle={activeSessionTitle}
+          sessionCount={sessions.length}
+          showRuntimeInspector={showRuntimeInspector}
+          onToggleRuntimeInspector={assistantRuntimeInspection ? handleToggleRuntimeInspector : undefined}
           onClearChat={onClearChat}
           onClose={onClose}
         />
+
+        {(sessions.length > 0 || onCreateSession) && (
+          <AssistantSessionBar
+            sessions={sessions}
+            activeSessionId={activeSessionId}
+            isLoading={isSessionLoading}
+            isCreating={isCreatingSession}
+            language={language}
+            onCreateSession={handleCreateSession}
+            onSelectSession={handleSelectSession}
+          />
+        )}
+
+        {showRuntimeInspector && assistantRuntimeInspection && (
+          <RuntimeInspectorPanel
+            inspection={assistantRuntimeInspection}
+            language={language}
+          />
+        )}
 
         <MessageList
           messages={messages}

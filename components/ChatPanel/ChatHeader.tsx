@@ -1,5 +1,5 @@
 import React from 'react';
-import { Archive, Brain, Maximize2, Minimize2, Sparkles, Trash2, X } from 'lucide-react';
+import { Archive, Brain, Eye, Maximize2, Minimize2, Sparkles, Trash2, X } from 'lucide-react';
 
 import type { AIState } from '../../types';
 import Tooltip from '../Tooltip';
@@ -29,6 +29,10 @@ interface ChatHeaderProps {
   injectedMemories: InjectedMemory[];
   onRemoveInjectedMemory: (memoryId: string) => void;
   onCloseMemoryPanel: () => void;
+  activeSessionTitle?: string | null;
+  sessionCount?: number;
+  showRuntimeInspector?: boolean;
+  onToggleRuntimeInspector?: () => void;
   onClearChat: () => void;
   onClose: () => void;
 }
@@ -54,6 +58,10 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   injectedMemories,
   onRemoveInjectedMemory,
   onCloseMemoryPanel,
+  activeSessionTitle,
+  sessionCount = 0,
+  showRuntimeInspector = false,
+  onToggleRuntimeInspector,
   onClearChat,
   onClose
 }) => {
@@ -82,6 +90,12 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
           <span className="text-sm font-semibold text-violet-600 dark:text-violet-400 truncate">
             {t.aiCompanion}
           </span>
+          {activeSessionTitle && (
+            <span className="hidden sm:inline-flex items-center rounded-full border border-violet-200/60 bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-600 dark:border-violet-700/60 dark:bg-violet-900/20 dark:text-violet-300">
+              {activeSessionTitle}
+              {sessionCount > 1 ? ` · ${sessionCount}` : ''}
+            </span>
+          )}
           {showTokenUsage && (
             <div className="flex items-center gap-1 shrink-0">
               <div className="h-1.5 w-12 bg-slate-200/50 dark:bg-slate-700/50 rounded-full overflow-hidden">
@@ -149,6 +163,21 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
               onRemoveInjectedMemory={onRemoveInjectedMemory}
               onClose={onCloseMemoryPanel}
             />
+          )}
+
+          {onToggleRuntimeInspector && (
+            <Tooltip content={showRuntimeInspector ? (language === 'zh' ? '隐藏运行状态' : 'Hide runtime inspector') : (language === 'zh' ? '查看运行状态' : 'Inspect runtime state')}>
+              <button
+                onClick={onToggleRuntimeInspector}
+                className={`p-1.5 rounded-md transition-all ${showRuntimeInspector
+                  ? 'text-cyan-500 bg-cyan-100/50 dark:bg-cyan-900/30'
+                  : 'text-slate-400 hover:text-cyan-500 hover:bg-cyan-100/50 dark:hover:bg-cyan-900/30'
+                  }`}
+                aria-label={showRuntimeInspector ? (language === 'zh' ? '隐藏运行状态' : 'Hide runtime inspector') : (language === 'zh' ? '查看运行状态' : 'Inspect runtime state')}
+              >
+                <Eye size={15} />
+              </button>
+            </Tooltip>
           )}
 
           <Tooltip content={t.clearHistory}>
