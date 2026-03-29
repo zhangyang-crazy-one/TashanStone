@@ -563,7 +563,10 @@ export interface MemoryCandidate {
 }
 
 export type {
+  AssistantCallerSurface,
+  AssistantCallerTransport,
   AssistantContextAdapter,
+  AssistantContextAdapterKind,
   AssistantContextPayload,
   AssistantContextSection,
   AssistantNotebookAttachment,
@@ -580,6 +583,7 @@ export type {
   AssistantRuntimeInspectionMetadata,
   AssistantRuntimeInspectionSession,
   AssistantRuntimeInspectionStreaming,
+  AssistantRuntimeLifecyclePhase,
   AssistantRuntimeRequest,
   AssistantRuntimeResult,
   AssistantRuntimeToolInvocation,

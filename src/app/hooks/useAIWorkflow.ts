@@ -6,6 +6,7 @@ import type {
   AIState,
   AssistantRuntimeEvent,
   AssistantRuntimeToolInvocation,
+  AssistantSessionRecord,
   ChatMessage,
   JsonValue,
   MarkdownFile,
@@ -20,10 +21,14 @@ import {
   initPersistentMemory,
 } from '@/services/aiService';
 import { generateId } from '@/src/app/appDefaults';
+import type { AssistantRuntimeInspectionState } from '@/src/app/hooks/useAssistantRuntimeInspection';
+import { useAssistantRuntimeInspection } from '@/src/app/hooks/useAssistantRuntimeInspection';
 import { useStreamingToolCalls } from '@/src/hooks/useStreamingToolCalls';
 import {
   createAssistantRuntime,
   createNotebookContextAssembler,
+  createNotebookToolExecutor,
+  resolveAssistantSession,
   type AssistantRuntime,
 } from '@/src/services/assistant-runtime';
 
@@ -31,6 +36,7 @@ type LanguageCode = 'zh' | 'en';
 
 interface UseAIWorkflowOptions {
   aiConfig: AIConfig;
+  assistantSession?: AssistantSessionRecord | null;
   chatMessages: ChatMessage[];
   setChatMessages: Dispatch<SetStateAction<ChatMessage[]>>;
   setAiState: Dispatch<SetStateAction<AIState>>;
@@ -52,10 +58,12 @@ interface UseAIWorkflowOptions {
   compactMemoryCandidate: MemoryCandidate | null;
   setCompactMemoryCandidate: Dispatch<SetStateAction<MemoryCandidate | null>>;
   setIsCompactSaving: Dispatch<SetStateAction<boolean>>;
+  saveAssistantSession?: (session: AssistantSessionRecord) => Promise<AssistantSessionRecord>;
   language: LanguageCode;
 }
 
 interface UseAIWorkflowResult {
+  assistantRuntimeInspection: AssistantRuntimeInspectionState;
   handleChatMessage: (text: string) => Promise<void>;
   handleStopStreaming: () => void;
   handleCompactChat: () => Promise<void>;
@@ -103,6 +111,70 @@ const toUiResultToolCall = (invocation: AssistantRuntimeToolInvocation): ToolCal
     invocation.error?.message,
   );
 
+const toUiMediaToolCall = (
+  mediaId: string,
+  kind: string,
+  status: 'pending' | 'processing' | 'ready' | 'error',
+  detail?: string,
+  metadata?: Record<string, JsonValue>,
+  error?: string,
+): ToolCall => ({
+  id: `media:${mediaId}`,
+  name: `media:${kind}`,
+  args: {},
+  status: status === 'error'
+    ? 'error'
+    : status === 'ready'
+      ? 'success'
+      : 'running',
+  result: {
+    detail,
+    ...(metadata ?? {}),
+  },
+  error,
+});
+
+const toUiDeliveryToolCall = (delivery: JsonValue): ToolCall | undefined => {
+  if (!delivery || typeof delivery !== 'object' || Array.isArray(delivery)) {
+    return undefined;
+  }
+
+  const policy = 'policy' in delivery ? delivery.policy : undefined;
+  const units = 'units' in delivery && Array.isArray(delivery.units) ? delivery.units : [];
+  if (!policy || typeof policy !== 'object' || Array.isArray(policy)) {
+    return undefined;
+  }
+
+  const policyId = 'policyId' in policy && typeof policy.policyId === 'string'
+    ? policy.policyId
+    : 'delivery';
+  const profile = 'metadata' in policy
+    && policy.metadata
+    && typeof policy.metadata === 'object'
+    && !Array.isArray(policy.metadata)
+    && 'profile' in policy.metadata
+    && typeof policy.metadata.profile === 'string'
+      ? policy.metadata.profile
+      : 'in-app';
+
+  return {
+    id: `delivery:${policyId}`,
+    name: `delivery:${profile}`,
+    args: {},
+    status: 'success',
+    result: {
+      policyId,
+      profile,
+      chunkCount: units.length,
+      chunks: units.map(unit =>
+        typeof unit === 'object' && unit !== null && 'content' in unit
+          ? (typeof unit.content === 'string' ? unit.content : '')
+          : '',
+      ),
+    },
+  };
+};
+
 const findNotebookFile = (files: MarkdownFile[], reference?: string): MarkdownFile | undefined => {
   if (!reference) {
     return undefined;
@@ -117,8 +189,18 @@ const findNotebookFile = (files: MarkdownFile[], reference?: string): MarkdownFi
   );
 };
 
+const toNotebookAttachment = (file: MarkdownFile) => ({
+  kind: 'file' as const,
+  fileId: file.id,
+  uri: file.path,
+  label: file.name,
+  mimeType: file.path?.endsWith('.md') ? 'text/markdown' : undefined,
+  metadata: file.path ? { path: file.path } : undefined,
+});
+
 export const useAIWorkflow = ({
   aiConfig,
+  assistantSession,
   chatMessages,
   setChatMessages,
   setAiState,
@@ -137,6 +219,7 @@ export const useAIWorkflow = ({
   compactMemoryCandidate,
   setCompactMemoryCandidate,
   setIsCompactSaving,
+  saveAssistantSession,
   language
 }: UseAIWorkflowOptions): UseAIWorkflowResult => {
   const {
@@ -145,6 +228,14 @@ export const useAIWorkflow = ({
     resetToolCalls: resetStreamingToolCalls,
     getToolCalls: getStreamingToolCalls
   } = useStreamingToolCalls();
+  const {
+    assistantRuntimeInspection,
+    beginAssistantRuntimeInspection,
+    applyRuntimeInspectionEvent,
+    applyRuntimeInspectionResult,
+    markAssistantRuntimeInspectionCancelled,
+    markAssistantRuntimeInspectionError,
+  } = useAssistantRuntimeInspection();
 
   const aiConfigRef = useRef(aiConfig);
   aiConfigRef.current = aiConfig;
@@ -199,8 +290,38 @@ export const useAIWorkflow = ({
       },
     });
 
+    const toolExecutor = createNotebookToolExecutor({
+      aiConfig,
+      getAiConfig: () => aiConfigRef.current,
+      files: {
+        getFiles: () => filesRef.current,
+        setFiles,
+        createId: generateId,
+      },
+      knowledge: {
+        prepareSearch: async () => {
+          if (await vectorStore.hasFilesToIndex(filesRef.current)) {
+            await handleIndexKnowledgeBase(filesRef.current);
+          }
+        },
+        search: (query, maxResults, config) =>
+          vectorStore.searchWithResults(query, config, maxResults),
+      },
+      mcp: {
+        callTool: async (toolName, args) => {
+          const mcpResult = await window.electronAPI?.mcp?.callTool(toolName, args);
+          if (mcpResult?.success) {
+            return mcpResult.result as JsonValue;
+          }
+
+          throw new Error(mcpResult?.error || `Tool ${toolName} failed`);
+        },
+      },
+    });
+
     runtimeRef.current = createAssistantRuntime({
       contextAssembler,
+      toolExecutor,
     });
   }
   const stopRequestedRef = useRef(false);
@@ -219,9 +340,32 @@ export const useAIWorkflow = ({
     messageId: string,
     outputText: string,
     toolCalls?: AssistantRuntimeToolInvocation[],
+    metadata?: Record<string, JsonValue>,
   ) => {
+    const mergedToolCalls = getStreamingToolCalls().reduce<ToolCall[]>(
+      (current, call) => mergeToolCalls(current, call),
+      [],
+    );
+
     if (toolCalls) {
-      replaceStreamingToolCalls(toolCalls.map(toUiResultToolCall));
+      toolCalls
+        .map(toUiResultToolCall)
+        .forEach(toolCall => {
+          mergedToolCalls.splice(0, mergedToolCalls.length, ...mergeToolCalls(mergedToolCalls, toolCall));
+        });
+    }
+
+    const deliveryToolCall = toUiDeliveryToolCall(metadata?.delivery);
+    if (deliveryToolCall) {
+      mergedToolCalls.splice(
+        0,
+        mergedToolCalls.length,
+        ...mergeToolCalls(mergedToolCalls, deliveryToolCall),
+      );
+    }
+
+    if (mergedToolCalls.length > 0) {
+      replaceStreamingToolCalls(mergedToolCalls);
     }
 
     setChatMessages(prev => prev.map(message =>
@@ -229,204 +373,11 @@ export const useAIWorkflow = ({
         ? {
             ...message,
             content: outputText,
-            toolCalls: toolCalls ? getStreamingToolCalls() : message.toolCalls,
+            toolCalls: mergedToolCalls.length > 0 ? mergedToolCalls : message.toolCalls,
           }
         : message
     ));
   }, [getStreamingToolCalls, replaceStreamingToolCalls, setChatMessages]);
-
-  const executeToolUnified = useCallback(async (toolName: string, args: Record<string, JsonValue>): Promise<{ success: boolean; result: JsonValue; formatted: string }> => {
-    console.log('[Tool] Executing:', toolName, args);
-    const getString = (value: JsonValue | undefined): string =>
-      typeof value === 'string' ? value : '';
-    const getNumber = (value: JsonValue | undefined): number | undefined =>
-      typeof value === 'number' ? value : undefined;
-
-    if (toolName === 'search_knowledge_base') {
-      try {
-        if (await vectorStore.hasFilesToIndex(filesRef.current)) {
-          await handleIndexKnowledgeBase();
-        }
-        const maxResultsValue = getNumber(args.maxResults) ?? 5;
-        const maxResults = Math.min(maxResultsValue, 8);
-        const ragResponse = await vectorStore.searchWithResults(
-          getString(args.query),
-          aiConfig,
-          maxResults
-        );
-
-        const result: JsonValue = {
-          success: true,
-          query: getString(args.query),
-          matchCount: ragResponse.results.length,
-          sources: ragResponse.results.map(r => ({
-            file: r.chunk.metadata.fileName,
-            relevance: Math.round(r.score * 100) + '%',
-            excerpt: r.chunk.text.substring(0, 100).replace(/\n/g, ' ').trim() + '...'
-          })),
-          summary: ragResponse.context.length > 500
-            ? ragResponse.context.substring(0, 500) + '...(truncated)'
-            : ragResponse.context
-        };
-        return { success: true, result, formatted: JSON.stringify(result) };
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : 'Unknown error';
-        return { success: false, result: { error: message }, formatted: JSON.stringify({ success: false, error: message }) };
-      }
-    }
-
-    if (toolName === 'create_file') {
-      const filename = getString(args.filename);
-      const content = getString(args.content);
-      if (!filename) {
-        return { success: false, result: { error: 'Missing filename' }, formatted: JSON.stringify({ success: false, error: 'Missing filename' }) };
-      }
-      const newFile: MarkdownFile = {
-        id: generateId(),
-        name: filename.replace('.md', ''),
-        content,
-        lastModified: Date.now(),
-        path: filename
-      };
-      setFiles(prev => [...prev, newFile]);
-      const result: JsonValue = { success: true, message: `Created file: ${filename}` };
-      return { success: true, result, formatted: JSON.stringify(result) };
-    }
-
-    if (toolName === 'update_file') {
-      const filename = getString(args.filename);
-      const content = getString(args.content);
-      const targetFile = filesRef.current.find(f =>
-        f.name === filename.replace('.md', '') ||
-        f.name === filename ||
-        f.path === filename ||
-        f.path?.endsWith(filename)
-      );
-
-      if (targetFile) {
-        setFiles(prev => prev.map(f =>
-          f.id === targetFile.id
-            ? { ...f, content, lastModified: Date.now() }
-            : f
-        ));
-        const result: JsonValue = { success: true, message: `Updated file: ${filename}` };
-        return { success: true, result, formatted: JSON.stringify(result) };
-      }
-      return { success: false, result: { error: 'File not found' }, formatted: JSON.stringify({ success: false, error: 'File not found' }) };
-    }
-
-    if (toolName === 'delete_file') {
-      const filename = getString(args.filename);
-      const targetFile = filesRef.current.find(f =>
-        f.name === filename.replace('.md', '') ||
-        f.name === filename ||
-        f.path === filename ||
-        f.path?.endsWith(filename)
-      );
-
-      if (targetFile) {
-        setFiles(prev => prev.filter(f => f.id !== targetFile.id));
-        const result: JsonValue = { success: true, message: `Deleted file: ${filename}` };
-        return { success: true, result, formatted: JSON.stringify(result) };
-      }
-      return { success: false, result: { error: 'File not found' }, formatted: JSON.stringify({ success: false, error: 'File not found' }) };
-    }
-
-    if (toolName === 'read_file') {
-      const path = getString(args.path);
-      const targetFile = filesRef.current.find(f =>
-        f.name === path.replace('.md', '') ||
-        f.name === path ||
-        f.path === path ||
-        f.path?.endsWith(path)
-      );
-
-      if (!targetFile) {
-        const availableFiles = filesRef.current.map(f => f.name || f.path).filter(Boolean);
-        return {
-          success: false,
-          result: { error: 'File not found', availableFiles },
-          formatted: JSON.stringify({ error: 'File not found', availableFiles })
-        };
-      }
-
-      const lines = targetFile.content.split('\n');
-      const startLineValue = getNumber(args.startLine) ?? 1;
-      const endLineValue = getNumber(args.endLine) ?? lines.length;
-      const startLine = Math.max(0, startLineValue - 1);
-      const endLine = Math.min(lines.length, endLineValue);
-      const selectedContent = lines.slice(startLine, endLine).join('\n');
-
-      const result: JsonValue = {
-        success: true,
-        fileName: targetFile.name || targetFile.path,
-        content: selectedContent,
-        lineRange: { start: startLine + 1, end: endLine },
-        totalLines: lines.length
-      };
-      return { success: true, result, formatted: JSON.stringify(result, null, 2) };
-    }
-
-    if (toolName === 'search_files') {
-      const keyword = getString(args.keyword);
-      const filePattern = getString(args.filePattern);
-      if (!keyword) {
-        return {
-          success: false,
-          result: { error: 'Missing keyword parameter' },
-          formatted: JSON.stringify({ error: 'Missing keyword parameter' })
-        };
-      }
-
-      const results: Array<{ fileName: string; matches: Array<{ line: number; content: string }> }> = [];
-
-      for (const file of filesRef.current) {
-        const fileName = file.name || file.path || '';
-        if (filePattern && !fileName.includes(filePattern)) continue;
-
-        const lines = file.content.split('\n');
-        const matches: Array<{ line: number; content: string }> = [];
-
-        lines.forEach((line, idx) => {
-          if (line.toLowerCase().includes(keyword.toLowerCase())) {
-            matches.push({
-              line: idx + 1,
-              content: line.trim()
-            });
-          }
-        });
-
-        if (matches.length > 0) {
-          results.push({
-            fileName,
-            matches: matches.slice(0, 10)
-          });
-        }
-      }
-
-      const result: JsonValue = {
-        success: true,
-        keyword,
-        filePattern: filePattern || null,
-        totalFiles: results.length,
-        totalMatches: results.reduce((sum, r) => sum + r.matches.length, 0),
-        results: results.slice(0, 20)
-      };
-      return { success: true, result, formatted: JSON.stringify(result, null, 2) };
-    }
-
-    try {
-      const mcpResult = await window.electronAPI?.mcp?.callTool(toolName, args);
-      if (mcpResult?.success) {
-        return { success: true, result: mcpResult.result as JsonValue, formatted: JSON.stringify(mcpResult.result, null, 2) };
-      }
-      const errorMessage = mcpResult?.error || 'Unknown error';
-      return { success: false, result: { error: errorMessage }, formatted: `Error: ${errorMessage}` };
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      return { success: false, result: { error: message }, formatted: `Error: ${message}` };
-    }
-  }, [aiConfig, filesRef, handleIndexKnowledgeBase, setFiles, vectorStore]);
 
   const handleStopStreaming = useCallback(() => {
     stopRequestedRef.current = true;
@@ -434,7 +385,14 @@ export const useAIWorkflow = ({
     abortControllerRef.current?.abort();
     setIsStreaming(false);
     setAiState(prev => ({ ...prev, isThinking: false }));
-  }, [abortControllerRef, flushStreamingMessageUpdate, setAiState, setIsStreaming]);
+    markAssistantRuntimeInspectionCancelled('Streaming stopped by user.');
+  }, [
+    abortControllerRef,
+    flushStreamingMessageUpdate,
+    markAssistantRuntimeInspectionCancelled,
+    setAiState,
+    setIsStreaming,
+  ]);
 
   const handleChatMessage = useCallback(async (text: string) => {
     const userMsg: ChatMessage = {
@@ -470,28 +428,72 @@ export const useAIWorkflow = ({
       }
 
       const requestId = generateId();
-      const sessionId = `app-chat-${requestId}`;
+      const resolvedSession = resolveAssistantSession({
+        caller: {
+          callerId: 'in-app-assistant',
+          surface: 'app-chat',
+          transport: 'in-app',
+          routeKey: assistantSession?.route.routeKey,
+        },
+        metadata: assistantSession?.metadata,
+        notebookId: assistantSession?.notebookId ?? 'in-app-notebook',
+        now: userMsg.timestamp,
+        participantIds: assistantSession?.route.participantIds,
+        participants: assistantSession?.route.participants,
+        replyContext: assistantSession?.replyContext,
+        routeKind: assistantSession?.route.kind,
+        routeMetadata: assistantSession?.route.metadata,
+        session: assistantSession ? {
+          scope: assistantSession.scope,
+          origin: assistantSession.origin,
+          parentSessionId: assistantSession.parentSessionId,
+        } : undefined,
+        sessionId: assistantSession?.sessionId,
+        startedAt: assistantSession?.startedAt,
+        threadId: assistantSession?.threadId ?? assistantSession?.route.threadId,
+        title: assistantSession?.title ?? 'Primary App Session',
+        transport: {
+          channel: 'electron-ipc',
+        },
+        updatedAt: userMsg.timestamp,
+        workspaceId: assistantSession?.workspaceId,
+      });
+      const runtimeSession = {
+        ...resolvedSession.session,
+        lastMessageAt: userMsg.timestamp,
+        updatedAt: userMsg.timestamp,
+      };
+
+      if (saveAssistantSession) {
+        await saveAssistantSession(runtimeSession);
+      }
+
+      const notebookAttachments = filesRef.current.map(toNotebookAttachment);
       const runtimeRequest = {
         requestId,
         session: {
-          sessionId,
-          scope: 'notebook' as const,
-          origin: 'app' as const,
+          sessionId: runtimeSession.sessionId,
+          threadId: runtimeSession.threadId,
+          scope: runtimeSession.scope,
+          origin: runtimeSession.origin,
+          parentSessionId: runtimeSession.parentSessionId,
         },
         caller: {
           callerId: 'in-app-assistant',
           surface: 'app-chat' as const,
           transport: 'in-app' as const,
+          routeKey: resolvedSession.route.routeKey,
           language,
           capabilities: {
             streaming: Boolean(aiConfig.enableStreaming),
             toolStatus: true,
-            multimodalInput: false,
+            multimodalInput: true,
           },
         },
         modelConfig: aiConfig,
         input: {
           prompt: text,
+          attachments: notebookAttachments,
           messages: historyForAI.map(message => ({
             role: message.role,
             content: message.content,
@@ -500,22 +502,30 @@ export const useAIWorkflow = ({
           locale: language,
         },
         notebook: {
-          notebookId: 'in-app-notebook',
+          notebookId: runtimeSession.notebookId ?? 'in-app-notebook',
+          workspaceId: runtimeSession.workspaceId,
           activeFileId: filesRef.current[0]?.id,
           selectedFileIds: filesRef.current.map(file => file.id),
+          attachments: notebookAttachments,
           knowledgeQuery: text,
         },
       };
 
-      for await (const event of runtimeRef.current!.execute(runtimeRequest, {
-        toolsCallback: async (toolName, args) => {
-          const toolResult = await executeToolUnified(toolName, args);
-          return toolResult.result;
-        },
-      })) {
+      beginAssistantRuntimeInspection({
+        requestId,
+        session: runtimeRequest.session,
+        routeKey: runtimeRequest.caller.routeKey,
+        callerId: runtimeRequest.caller.callerId,
+        surface: runtimeRequest.caller.surface,
+        transport: runtimeRequest.caller.transport,
+      });
+
+      for await (const event of runtimeRef.current!.execute(runtimeRequest)) {
         if (stopRequestedRef.current) {
           break;
         }
+
+        applyRuntimeInspectionEvent(event);
 
         if (event.type === 'stream-delta') {
           scheduleStreamingMessageUpdate(aiMessageId, event.accumulatedText);
@@ -537,9 +547,37 @@ export const useAIWorkflow = ({
           continue;
         }
 
+        if (event.type === 'media-status') {
+          updateAssistantToolCall(
+            aiMessageId,
+            toUiMediaToolCall(
+              event.mediaId,
+              event.kind,
+              event.status,
+              event.detail,
+              event.metadata,
+              event.error?.message,
+            ),
+          );
+          continue;
+        }
+
         if (event.type === 'result') {
+          applyRuntimeInspectionResult(event.result);
           flushStreamingMessageUpdate();
-          applyRuntimeResult(aiMessageId, event.result.outputText, event.result.toolCalls);
+          applyRuntimeResult(
+            aiMessageId,
+            event.result.outputText,
+            event.result.toolCalls,
+            event.result.metadata,
+          );
+          if (saveAssistantSession) {
+            await saveAssistantSession({
+              ...runtimeSession,
+              updatedAt: event.result.completedAt,
+              lastMessageAt: event.result.completedAt,
+            });
+          }
           continue;
         }
 
@@ -552,6 +590,7 @@ export const useAIWorkflow = ({
       const message = err instanceof Error ? err.message : 'Chat error';
       console.error('Chat error:', err);
       setAiState({ isThinking: false, message: null, error: message });
+      markAssistantRuntimeInspectionError(message);
 
       setChatMessages(prev => prev.map(msg =>
         msg.id === aiMessageId
@@ -565,11 +604,11 @@ export const useAIWorkflow = ({
       stopRequestedRef.current = false;
     }
   }, [
+    assistantSession,
     abortControllerRef,
     aiConfig,
     applyRuntimeResult,
     chatMessages,
-    executeToolUnified,
     filesRef,
     flushStreamingMessageUpdate,
     language,
@@ -577,6 +616,11 @@ export const useAIWorkflow = ({
     resetStreamYield,
     resetStreamingToolCalls,
     scheduleStreamingMessageUpdate,
+    saveAssistantSession,
+    applyRuntimeInspectionEvent,
+    applyRuntimeInspectionResult,
+    beginAssistantRuntimeInspection,
+    markAssistantRuntimeInspectionError,
     setAiState,
     setChatMessages,
     setIsStreaming,
@@ -687,6 +731,7 @@ export const useAIWorkflow = ({
   }, [performCompact, setCompactMemoryCandidate, setShowCompactMemoryPrompt]);
 
   return {
+    assistantRuntimeInspection,
     handleChatMessage,
     handleStopStreaming,
     handleCompactChat,

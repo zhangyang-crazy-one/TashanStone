@@ -74,11 +74,11 @@ async function collectExecution(
     if (next.done) {
       return {
         events,
-        result: next.value,
+        result: next.value as AssistantRuntimeResult,
       };
     }
 
-    events.push(next.value);
+    events.push(next.value as AssistantRuntimeEvent);
   }
 }
 
