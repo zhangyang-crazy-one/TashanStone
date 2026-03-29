@@ -31,10 +31,10 @@ This roadmap turns TashanStone into a notebook-native assistant platform by firs
   4. More than one caller type can use the same runtime contract without copying orchestration logic.
 **Plans**: 4 plans
 Plans:
-- [x] 01-01-PLAN.md — Define the shared runtime contracts and the wireframe-aligned settings descriptor catalog.
-- [x] 01-02-PLAN.md — Implement the runtime execution core and notebook-context assembly on top of existing AI/context services.
-- [x] 01-03-PLAN.md — Migrate one real in-app caller and wire minimal config persistence/shell support for the new schema.
-- [x] 01-04-PLAN.md — Register production notebook/workspace/knowledge context adapters and wire them into the runtime-backed in-app caller.
+- [x] 01-01-PLAN.md — Define the shared runtime contracts and the corrected TUI-aligned settings descriptor catalog, including separate Plugins and Skills sections.
+- [x] 01-02-PLAN.md — Implement the runtime execution core and adapter-driven notebook context assembly on top of existing AI/context services.
+- [x] 01-03-PLAN.md — Persist the Phase 01 assistant config and wire a descriptor-aware settings shell without expanding into full page delivery.
+- [x] 01-04-PLAN.md — Ship production notebook/workspace/knowledge adapters and migrate the in-app AI flow into a runtime caller adapter.
 
 ### Phase 2: Session Routing and Persistence
 **Goal**: Conversations run as isolated assistant sessions with consistent routing, activation, and persistence rules across surfaces.
