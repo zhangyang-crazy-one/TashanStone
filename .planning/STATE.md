@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: completed
-stopped_at: Completed 01-04-PLAN.md
-last_updated: "2026-03-28T05:34:06.675Z"
-last_activity: 2026-03-28
+status: executing
+stopped_at: Completed 03-01-PLAN.md
+last_updated: "2026-03-29T17:11:58.324Z"
+last_activity: 2026-03-29
 progress:
   total_phases: 7
-  completed_phases: 1
-  total_plans: 4
-  completed_plans: 4
+  completed_phases: 3
+  total_plans: 16
+  completed_plans: 13
   percent: 100
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-03-27)
 
 **Core value:** TashanStone must provide an OpenClaw-class assistant core that feels native to the notebook product while remaining reusable across in-app and channel-based conversations.
-**Current focus:** Phase 01 — assistant-runtime-foundation (complete)
+**Current focus:** Phase 04 — in-app-assistant-parity
 
 ## Current Position
 
-Phase: 2
-Plan: Not started
-Status: Phase complete
-Last activity: 2026-03-28
+Phase: 04 (in-app-assistant-parity) — EXECUTING
+Plan: 2 of 4
+Status: Ready to execute
+Last activity: 2026-03-29
 
 Progress: [██████████] 100%
 
@@ -55,6 +55,7 @@ Progress: [██████████] 100%
 | Phase 01-assistant-runtime-foundation P02 | 8min | 2 tasks | 6 files |
 | Phase 01-assistant-runtime-foundation P03 | 16min | 2 tasks | 9 files |
 | Phase 01-assistant-runtime-foundation P04 | 6min | 2 tasks | 6 files |
+| Phase 03 P01 | 6 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -76,6 +77,8 @@ Recent decisions affecting current work:
 - [Phase 01-assistant-runtime-foundation]: Ship notebook/workspace/knowledge adapter builders inside the runtime layer so production callers register real context sources instead of test-local adapters.
 - [Phase 01-assistant-runtime-foundation]: Keep useAIWorkflow as a caller adapter by passing refs and vector-search callbacks into createNotebookContextAssembler rather than re-owning context assembly in the hook.
 - [Phase 01-assistant-runtime-foundation]: Resolve knowledge context with the latest AI config through a ref so runtime-backed searches stay aligned with the current provider settings.
+- [Phase 03]: Keep Phase 3 tool, media, and delivery contracts in one dedicated runtime module and re-export that module from the assistant-runtime barrel. — This gives downstream plans one stable import path and avoids callback or attachment shape drift across callers.
+- [Phase 03]: Represent media processing visibility through transport-neutral runtime media-status events instead of channel-specific payload fields. — The status seam now works for in-app and future channel adapters without hardcoding WhatsApp or QQ assumptions.
 
 ### Pending Todos
 
@@ -87,6 +90,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-28T05:22:40.471Z
-Stopped at: Completed 01-04-PLAN.md
+Last session: 2026-03-29T15:21:12.644Z
+Stopped at: Completed 03-01-PLAN.md
 Resume file: None

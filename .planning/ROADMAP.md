@@ -11,7 +11,7 @@ This roadmap turns TashanStone into a notebook-native assistant platform by firs
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
 - [x] **Phase 1: Assistant Runtime Foundation** - Establish the shared notebook-native runtime that all assistant surfaces will use.
-- [ ] **Phase 2: Session Routing and Persistence** - Introduce isolated sessions, routing rules, and durable conversation state.
+- [x] **Phase 2: Session Routing and Persistence** - Introduce isolated sessions, routing rules, and durable conversation state. (completed 2026-03-29)
 - [ ] **Phase 3: Tools and Multimodal Delivery** - Unify tool execution, media normalization, and outbound delivery behavior.
 - [ ] **Phase 4: In-App Assistant Parity** - Move the desktop assistant experience onto the shared runtime without regressing notebook workflows.
 - [ ] **Phase 5: WhatsApp Channel Launch** - Deliver the first external channel on top of the shared runtime with reply metadata support.
@@ -45,7 +45,12 @@ Plans:
   2. Direct conversations and group or channel conversations stay isolated while mapping to the correct session model.
   3. Inbound messages only trigger the assistant when configured activation and routing rules are met.
   4. Session history, reply context, and state remain available when the same conversation continues across in-app and channel-backed surfaces.
-**Plans**: TBD
+**Plans**: 4 plans
+Plans:
+- [x] 02-01-PLAN.md — Define canonical assistant session, route, activation, and reply-context contracts plus the persistence schema baseline.
+- [x] 02-02-PLAN.md — Implement the shared session repository and session-oriented storage APIs across Electron and web backends.
+- [x] 02-03-PLAN.md — Build the transport-neutral session router and activation policy layer for direct, grouped, and future channel routes.
+- [x] 02-04-PLAN.md — Wire the app onto stable assistant sessions with session-aware history and runtime session reuse.
 
 ### Phase 3: Tools and Multimodal Delivery
 **Goal**: The shared runtime can call TashanStone capabilities, understand multimodal inputs, and deliver responses with visible execution status.
@@ -56,7 +61,12 @@ Plans:
   2. Text, images, audio, and documents are normalized into a consistent assistant input model before runtime execution.
   3. Outbound assistant responses can be chunked and delivered according to configurable delivery policy.
   4. Users and operators can see tool progress, media handling status, and failures instead of silent degradation.
-**Plans**: TBD
+**Plans**: 4 plans
+Plans:
+- [x] 03-01-PLAN.md — Define the shared Phase 3 contract layer for tool execution, multimodal input, delivery policy, and visible runtime status.
+- [ ] 03-02-PLAN.md — Build the runtime-owned unified tool executor and tool-status propagation layer.
+- [ ] 03-03-PLAN.md — Implement multimodal input normalization plus provider-input adaptation behind the shared runtime seam.
+- [ ] 03-04-PLAN.md — Add reusable, channel-configurable delivery policy chunking and wire the in-app assistant/status UI onto the richer runtime events.
 
 ### Phase 4: In-App Assistant Parity
 **Goal**: The in-app assistant interface runs on the shared runtime and remains compatible with notebook-centric workflows.
@@ -66,7 +76,12 @@ Plans:
   1. A user can chat in the in-app assistant interface through the shared runtime and receive streamed responses.
   2. A user can inspect session state, streaming state, and assembled assistant context from the in-app view.
   3. A user can keep using notebook editing, knowledge retrieval, and existing in-app workflows after the runtime extraction.
-**Plans**: TBD
+**Plans**: 4 plans
+Plans:
+- [x] 04-01-PLAN.md — Define inspectable runtime/session/context parity contracts and an app-facing inspection bridge.
+- [ ] 04-02-PLAN.md — Replace placeholder notebook-context assembly with real workspace state and preserve runtime-backed notebook workflows.
+- [ ] 04-03-PLAN.md — Add session-switching and runtime inspection UI to the existing in-app assistant surface.
+- [ ] 04-04-PLAN.md — Lock notebook workflow compatibility and final in-app parity behavior with targeted regression coverage.
 **UI hint**: yes
 
 ### Phase 5: WhatsApp Channel Launch
@@ -104,9 +119,9 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Assistant Runtime Foundation | 4/4 | Complete   | 2026-03-28 |
-| 2. Session Routing and Persistence | 0/TBD | Not started | - |
-| 3. Tools and Multimodal Delivery | 0/TBD | Not started | - |
-| 4. In-App Assistant Parity | 0/TBD | Not started | - |
+| 2. Session Routing and Persistence | 4/4 | Complete   | 2026-03-29 |
+| 3. Tools and Multimodal Delivery | 0/4 | Not started | - |
+| 4. In-App Assistant Parity | 0/4 | Not started | - |
 | 5. WhatsApp Channel Launch | 0/TBD | Not started | - |
 | 6. QQ Channel and Adapter Generalization | 0/TBD | Not started | - |
 | 7. Safety and Operations Controls | 0/TBD | Not started | - |
