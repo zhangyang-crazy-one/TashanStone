@@ -15,6 +15,8 @@ export type AssistantRuntimeLifecyclePhase =
   | 'completed'
   | 'cancelled';
 export type AssistantRuntimeToolStatus = 'pending' | 'running' | 'success' | 'error';
+export type AssistantRuntimeMediaStatus = 'pending' | 'processing' | 'ready' | 'error';
+export type AssistantMediaKind = 'text' | 'image' | 'audio' | 'document' | 'selection';
 
 export interface AssistantSessionRef {
   sessionId: string;
@@ -183,9 +185,20 @@ export interface AssistantRuntimeErrorEvent extends AssistantRuntimeEventBase {
   error: AssistantRuntimeError;
 }
 
+export interface AssistantRuntimeMediaStatusEvent extends AssistantRuntimeEventBase {
+  type: 'media-status';
+  mediaId: string;
+  kind: AssistantMediaKind;
+  status: AssistantRuntimeMediaStatus;
+  detail?: string;
+  error?: AssistantRuntimeError;
+  metadata?: Record<string, JsonValue>;
+}
+
 export type AssistantRuntimeEvent =
   | AssistantRuntimeLifecycleEvent
   | AssistantRuntimeStreamDeltaEvent
   | AssistantRuntimeToolStatusEvent
   | AssistantRuntimeResultEvent
-  | AssistantRuntimeErrorEvent;
+  | AssistantRuntimeErrorEvent
+  | AssistantRuntimeMediaStatusEvent;
