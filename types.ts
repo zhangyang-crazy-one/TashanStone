@@ -574,12 +574,29 @@ export type {
   AssistantRuntimeEvent,
   AssistantRuntimeInput,
   AssistantRuntimeInputMessage,
+  AssistantRuntimeInspectionContext,
+  AssistantRuntimeInspectionContextSection,
+  AssistantRuntimeInspectionLifecycle,
+  AssistantRuntimeInspectionMetadata,
+  AssistantRuntimeInspectionSession,
+  AssistantRuntimeInspectionStreaming,
   AssistantRuntimeRequest,
   AssistantRuntimeResult,
   AssistantRuntimeToolInvocation,
   AssistantRuntimeTransportMetadata,
   AssistantSessionRef,
 } from './src/services/assistant-runtime/types';
+
+export type {
+  AssistantActivationContext,
+  AssistantActivationDecision,
+  AssistantActivationPolicy,
+  AssistantReplyContextRef,
+  AssistantRouteParticipant,
+  AssistantRouteKind,
+  AssistantSessionRecord,
+  AssistantSessionStatus,
+} from './src/services/assistant-runtime/sessionTypes';
 
 // ========================
 // Global Window Extensions

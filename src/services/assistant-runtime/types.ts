@@ -113,6 +113,54 @@ export interface AssistantContextPayload {
   metadata?: Record<string, JsonValue>;
 }
 
+export interface AssistantRuntimeInspectionSession {
+  sessionId: string;
+  scope: AssistantSessionScope;
+  origin: AssistantSessionOrigin;
+  threadId?: string;
+  parentSessionId?: string;
+  routeKey?: string;
+  callerId?: string;
+  surface?: AssistantCallerSurface;
+  transport?: AssistantCallerTransport;
+}
+
+export interface AssistantRuntimeInspectionLifecycle {
+  phase: AssistantRuntimeLifecyclePhase;
+  detail?: string;
+}
+
+export interface AssistantRuntimeInspectionStreaming {
+  streamed: boolean;
+  deltaCount: number;
+  accumulatedTextLength: number;
+  lastDelta?: string;
+}
+
+export interface AssistantRuntimeInspectionContextSection {
+  id: string;
+  label: string;
+  source: AssistantContextAdapterKind;
+  preview: string;
+  charCount: number;
+  metadata?: Record<string, JsonValue>;
+}
+
+export interface AssistantRuntimeInspectionContext {
+  adapterIds: string[];
+  sources: AssistantContextAdapterKind[];
+  sectionCount: number;
+  sections: AssistantRuntimeInspectionContextSection[];
+}
+
+export interface AssistantRuntimeInspectionMetadata {
+  requestId: string;
+  session: AssistantRuntimeInspectionSession;
+  lifecycle: AssistantRuntimeInspectionLifecycle;
+  streaming: AssistantRuntimeInspectionStreaming;
+  context: AssistantRuntimeInspectionContext;
+}
+
 export interface AssistantContextAdapter {
   adapterId: string;
   kind: AssistantContextAdapterKind;
@@ -144,6 +192,7 @@ export interface AssistantRuntimeResult {
   completedAt: number;
   toolCalls?: AssistantRuntimeToolInvocation[];
   error?: AssistantRuntimeError;
+  inspection?: AssistantRuntimeInspectionMetadata;
   metadata?: Record<string, JsonValue>;
 }
 
@@ -151,6 +200,7 @@ interface AssistantRuntimeEventBase {
   requestId: string;
   sessionId: string;
   timestamp: number;
+  inspection?: AssistantRuntimeInspectionMetadata;
 }
 
 export interface AssistantRuntimeLifecycleEvent extends AssistantRuntimeEventBase {
