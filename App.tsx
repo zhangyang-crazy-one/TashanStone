@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback, useMemo } from 'react';
 
 import type { CodeMirrorEditorRef, MarkdownFile } from './types';
 
@@ -18,6 +18,7 @@ import { useKeyboardShortcuts } from '@/src/app/hooks/useKeyboardShortcuts';
 import { useWikiLinks } from '@/src/app/hooks/useWikiLinks';
 import { useAppServices } from '@/src/app/hooks/useAppServices';
 import { useAppConfig } from '@/src/app/hooks/useAppConfig';
+import { useAssistantSessions } from '@/src/app/hooks/useAssistantSessions';
 import { useChatHistory } from '@/src/app/hooks/useChatHistory';
 import { useAppNotifications } from '@/src/app/hooks/useAppNotifications';
 import { useAppShellState } from '@/src/app/hooks/useAppShellState';
@@ -125,7 +126,13 @@ const App: React.FC = () => {
 
   const { isAuthenticated, setIsAuthenticated, isCheckingAuth } = useAuthState({ aiConfig });
 
-  const { chatMessages, setChatMessages } = useChatHistory();
+  const {
+    activeSession,
+    activeSessionId,
+    saveSession: saveAssistantSession
+  } = useAssistantSessions();
+
+  const { chatMessages, setChatMessages } = useChatHistory(activeSessionId);
 
   const { vectorStore, handleIndexKnowledgeBase } = useKnowledgeBase({
     aiConfig,
@@ -316,35 +323,6 @@ const App: React.FC = () => {
   // --- New Features ---
 
   const {
-    handleChatMessage,
-    handleStopStreaming,
-    handleCompactChat,
-    handleCompactMemorySave,
-    handleCompactMemorySkip
-  } = useAIWorkflow({
-    aiConfig,
-    chatMessages,
-    setChatMessages,
-    setAiState,
-    showToast,
-    vectorStore,
-    filesRef,
-    setFiles,
-    handleIndexKnowledgeBase,
-    scheduleStreamingMessageUpdate,
-    flushStreamingMessageUpdate,
-    maybeYieldToBrowser,
-    setIsStreaming,
-    abortControllerRef,
-    resetStreamYield,
-    setShowCompactMemoryPrompt,
-    compactMemoryCandidate,
-    setCompactMemoryCandidate,
-    setIsCompactSaving,
-    language: lang
-  });
-
-  const {
     handleOpenFolder,
     handleImportFolderFiles,
     handleImportPdf
@@ -447,8 +425,11 @@ const App: React.FC = () => {
     selectedText,
     tagSuggestionContent,
     tagSuggestionExistingTags,
+    workspaceContext,
     viewRouterProps
   } = useAppWorkspaceState({
+    activeFileId,
+    getActivePaneFileId,
     isLinkInsertOpen,
     getActivePaneContent,
     viewMode,
@@ -488,6 +469,43 @@ const App: React.FC = () => {
     splitMode,
     codeMirrorRef,
     language: lang
+  });
+
+  const assistantWorkspaceContext = useMemo(() => ({
+    ...workspaceContext,
+    workspaceId: activeSession?.workspaceId ?? activeSessionId ?? 'workspace:in-app',
+  }), [activeSession?.workspaceId, activeSessionId, workspaceContext]);
+
+  const {
+    handleChatMessage,
+    handleStopStreaming,
+    handleCompactChat,
+    handleCompactMemorySave,
+    handleCompactMemorySkip
+  } = useAIWorkflow({
+    aiConfig,
+    assistantSession: activeSession,
+    chatMessages,
+    setChatMessages,
+    setAiState,
+    showToast,
+    vectorStore,
+    filesRef,
+    setFiles,
+    handleIndexKnowledgeBase,
+    scheduleStreamingMessageUpdate,
+    flushStreamingMessageUpdate,
+    maybeYieldToBrowser,
+    setIsStreaming,
+    abortControllerRef,
+    resetStreamYield,
+    setShowCompactMemoryPrompt,
+    compactMemoryCandidate,
+    setCompactMemoryCandidate,
+    setIsCompactSaving,
+    saveAssistantSession,
+    language: lang,
+    workspaceContext: assistantWorkspaceContext,
   });
 
   const appShellProps = useAppShellState({

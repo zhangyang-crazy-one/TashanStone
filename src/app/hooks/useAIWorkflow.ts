@@ -60,6 +60,12 @@ interface UseAIWorkflowOptions {
   setIsCompactSaving: Dispatch<SetStateAction<boolean>>;
   saveAssistantSession?: (session: AssistantSessionRecord) => Promise<AssistantSessionRecord>;
   language: LanguageCode;
+  workspaceContext?: {
+    workspaceId?: string;
+    activeFileId?: string;
+    selectedFileIds?: string[];
+    selectedText?: string;
+  };
 }
 
 interface UseAIWorkflowResult {
@@ -220,7 +226,8 @@ export const useAIWorkflow = ({
   setCompactMemoryCandidate,
   setIsCompactSaving,
   saveAssistantSession,
-  language
+  language,
+  workspaceContext,
 }: UseAIWorkflowOptions): UseAIWorkflowResult => {
   const {
     upsertToolCall: upsertStreamingToolCall,
@@ -325,6 +332,32 @@ export const useAIWorkflow = ({
     });
   }
   const stopRequestedRef = useRef(false);
+
+  const resolveWorkspaceFiles = useCallback((files: MarkdownFile[]) => {
+    const activeFile = findNotebookFile(files, workspaceContext?.activeFileId);
+    const selectedFiles = (workspaceContext?.selectedFileIds ?? [])
+      .map(fileId => findNotebookFile(files, fileId))
+      .filter((file): file is MarkdownFile => Boolean(file));
+
+    const dedupedSelectedFiles = selectedFiles.filter((file, index, current) =>
+      current.findIndex(candidate => candidate.id === file.id) === index,
+    );
+
+    const scopedFiles = dedupedSelectedFiles.length > 0
+      ? dedupedSelectedFiles
+      : activeFile
+        ? [activeFile]
+        : files[0]
+          ? [files[0]]
+          : [];
+
+    const resolvedActiveFile = activeFile ?? scopedFiles[0];
+
+    return {
+      activeFile: resolvedActiveFile,
+      scopedFiles,
+    };
+  }, [workspaceContext?.activeFileId, workspaceContext?.selectedFileIds]);
 
   const updateAssistantToolCall = useCallback((messageId: string, toolCall: ToolCall) => {
     upsertStreamingToolCall(toolCall);
@@ -468,7 +501,8 @@ export const useAIWorkflow = ({
         await saveAssistantSession(runtimeSession);
       }
 
-      const notebookAttachments = filesRef.current.map(toNotebookAttachment);
+      const { activeFile, scopedFiles } = resolveWorkspaceFiles(filesRef.current);
+      const notebookAttachments = scopedFiles.map(toNotebookAttachment);
       const runtimeRequest = {
         requestId,
         session: {
@@ -503,9 +537,10 @@ export const useAIWorkflow = ({
         },
         notebook: {
           notebookId: runtimeSession.notebookId ?? 'in-app-notebook',
-          workspaceId: runtimeSession.workspaceId,
-          activeFileId: filesRef.current[0]?.id,
-          selectedFileIds: filesRef.current.map(file => file.id),
+          workspaceId: workspaceContext?.workspaceId ?? runtimeSession.workspaceId,
+          activeFileId: activeFile?.id,
+          selectedFileIds: scopedFiles.map(file => file.id),
+          selectedText: workspaceContext?.selectedText,
           attachments: notebookAttachments,
           knowledgeQuery: text,
         },
@@ -621,10 +656,13 @@ export const useAIWorkflow = ({
     applyRuntimeInspectionResult,
     beginAssistantRuntimeInspection,
     markAssistantRuntimeInspectionError,
+    resolveWorkspaceFiles,
     setAiState,
     setChatMessages,
     setIsStreaming,
     updateAssistantToolCall,
+    workspaceContext?.selectedText,
+    workspaceContext?.workspaceId,
   ]);
 
   const performCompact = useCallback(async () => {

@@ -10,6 +10,8 @@ type ViewRouterInputs = Omit<AppViewRouterProps, 'codeMirrorRef'> & {
 };
 
 interface UseAppWorkspaceStateOptions extends ViewRouterInputs {
+  activeFileId: string;
+  getActivePaneFileId: () => string | undefined;
   isLinkInsertOpen: boolean;
   getActivePaneContent: () => string;
 }
@@ -18,10 +20,17 @@ interface UseAppWorkspaceStateResult {
   selectedText: string;
   tagSuggestionContent: string;
   tagSuggestionExistingTags: string[];
+  workspaceContext: {
+    activeFileId?: string;
+    selectedFileIds: string[];
+    selectedText?: string;
+  };
   viewRouterProps: AppViewRouterProps;
 }
 
 export const useAppWorkspaceState = ({
+  activeFileId,
+  getActivePaneFileId,
   isLinkInsertOpen,
   getActivePaneContent,
   viewMode,
@@ -70,10 +79,34 @@ export const useAppWorkspaceState = ({
   }, [codeMirrorRef]);
 
   const selectedText = useMemo(() => getSelectedText(), [getSelectedText, isLinkInsertOpen]);
+  const workspaceActiveFileId = useMemo(
+    () => getActivePaneFileId() ?? activeFileId,
+    [activeFileId, getActivePaneFileId],
+  );
+  const selectedFileIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (workspaceActiveFileId) {
+      ids.add(workspaceActiveFileId);
+    }
+    openPanes.forEach(pane => {
+      if (pane.fileId) {
+        ids.add(pane.fileId);
+      }
+    });
+    return Array.from(ids);
+  }, [openPanes, workspaceActiveFileId]);
   const tagSuggestionContent = getActivePaneContent();
   const tagSuggestionExistingTags = useMemo(
     () => extractTags(tagSuggestionContent),
     [tagSuggestionContent]
+  );
+  const workspaceContext = useMemo(
+    () => ({
+      activeFileId: workspaceActiveFileId,
+      selectedFileIds,
+      selectedText: selectedText || undefined,
+    }),
+    [selectedFileIds, selectedText, workspaceActiveFileId],
   );
 
   const viewRouterProps = useMemo<AppViewRouterProps>(() => ({
@@ -158,6 +191,7 @@ export const useAppWorkspaceState = ({
     selectedText,
     tagSuggestionContent,
     tagSuggestionExistingTags,
+    workspaceContext,
     viewRouterProps
   };
 };
