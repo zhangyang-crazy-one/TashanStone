@@ -370,8 +370,8 @@ export const translations = {
     },
     assistantSettings: {
       phaseLabels: {
-        phase1Ready: 'Phase 1 ready',
-        laterPhase: 'Later phase'
+        phase1Ready: 'Available now',
+        laterPhase: 'Later delivery'
       },
       surfaces: {
         operator: {
@@ -816,8 +816,8 @@ export const translations = {
     },
     assistantSettings: {
       phaseLabels: {
-        phase1Ready: '第一阶段可用',
-        laterPhase: '后续阶段'
+        phase1Ready: '当前可用',
+        laterPhase: '后续交付'
       },
       surfaces: {
         operator: {
@@ -844,7 +844,7 @@ export const translations = {
           skills: { title: '技能', help: '供代理使用的技能注册表、项目技能来源与工作流能力。' },
           agents: { title: '代理', help: '超出第一阶段运行时外壳的未来多代理协同界面。' },
           scheduling: { title: '调度', help: '延后的任务窗口、后台触发器与计划执行节奏。' },
-          channels: { title: '渠道', help: '后续阶段接入的 WhatsApp、QQ Channel 等外部投递适配器。' },
+          channels: { title: '渠道', help: '未来接入的 WhatsApp、QQ Channel 等外部投递适配器。' },
           media: { title: '媒体', help: '图片、音频与文档的延后输入输出处理设置。' },
           safety: { title: '安全', help: '高风险执行的信任边界、审批与限制策略。' },
           observability: { title: '可观测性', help: '在核心契约稳定后补齐的运行时日志、追踪与诊断。' },
@@ -858,7 +858,7 @@ export const translations = {
           workspace: { title: '工作区', help: '笔记本标识、活动工作区规则与会话级上下文输入。' },
           editor: { title: '编辑器', help: '影响助手上下文采集与编辑默认行为的编辑器设置。' },
           preview: { title: '预览', help: '可供助手外壳引用而不持有 UI 状态的预览渲染偏好。' },
-          'links-tags': { title: '链接与标签', help: '后续阶段处理反链、标签与关系自动化的元数据界面。' },
+          'links-tags': { title: '链接与标签', help: '未来处理反链、标签与关系自动化的元数据界面。' },
           graph: { title: '图谱', help: '未来助手感知图谱行为所需的延后设置。' },
           'search-index': { title: '搜索与索引', help: '为运行时上下文提供输入的知识索引、检索范围与搜索设置。' },
           'study-srs': { title: '学习与 SRS', help: '超出第一阶段运行时契约的延后学习模式与间隔重复设置。' },

@@ -11,12 +11,6 @@ import { KeyboardTab } from './AISettingsModal/KeyboardTab';
 import { McpTab } from './AISettingsModal/McpTab';
 import { PromptsTab } from './AISettingsModal/PromptsTab';
 import { SecurityTab } from './AISettingsModal/SecurityTab';
-import { ASSISTANT_SETTINGS_DEFAULTS } from '../src/services/assistant-runtime/defaults';
-import {
-  ASSISTANT_SETTINGS_SURFACE_ORDER,
-  resolveAssistantSettingsSurface,
-  type AssistantSettingsSurfaceId,
-} from '../src/services/assistant-runtime/settingsCatalog';
 import { translations, type Language } from '../utils/translations';
 
 interface AISettingsModalProps {
@@ -149,39 +143,6 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
 
   const currentUiLang: Language = tempConfig.language === 'zh' ? 'zh' : 'en';
   const t = translations[currentUiLang];
-  const settingsShellState = tempConfig.assistantSettings ?? {
-    surface: ASSISTANT_SETTINGS_DEFAULTS.surface,
-    sectionBySurface: { ...ASSISTANT_SETTINGS_DEFAULTS.sectionBySurface },
-  };
-  const settingsShellSurfaces = useMemo(
-    () => ASSISTANT_SETTINGS_SURFACE_ORDER.map(surfaceId => resolveAssistantSettingsSurface(currentUiLang, surfaceId)),
-    [currentUiLang],
-  );
-
-  const handleShellSurfaceSelect = (surfaceId: AssistantSettingsSurfaceId) => {
-    setTempConfig({
-      ...tempConfig,
-      assistantSettings: {
-        surface: surfaceId,
-        sectionBySurface: {
-          ...settingsShellState.sectionBySurface,
-        },
-      },
-    });
-  };
-
-  const handleShellSectionSelect = (surfaceId: AssistantSettingsSurfaceId, sectionId: string) => {
-    setTempConfig({
-      ...tempConfig,
-      assistantSettings: {
-        surface: surfaceId,
-        sectionBySurface: {
-          ...settingsShellState.sectionBySurface,
-          [surfaceId]: sectionId,
-        },
-      },
-    });
-  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -451,76 +412,6 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto custom-scrollbar p-6 bg-paper-50 dark:bg-cyber-900">
-          <div className="mb-6 rounded-xl border border-paper-200 bg-white/80 p-4 shadow-sm dark:border-cyber-700 dark:bg-cyber-800/40">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
-                  {currentUiLang === 'zh' ? '设置蓝图' : 'Settings Blueprint'}
-                </p>
-                <p className="text-sm text-slate-600 dark:text-slate-300">
-                  {currentUiLang === 'zh'
-                    ? '阶段 1 仅接入描述符驱动的设置外壳与持久化。'
-                    : 'Phase 1 wires the descriptor-backed shell and persistence only.'}
-                </p>
-              </div>
-              <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white dark:bg-cyan-500/20 dark:text-cyan-200">
-                {currentUiLang === 'zh'
-                  ? `当前: ${settingsShellState.surface === 'operator' ? '操作员' : '笔记'}`
-                  : `Current: ${settingsShellState.surface === 'operator' ? 'Operator' : 'Notebook'}`}
-              </span>
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-2">
-              {settingsShellSurfaces.map(surface => (
-                <section
-                  key={surface.id}
-                  className={`rounded-lg border p-3 transition-colors ${
-                    settingsShellState.surface === surface.id
-                      ? 'border-cyan-400 bg-cyan-50/80 dark:border-cyan-400 dark:bg-cyan-500/10'
-                      : 'border-paper-200 bg-paper-50 dark:border-cyber-700 dark:bg-cyber-900/40'
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => handleShellSurfaceSelect(surface.id)}
-                    className="w-full text-left"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <h3 className="text-sm font-semibold text-slate-900 dark:text-white">{surface.title}</h3>
-                        <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">{surface.description}</p>
-                      </div>
-                      <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-600 dark:bg-cyber-700 dark:text-slate-200">
-                        {surface.defaultSectionId}
-                      </span>
-                    </div>
-                  </button>
-
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {surface.sections.map(section => {
-                      const isSelected = settingsShellState.sectionBySurface[surface.id] === section.id;
-                      return (
-                        <button
-                          key={`${surface.id}-${section.id}`}
-                          type="button"
-                          onClick={() => handleShellSectionSelect(surface.id, section.id)}
-                          className={`rounded-full border px-2.5 py-1 text-left transition-colors ${
-                            isSelected
-                              ? 'border-slate-900 bg-slate-900 text-white dark:border-cyan-300 dark:bg-cyan-300/20 dark:text-cyan-100'
-                              : 'border-paper-300 bg-white text-slate-700 dark:border-cyber-600 dark:bg-cyber-800 dark:text-slate-200'
-                          }`}
-                        >
-                          <span className="block text-xs font-semibold">{section.title}</span>
-                          <span className="block text-[11px] opacity-75">{section.phaseLabel}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </section>
-              ))}
-            </div>
-          </div>
-
           {/* AI Settings Tab */}
           {activeTab === 'ai' && (
             <AITab

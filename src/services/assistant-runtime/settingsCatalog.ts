@@ -40,6 +40,7 @@ export interface ResolvedAssistantSettingsSection {
   title: string;
   help: string;
   phase: AssistantSettingsSectionPhase;
+  available: boolean;
   phaseLabel: string;
   wireframeRef: AssistantSettingsSectionDescriptor['wireframeRef'];
   shortcut?: ResolvedAssistantSettingsShortcut;
@@ -59,6 +60,10 @@ const phaseLabelKeyByPhase: Record<AssistantSettingsSectionPhase, string> = {
   'phase-1': 'assistantSettings.phaseLabels.phase1Ready',
   deferred: 'assistantSettings.phaseLabels.laterPhase',
 };
+
+export function isAssistantSettingsSectionAvailable(phase: AssistantSettingsSectionPhase): boolean {
+  return phase === 'phase-1';
+}
 
 const operatorSections: AssistantSettingsSectionDescriptor[] = [
   {
@@ -321,6 +326,7 @@ export function resolveAssistantSettingsSurface(
       title: readTranslationValue(language, section.titleKey),
       help: readTranslationValue(language, section.helpKey),
       phase: section.phase,
+      available: isAssistantSettingsSectionAvailable(section.phase),
       phaseLabel: readTranslationValue(language, phaseLabelKeyByPhase[section.phase]),
       wireframeRef: section.wireframeRef,
       shortcut: section.shortcut
@@ -331,5 +337,17 @@ export function resolveAssistantSettingsSurface(
           }
         : undefined,
     })),
+  };
+}
+
+export function resolveUserFacingAssistantSettingsSurface(
+  language: Language,
+  surfaceId: AssistantSettingsSurfaceId,
+): ResolvedAssistantSettingsSurface {
+  const surface = resolveAssistantSettingsSurface(language, surfaceId);
+
+  return {
+    ...surface,
+    sections: surface.sections.filter(section => section.available),
   };
 }
