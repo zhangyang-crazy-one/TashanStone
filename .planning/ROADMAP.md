@@ -84,7 +84,7 @@ Plans:
 - [x] 04-04-PLAN.md — Lock notebook workflow compatibility and final in-app parity behavior with targeted regression coverage.
 - [x] 04-05-PLAN.md — Remove misleading planning-state assistant settings UI and keep deferred settings metadata out of the normal user path.
 - [x] 04-06-PLAN.md — Thread explicit workspace-context state through the app shell and shared runtime, with tests proving it reaches ChatPanel.
-- [ ] 04-07-PLAN.md — Add visible workspace-context controls plus a multiline auto-growing composer to the in-app assistant surface.
+- [x] 04-07-PLAN.md — Add visible workspace-context controls plus a multiline auto-growing composer to the in-app assistant surface.
 - [ ] 04-08-PLAN.md — Make isolated threads and live runtime inspection discoverable from the default chat surface.
 **UI hint**: yes
 
