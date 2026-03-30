@@ -5,13 +5,28 @@ import type { AppViewRouterProps } from '@/components/App/AppViewRouter';
 import type { CodeMirrorEditorRef } from '@/types';
 import { extractTags } from '@/src/types/wiki';
 
+export type AssistantContextScope = 'focused-note' | 'open-panes';
+
+export const DEFAULT_ASSISTANT_CONTEXT_SCOPE: AssistantContextScope = 'open-panes';
+export const DEFAULT_INCLUDE_SELECTED_TEXT = true;
+
+export interface AssistantWorkspaceContext {
+  activeFileId?: string;
+  selectedFileIds: string[];
+  selectedText?: string;
+  contextScope: AssistantContextScope;
+  includeSelectedText: boolean;
+}
+
 type ViewRouterInputs = Omit<AppViewRouterProps, 'codeMirrorRef'> & {
   codeMirrorRef: RefObject<CodeMirrorEditorRef>;
 };
 
 interface UseAppWorkspaceStateOptions extends ViewRouterInputs {
   activeFileId: string;
+  contextScope: AssistantContextScope;
   getActivePaneFileId: () => string | undefined;
+  includeSelectedText: boolean;
   isLinkInsertOpen: boolean;
   getActivePaneContent: () => string;
 }
@@ -20,17 +35,15 @@ interface UseAppWorkspaceStateResult {
   selectedText: string;
   tagSuggestionContent: string;
   tagSuggestionExistingTags: string[];
-  workspaceContext: {
-    activeFileId?: string;
-    selectedFileIds: string[];
-    selectedText?: string;
-  };
+  workspaceContext: AssistantWorkspaceContext;
   viewRouterProps: AppViewRouterProps;
 }
 
 export const useAppWorkspaceState = ({
   activeFileId,
+  contextScope,
   getActivePaneFileId,
+  includeSelectedText,
   isLinkInsertOpen,
   getActivePaneContent,
   viewMode,
@@ -83,7 +96,7 @@ export const useAppWorkspaceState = ({
     () => getActivePaneFileId() ?? activeFileId,
     [activeFileId, getActivePaneFileId],
   );
-  const selectedFileIds = useMemo(() => {
+  const openPaneFileIds = useMemo(() => {
     const ids = new Set<string>();
     if (workspaceActiveFileId) {
       ids.add(workspaceActiveFileId);
@@ -95,6 +108,13 @@ export const useAppWorkspaceState = ({
     });
     return Array.from(ids);
   }, [openPanes, workspaceActiveFileId]);
+  const selectedFileIds = useMemo(() => (
+    contextScope === 'focused-note'
+      ? workspaceActiveFileId
+        ? [workspaceActiveFileId]
+        : []
+      : openPaneFileIds
+  ), [contextScope, openPaneFileIds, workspaceActiveFileId]);
   const tagSuggestionContent = getActivePaneContent();
   const tagSuggestionExistingTags = useMemo(
     () => extractTags(tagSuggestionContent),
@@ -104,9 +124,11 @@ export const useAppWorkspaceState = ({
     () => ({
       activeFileId: workspaceActiveFileId,
       selectedFileIds,
-      selectedText: selectedText || undefined,
+      selectedText: includeSelectedText && selectedText ? selectedText : undefined,
+      contextScope,
+      includeSelectedText,
     }),
-    [selectedFileIds, selectedText, workspaceActiveFileId],
+    [contextScope, includeSelectedText, selectedFileIds, selectedText, workspaceActiveFileId],
   );
 
   const viewRouterProps = useMemo<AppViewRouterProps>(() => ({

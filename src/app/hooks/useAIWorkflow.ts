@@ -23,6 +23,11 @@ import {
 import { generateId } from '@/src/app/appDefaults';
 import type { AssistantRuntimeInspectionState } from '@/src/app/hooks/useAssistantRuntimeInspection';
 import { useAssistantRuntimeInspection } from '@/src/app/hooks/useAssistantRuntimeInspection';
+import {
+  DEFAULT_ASSISTANT_CONTEXT_SCOPE,
+  DEFAULT_INCLUDE_SELECTED_TEXT,
+  type AssistantContextScope,
+} from '@/src/app/hooks/useAppWorkspaceState';
 import { useStreamingToolCalls } from '@/src/hooks/useStreamingToolCalls';
 import {
   createAssistantRuntime,
@@ -65,6 +70,8 @@ interface UseAIWorkflowOptions {
     activeFileId?: string;
     selectedFileIds?: string[];
     selectedText?: string;
+    contextScope?: AssistantContextScope;
+    includeSelectedText?: boolean;
   };
 }
 
@@ -334,6 +341,7 @@ export const useAIWorkflow = ({
   const stopRequestedRef = useRef(false);
 
   const resolveWorkspaceFiles = useCallback((files: MarkdownFile[]) => {
+    const resolvedContextScope = workspaceContext?.contextScope ?? DEFAULT_ASSISTANT_CONTEXT_SCOPE;
     const activeFile = findNotebookFile(files, workspaceContext?.activeFileId);
     const selectedFiles = (workspaceContext?.selectedFileIds ?? [])
       .map(fileId => findNotebookFile(files, fileId))
@@ -343,13 +351,18 @@ export const useAIWorkflow = ({
       current.findIndex(candidate => candidate.id === file.id) === index,
     );
 
-    const scopedFiles = dedupedSelectedFiles.length > 0
+    const openPaneFiles = dedupedSelectedFiles.length > 0
       ? dedupedSelectedFiles
       : activeFile
         ? [activeFile]
         : files[0]
           ? [files[0]]
           : [];
+    const scopedFiles = resolvedContextScope === 'focused-note'
+      ? activeFile
+        ? [activeFile]
+        : openPaneFiles.slice(0, 1)
+      : openPaneFiles;
 
     const resolvedActiveFile = activeFile ?? scopedFiles[0];
 
@@ -357,7 +370,7 @@ export const useAIWorkflow = ({
       activeFile: resolvedActiveFile,
       scopedFiles,
     };
-  }, [workspaceContext?.activeFileId, workspaceContext?.selectedFileIds]);
+  }, [workspaceContext?.activeFileId, workspaceContext?.contextScope, workspaceContext?.selectedFileIds]);
 
   const updateAssistantToolCall = useCallback((messageId: string, toolCall: ToolCall) => {
     upsertStreamingToolCall(toolCall);
@@ -502,6 +515,9 @@ export const useAIWorkflow = ({
       }
 
       const { activeFile, scopedFiles } = resolveWorkspaceFiles(filesRef.current);
+      const selectedText = (workspaceContext?.includeSelectedText ?? DEFAULT_INCLUDE_SELECTED_TEXT)
+        ? workspaceContext?.selectedText
+        : undefined;
       const notebookAttachments = scopedFiles.map(toNotebookAttachment);
       const runtimeRequest = {
         requestId,
@@ -540,7 +556,7 @@ export const useAIWorkflow = ({
           workspaceId: workspaceContext?.workspaceId ?? runtimeSession.workspaceId,
           activeFileId: activeFile?.id,
           selectedFileIds: scopedFiles.map(file => file.id),
-          selectedText: workspaceContext?.selectedText,
+          selectedText,
           attachments: notebookAttachments,
           knowledgeQuery: text,
         },
@@ -661,7 +677,7 @@ export const useAIWorkflow = ({
     setChatMessages,
     setIsStreaming,
     updateAssistantToolCall,
-    workspaceContext?.selectedText,
+    workspaceContext?.includeSelectedText,
     workspaceContext?.workspaceId,
   ]);
 

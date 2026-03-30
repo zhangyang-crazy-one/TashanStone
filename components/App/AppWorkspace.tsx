@@ -1,8 +1,13 @@
 import React, { memo } from 'react';
+import type { Dispatch, SetStateAction } from 'react';
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
 
 import type { AIState, ChatMessage, LinkInsertResult, MarkdownFile } from '../../types';
 import type { AssistantRuntimeInspectionState } from '@/src/app/hooks/useAssistantRuntimeInspection';
+import type {
+  AssistantContextScope,
+  AssistantWorkspaceContext,
+} from '@/src/app/hooks/useAppWorkspaceState';
 import type { AssistantSessionRecord } from '@/src/services/assistant-runtime/sessionTypes';
 import type { Backlink } from '../../src/types/wiki';
 import { ViewMode } from '../../types';
@@ -20,6 +25,11 @@ interface AppWorkspaceProps {
   files: MarkdownFile[];
   activeFileId: string;
   selectedText: string;
+  workspaceContext: AssistantWorkspaceContext;
+  contextScope: AssistantContextScope;
+  setContextScope: Dispatch<SetStateAction<AssistantContextScope>>;
+  includeSelectedText: boolean;
+  setIncludeSelectedText: Dispatch<SetStateAction<boolean>>;
   onInsertLink: (result: LinkInsertResult) => void;
   onCloseLinkInsert: () => void;
   backlinks: Backlink[];
@@ -54,6 +64,11 @@ export const AppWorkspace = memo((props: AppWorkspaceProps) => {
     files,
     activeFileId,
     selectedText,
+    workspaceContext,
+    contextScope,
+    setContextScope,
+    includeSelectedText,
+    setIncludeSelectedText,
     onInsertLink,
     onCloseLinkInsert,
     backlinks,
@@ -111,6 +126,11 @@ export const AppWorkspace = memo((props: AppWorkspaceProps) => {
         isOpen={isChatOpen}
         onClose={onCloseChat}
         messages={messages}
+        workspaceContext={workspaceContext}
+        contextScope={contextScope}
+        setContextScope={setContextScope}
+        includeSelectedText={includeSelectedText}
+        setIncludeSelectedText={setIncludeSelectedText}
         onSendMessage={onSendMessage}
         onClearChat={onClearChat}
         onCompactChat={onCompactChat}

@@ -1,9 +1,14 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import type { Dispatch, SetStateAction } from 'react';
 import { useListRef } from 'react-window';
 
 import type { AIState, ChatMessage } from '../types';
 import type { AssistantSessionRecord } from '@/src/services/assistant-runtime/sessionTypes';
 import type { AssistantRuntimeInspectionState } from '@/src/app/hooks/useAssistantRuntimeInspection';
+import type {
+  AssistantContextScope,
+  AssistantWorkspaceContext,
+} from '@/src/app/hooks/useAppWorkspaceState';
 import { ChatHeader } from './ChatPanel/ChatHeader';
 import { AssistantSessionBar } from './ChatPanel/AssistantSessionBar';
 import { ChatInput } from './ChatPanel/ChatInput';
@@ -30,6 +35,11 @@ interface ChatPanelProps {
   isOpen: boolean;
   onClose: () => void;
   messages: ChatMessage[];
+  workspaceContext: AssistantWorkspaceContext;
+  contextScope: AssistantContextScope;
+  setContextScope: Dispatch<SetStateAction<AssistantContextScope>>;
+  includeSelectedText: boolean;
+  setIncludeSelectedText: Dispatch<SetStateAction<boolean>>;
   onSendMessage: (text: string) => void;
   onClearChat: () => void;
   onCompactChat?: () => Promise<void>;
@@ -59,6 +69,11 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   isOpen,
   onClose,
   messages,
+  workspaceContext,
+  contextScope,
+  setContextScope,
+  includeSelectedText,
+  setIncludeSelectedText,
   onSendMessage,
   onClearChat,
   onCompactChat,
@@ -83,6 +98,12 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   assistantRuntimeInspection,
   isSessionLoading = false,
 }) => {
+  void workspaceContext;
+  void contextScope;
+  void setContextScope;
+  void includeSelectedText;
+  void setIncludeSelectedText;
+
   const [input, setInput] = useState('');
   const [interimTranscript, setInterimTranscript] = useState('');
   const [compactMode, setCompactMode] = useState(false);

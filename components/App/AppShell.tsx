@@ -1,6 +1,10 @@
 import React, { memo } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { AssistantRuntimeInspectionState } from '@/src/app/hooks/useAssistantRuntimeInspection';
+import type {
+  AssistantContextScope,
+  AssistantWorkspaceContext,
+} from '@/src/app/hooks/useAppWorkspaceState';
 import type { AssistantSessionRecord } from '@/src/services/assistant-runtime/sessionTypes';
 
 import type {
@@ -87,6 +91,11 @@ export interface AppShellProps {
   isLinkInsertOpen: boolean;
   linkInsertMode: 'wikilink' | 'blockref' | 'quick_link';
   selectedText: string;
+  workspaceContext: AssistantWorkspaceContext;
+  contextScope: AssistantContextScope;
+  setContextScope: Dispatch<SetStateAction<AssistantContextScope>>;
+  includeSelectedText: boolean;
+  setIncludeSelectedText: Dispatch<SetStateAction<boolean>>;
   onInsertLink: (result: LinkInsertResult) => void;
   onCloseLinkInsert: () => void;
   backlinks: Backlink[];
@@ -179,6 +188,11 @@ export const AppShell = memo((props: AppShellProps) => {
     isLinkInsertOpen,
     linkInsertMode,
     selectedText,
+    workspaceContext,
+    contextScope,
+    setContextScope,
+    includeSelectedText,
+    setIncludeSelectedText,
     onInsertLink,
     onCloseLinkInsert,
     backlinks,
@@ -285,6 +299,11 @@ export const AppShell = memo((props: AppShellProps) => {
           files={files}
           activeFileId={activeFileId}
           selectedText={selectedText}
+          workspaceContext={workspaceContext}
+          contextScope={contextScope}
+          setContextScope={setContextScope}
+          includeSelectedText={includeSelectedText}
+          setIncludeSelectedText={setIncludeSelectedText}
           onInsertLink={onInsertLink}
           onCloseLinkInsert={onCloseLinkInsert}
           backlinks={backlinks}

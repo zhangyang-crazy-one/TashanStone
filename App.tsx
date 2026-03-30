@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useEffect, useRef, useCallback, useMemo, useState } from 'react';
 
 import type { CodeMirrorEditorRef, MarkdownFile } from './types';
 
@@ -25,7 +25,12 @@ import { useAppShellState } from '@/src/app/hooks/useAppShellState';
 import { useAppOverlaysState } from '@/src/app/hooks/useAppOverlaysState';
 import { useToolbarActions } from '@/src/app/hooks/useToolbarActions';
 import { useOverlayActions } from '@/src/app/hooks/useOverlayActions';
-import { useAppWorkspaceState } from '@/src/app/hooks/useAppWorkspaceState';
+import {
+  DEFAULT_ASSISTANT_CONTEXT_SCOPE,
+  DEFAULT_INCLUDE_SELECTED_TEXT,
+  type AssistantContextScope,
+  useAppWorkspaceState,
+} from '@/src/app/hooks/useAppWorkspaceState';
 
 import { DEFAULT_FILE } from './src/app/appDefaults';
 import { useAppUiState } from './src/app/hooks/useAppUiState';
@@ -373,6 +378,8 @@ const App: React.FC = () => {
     openFileInPane,
     showToast
   });
+  const [contextScope, setContextScope] = useState<AssistantContextScope>(DEFAULT_ASSISTANT_CONTEXT_SCOPE);
+  const [includeSelectedText, setIncludeSelectedText] = useState(DEFAULT_INCLUDE_SELECTED_TEXT);
 
   const {
     handleCloseSidebarMobile,
@@ -433,7 +440,9 @@ const App: React.FC = () => {
     viewRouterProps
   } = useAppWorkspaceState({
     activeFileId,
+    contextScope,
     getActivePaneFileId,
+    includeSelectedText,
     isLinkInsertOpen,
     getActivePaneContent,
     viewMode,
@@ -575,6 +584,11 @@ const App: React.FC = () => {
     isLinkInsertOpen,
     linkInsertMode,
     selectedText,
+    workspaceContext,
+    contextScope,
+    setContextScope,
+    includeSelectedText,
+    setIncludeSelectedText,
     onInsertLink: handleLinkInsert,
     onCloseLinkInsert: handleCloseLinkInsert,
     backlinks,

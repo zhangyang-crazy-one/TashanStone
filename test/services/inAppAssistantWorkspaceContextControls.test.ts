@@ -226,7 +226,7 @@ describe('in-app assistant workspace context controls', () => {
       }),
     });
 
-    const { result, rerender } = renderHook(
+    const { result } = renderHook(
       ({ options }) => useAIWorkflow(options),
       {
         initialProps: { options: disabledHarness.options },
@@ -249,10 +249,15 @@ describe('in-app assistant workspace context controls', () => {
       }),
     });
 
-    rerender({ options: enabledHarness.options });
+    const enabledResult = renderHook(
+      ({ options }) => useAIWorkflow(options),
+      {
+        initialProps: { options: enabledHarness.options },
+      },
+    );
 
     await act(async () => {
-      await result.current.handleChatMessage('Include selected text');
+      await enabledResult.result.current.handleChatMessage('Include selected text');
     });
 
     expect(enabledHarness.requests[0]?.notebook?.selectedText).toBe('Selected evidence');
