@@ -12,9 +12,9 @@ requires:
   - 04-02
   - 04-05
 provides:
-  - App-owned workspace context controls threaded through AppShell, AppWorkspace, and ChatPanel
-  - Runtime request assembly that honors explicit focused-note versus open-panes grounding plus selected-text injection
-  - Component proof that app-shell context state reaches ChatPanel
+- App-owned workspace context controls threaded through AppShell, AppWorkspace, and ChatPanel
+- Runtime request assembly that honors explicit focused-note versus open-panes grounding plus selected-text injection
+- Component proof that app-shell context state, including session workspace identity, reaches ChatPanel
 affects:
   - App.tsx
   - components/App
@@ -55,7 +55,7 @@ The in-app assistant now carries explicit workspace-context choices from the app
 
 Tasks completed: 2/2
 
-- Threaded `contextScope` and `includeSelectedText` through `App.tsx`, `AppShell`, `AppWorkspace`, and `ChatPanel`.
+- Threaded `contextScope`, `includeSelectedText`, and session `workspaceId` through `App.tsx`, `AppShell`, `AppWorkspace`, and `ChatPanel`.
 - Updated `useAppWorkspaceState` and `useAIWorkflow` so focused-note versus open-panes grounding and selected-text injection are explicit runtime inputs.
 - Added a component-level `AppChatContextThreading` proof and expanded the runtime control tests to lock the new contract in place.
 
@@ -68,18 +68,21 @@ Tasks completed: 2/2
 
 1. `a7eb889` `test(04-06): add failing workspace context control tests`
 2. `d257099` `feat(04-06): thread explicit workspace context controls`
-3. `28a08e7` `test(04-06): add app shell chat context threading coverage`
+3. `edf3b73` `test(04-06): add failing app chat context threading test`
+4. `5ff1cbf` `feat(04-06): expose workspace id in chat context threading`
+
+Plan metadata: `5ba38ac` `docs(04-06): complete workspace context threading plan`
 
 ## Files Created/Modified
 
 - `App.tsx` - Owns the new context-scope and selected-text control state for the app chat surface.
 - `components/App/AppShell.tsx` - Threads explicit workspace context controls through the shell boundary.
 - `components/App/AppWorkspace.tsx` - Passes the workspace context contract into the main chat surface.
-- `components/ChatPanel.tsx` - Accepts explicit context control props needed by follow-on UI work.
+- `components/ChatPanel.tsx` - Accepts explicit context control props and session workspace identity needed by follow-on UI work.
 - `src/app/hooks/useAIWorkflow.ts` - Uses explicit context choices when assembling runtime requests.
 - `src/app/hooks/useAppWorkspaceState.ts` - Produces typed workspace context with explicit scope and selected-text inclusion.
 - `test/services/inAppAssistantWorkspaceContextControls.test.ts` - Verifies focused-note versus open-panes grounding and selected-text injection behavior.
-- `test/components/AppChatContextThreading.test.tsx` - Verifies the app-shell route reaches ChatPanel with the threaded context controls.
+- `test/components/AppChatContextThreading.test.tsx` - Verifies the app-shell route reaches ChatPanel with the threaded context controls and workspace identity.
 - `test/components/ChatPanelParity.test.tsx` - Keeps existing chat-shell parity coverage compatible with the expanded ChatPanel prop contract.
 
 ## Deviations from Plan
