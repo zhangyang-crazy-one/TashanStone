@@ -32,7 +32,7 @@ function createSession(overrides: Partial<AssistantSessionRecord> = {}): Assista
 }
 
 describe('AssistantSessionBar', () => {
-  it('renders the active session, switches sessions, and creates a new one from canonical callbacks', () => {
+  it('renders isolated-thread guidance, marks the active thread, and keeps canonical callbacks', () => {
     const onCreateSession = vi.fn();
     const onSelectSession = vi.fn();
     const primary = createSession();
@@ -51,17 +51,20 @@ describe('AssistantSessionBar', () => {
       />,
     );
 
+    expect(screen.getByText('Isolated threads')).toBeInTheDocument();
+    expect(screen.getByText('Each thread keeps separate history and context.')).toBeInTheDocument();
+    expect(screen.getByText('Active thread')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Primary App Session/i })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: /Research Thread/i })).toHaveAttribute('aria-pressed', 'false');
 
     fireEvent.click(screen.getByRole('button', { name: /Research Thread/i }));
     expect(onSelectSession).toHaveBeenCalledWith(secondary.sessionId);
 
-    fireEvent.click(screen.getByRole('button', { name: /New Session/i }));
+    fireEvent.click(screen.getByRole('button', { name: /New thread/i }));
     expect(onCreateSession).toHaveBeenCalledTimes(1);
   });
 
-  it('shows an empty state when there are no sessions yet', () => {
+  it('shows an explanatory empty state when there are no threads yet', () => {
     render(
       <AssistantSessionBar
         sessions={[]}
@@ -71,6 +74,7 @@ describe('AssistantSessionBar', () => {
       />,
     );
 
-    expect(screen.getByText('No assistant sessions yet')).toBeInTheDocument();
+    expect(screen.getByText('No isolated threads yet.')).toBeInTheDocument();
+    expect(screen.getByText('Start a new thread to keep a separate chat history and context.')).toBeInTheDocument();
   });
 });

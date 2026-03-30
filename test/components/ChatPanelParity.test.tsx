@@ -146,7 +146,7 @@ describe('ChatPanel parity surface', () => {
     speechRecognitionControls.onResult = null;
   });
 
-  it('renders parity controls alongside existing actions and still submits injected messages through the chat flow', async () => {
+  it('keeps visible context controls while making isolated threads discoverable in the chat shell', async () => {
     const onSendMessage = vi.fn();
     const onClearChat = vi.fn();
     const onCompactChat = vi.fn().mockResolvedValue(undefined);
@@ -202,6 +202,9 @@ describe('ChatPanel parity surface', () => {
     expect(onCompactChat).toHaveBeenCalledTimes(1);
 
     expect(screen.getByRole('button', { name: /Workspace context/i })).toBeInTheDocument();
+    expect(screen.getByText('Isolated threads')).toBeInTheDocument();
+    expect(screen.getByText('Each thread keeps separate history and context.')).toBeInTheDocument();
+    expect(screen.getByText('Active thread')).toBeInTheDocument();
     expect(screen.getByText('Active note')).toBeInTheDocument();
     expect(screen.getByText('note-1')).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: /Focused note only/i })).toBeInTheDocument();
@@ -219,7 +222,7 @@ describe('ChatPanel parity surface', () => {
     fireEvent.click(screen.getByRole('button', { name: /Research Thread/i }));
     expect(onSelectSession).toHaveBeenCalledWith('notebook:in-app-assistant:session:secondary');
 
-    fireEvent.click(screen.getByRole('button', { name: /New Session/i }));
+    fireEvent.click(screen.getByRole('button', { name: /New thread/i }));
     expect(onCreateSession).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole('button', { name: /Stop Generation/i }));
