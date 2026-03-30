@@ -99,12 +99,6 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   assistantRuntimeInspection,
   isSessionLoading = false,
 }) => {
-  void workspaceContext;
-  void contextScope;
-  void setContextScope;
-  void includeSelectedText;
-  void setIncludeSelectedText;
-
   const [input, setInput] = useState('');
   const [interimTranscript, setInterimTranscript] = useState('');
   const [compactMode, setCompactMode] = useState(false);

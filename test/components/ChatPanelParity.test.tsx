@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ChatPanel } from '../../components/ChatPanel';
@@ -267,10 +267,14 @@ describe('ChatPanel parity surface', () => {
 
     expect(speechRecognitionControls.onResult).not.toBeNull();
 
-    speechRecognitionControls.onResult?.('Voice append', true);
+    act(() => {
+      speechRecognitionControls.onResult?.('Voice append', true);
+    });
 
     const composer = screen.getByRole('textbox');
-    expect(composer).toHaveValue('Voice append');
+    await waitFor(() => {
+      expect(composer).toHaveValue('Voice append');
+    });
 
     fireEvent.submit(composer.closest('form') as HTMLFormElement);
 
