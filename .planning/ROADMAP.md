@@ -76,12 +76,15 @@ Plans:
   1. A user can chat in the in-app assistant interface through the shared runtime and receive streamed responses.
   2. A user can inspect session state, streaming state, and assembled assistant context from the in-app view.
   3. A user can keep using notebook editing, knowledge retrieval, and existing in-app workflows after the runtime extraction.
-**Plans**: 4 plans
+**Plans**: 7 plans
 Plans:
 - [x] 04-01-PLAN.md — Define inspectable runtime/session/context parity contracts and an app-facing inspection bridge.
 - [x] 04-02-PLAN.md — Replace placeholder notebook-context assembly with real workspace state and preserve runtime-backed notebook workflows.
 - [x] 04-03-PLAN.md — Add session-switching and runtime inspection UI to the existing in-app assistant surface.
 - [x] 04-04-PLAN.md — Lock notebook workflow compatibility and final in-app parity behavior with targeted regression coverage.
+- [ ] 04-05-PLAN.md — Remove misleading planning-state assistant settings UI and keep deferred settings metadata out of the normal user path.
+- [ ] 04-06-PLAN.md — Add visible workspace-context controls plus a multiline auto-growing composer to the in-app assistant surface.
+- [ ] 04-07-PLAN.md — Make isolated threads and live runtime inspection discoverable from the default chat surface.
 **UI hint**: yes
 
 ### Phase 5: WhatsApp Channel Launch
