@@ -11,6 +11,7 @@ export const DEFAULT_ASSISTANT_CONTEXT_SCOPE: AssistantContextScope = 'open-pane
 export const DEFAULT_INCLUDE_SELECTED_TEXT = true;
 
 export interface AssistantWorkspaceContext {
+  workspaceId?: string;
   activeFileId?: string;
   selectedFileIds: string[];
   selectedText?: string;

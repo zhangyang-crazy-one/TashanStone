@@ -584,7 +584,7 @@ const App: React.FC = () => {
     isLinkInsertOpen,
     linkInsertMode,
     selectedText,
-    workspaceContext,
+    workspaceContext: assistantWorkspaceContext,
     contextScope,
     setContextScope,
     includeSelectedText,
