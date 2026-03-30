@@ -29,6 +29,8 @@ interface ChatHeaderProps {
   injectedMemories: InjectedMemory[];
   onRemoveInjectedMemory: (memoryId: string) => void;
   onCloseMemoryPanel: () => void;
+  showWorkspaceContext: boolean;
+  onToggleWorkspaceContext: () => void;
   activeSessionTitle?: string | null;
   sessionCount?: number;
   showRuntimeInspector?: boolean;
@@ -58,6 +60,8 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   injectedMemories,
   onRemoveInjectedMemory,
   onCloseMemoryPanel,
+  showWorkspaceContext,
+  onToggleWorkspaceContext,
   activeSessionTitle,
   sessionCount = 0,
   showRuntimeInspector = false,
@@ -109,6 +113,24 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
               </span>
             </div>
           )}
+
+          <div className="mx-1 hidden h-5 w-px shrink-0 bg-violet-200/60 dark:bg-violet-700/60 sm:block" />
+
+          <button
+            type="button"
+            onClick={onToggleWorkspaceContext}
+            className={`inline-flex items-center rounded-full border px-2 py-1 text-[11px] font-medium transition ${
+              showWorkspaceContext
+                ? 'border-violet-300 bg-violet-100/80 text-violet-700 dark:border-violet-600 dark:bg-violet-900/40 dark:text-violet-200'
+                : 'border-slate-200 bg-white/70 text-slate-600 hover:border-violet-300 hover:text-violet-700 dark:border-cyber-700 dark:bg-cyber-900/60 dark:text-slate-300 dark:hover:border-violet-600 dark:hover:text-violet-200'
+            }`}
+            aria-label={t.chatContext.workspaceContext}
+            aria-pressed={showWorkspaceContext}
+          >
+            {t.chatContext.workspaceContext}
+          </button>
+
+          <div className="mx-1 hidden h-5 w-px shrink-0 bg-violet-200/60 dark:bg-violet-700/60 sm:block" />
 
           {onCompactChat && messagesCount >= 2 && !aiState.isThinking && (
             <Tooltip content={t.tooltips?.compactContext || (language === 'zh' ? '压缩上下文' : 'Compact Context')}>

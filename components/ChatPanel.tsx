@@ -14,6 +14,7 @@ import { AssistantSessionBar } from './ChatPanel/AssistantSessionBar';
 import { ChatInput } from './ChatPanel/ChatInput';
 import { MessageList } from './ChatPanel/MessageList';
 import { RuntimeInspectorPanel } from './ChatPanel/RuntimeInspectorPanel';
+import { WorkspaceContextPanel } from './ChatPanel/WorkspaceContextPanel';
 import { useChatMemory } from './ChatPanel/useChatMemory';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { CheckpointDrawer } from './context';
@@ -108,6 +109,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   const [interimTranscript, setInterimTranscript] = useState('');
   const [compactMode, setCompactMode] = useState(false);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
+  const [showWorkspaceContext, setShowWorkspaceContext] = useState(true);
   const [showRuntimeInspector, setShowRuntimeInspector] = useState(false);
   const [showCheckpointDrawer, setShowCheckpointDrawer] = useState(false);
   const listRef = useListRef(null);
@@ -239,6 +241,10 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     setShowRuntimeInspector(prev => !prev);
   }, []);
 
+  const handleToggleWorkspaceContext = useCallback(() => {
+    setShowWorkspaceContext(prev => !prev);
+  }, []);
+
   useEffect(() => {
     if (!isOpen) return;
     shouldAutoScrollRef.current = true;
@@ -293,6 +299,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           injectedMemories={injectedMemories}
           onRemoveInjectedMemory={handleRemoveInjectedMemory}
           onCloseMemoryPanel={handleCloseMemoryPanel}
+          showWorkspaceContext={showWorkspaceContext}
+          onToggleWorkspaceContext={handleToggleWorkspaceContext}
           activeSessionTitle={activeSessionTitle}
           sessionCount={sessions.length}
           showRuntimeInspector={showRuntimeInspector}
@@ -300,6 +308,18 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           onClearChat={onClearChat}
           onClose={onClose}
         />
+
+        {showWorkspaceContext && (
+          <WorkspaceContextPanel
+            workspaceContext={workspaceContext}
+            activeFileName={workspaceContext.activeFileId}
+            contextScope={contextScope}
+            includeSelectedText={includeSelectedText}
+            onContextScopeChange={setContextScope}
+            onIncludeSelectedTextChange={setIncludeSelectedText}
+            language={language}
+          />
+        )}
 
         {(sessions.length > 0 || onCreateSession) && (
           <AssistantSessionBar
