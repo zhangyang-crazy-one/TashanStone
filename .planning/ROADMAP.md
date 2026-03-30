@@ -125,7 +125,7 @@ Plans:
 | 1. Assistant Runtime Foundation | 4/4 | Complete   | 2026-03-28 |
 | 2. Session Routing and Persistence | 4/4 | Complete   | 2026-03-29 |
 | 3. Tools and Multimodal Delivery | 0/4 | Not started | - |
-| 4. In-App Assistant Parity | 4/8 | In progress | - |
+| 4. In-App Assistant Parity | 7/8 | In Progress|  |
 | 5. WhatsApp Channel Launch | 0/TBD | Not started | - |
 | 6. QQ Channel and Adapter Generalization | 0/TBD | Not started | - |
 | 7. Safety and Operations Controls | 0/TBD | Not started | - |

@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 04-07-PLAN.md
-last_updated: "2026-03-30T03:03:22.475Z"
+last_updated: "2026-03-30T03:05:20.722Z"
 last_activity: 2026-03-30
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 20
   completed_plans: 19
-  percent: 100
+  percent: 95
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: `.planning/PROJECT.md` (updated 2026-03-30)
 ## Current Position
 
 Phase: 04 (in-app-assistant-parity) — EXECUTING
-Plan: 5 of 8
+Plan: 7 of 8
 Status: Ready to execute
 Last activity: 2026-03-30
 
-Progress: [██████████] 100%
+Progress: [██████████] 95%
 
 ## Performance Metrics
 
@@ -57,6 +57,7 @@ Progress: [██████████] 100%
 | Phase 01-assistant-runtime-foundation P04 | 6min | 2 tasks | 6 files |
 | Phase 03 P01 | 6 min | 2 tasks | 5 files |
 | Phase 04-in-app-assistant-parity P06 | 8 min | 2 tasks | 8 files |
+| Phase 04-in-app-assistant-parity P07 | 9min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -82,6 +83,8 @@ Recent decisions affecting current work:
 - [Phase 03]: Represent media processing visibility through transport-neutral runtime media-status events instead of channel-specific payload fields. — The status seam now works for in-app and future channel adapters without hardcoding WhatsApp or QQ assumptions.
 - [Phase 04-in-app-assistant-parity]: Keep open-panes as the default explicit workspace context scope with selected-text inclusion enabled so the new contract preserves current grounding behavior while becoming inspectable.
 - [Phase 04-in-app-assistant-parity]: Thread the active session workspaceId through the chat-surface workspaceContext contract so future UI plans can expose session-bound grounding details without reopening shell plumbing.
+- [Phase 04-in-app-assistant-parity]: Keep workspace grounding visible as a dedicated chat-surface panel tied directly to the 04-06 context contract rather than duplicating local-only state inside the header.
+- [Phase 04-in-app-assistant-parity]: Implement composer keyboard behavior with a textarea plus native form submission dispatch so Enter submit, Shift+Enter newline, and existing voice-input append all share the same input state.
 
 ### Pending Todos
 
@@ -93,6 +96,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-30T03:03:22.472Z
+Last session: 2026-03-30T03:04:22.652Z
 Stopped at: Completed 04-07-PLAN.md
 Resume file: None
