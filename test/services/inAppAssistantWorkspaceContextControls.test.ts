@@ -11,6 +11,7 @@ import type {
   MarkdownFile,
   MemoryCandidate,
 } from '../../types';
+import type { AssistantContextScope } from '../../src/app/hooks/useAppWorkspaceState';
 
 const {
   createAssistantRuntimeMock,
@@ -147,7 +148,7 @@ function createHarness() {
         activeFileId: 'note-2',
         selectedFileIds: ['note-2', 'note-3'],
         selectedText: 'Selected evidence',
-        contextScope: 'open-panes' as const,
+        contextScope: 'open-panes' as AssistantContextScope,
         includeSelectedText: true,
       },
     },

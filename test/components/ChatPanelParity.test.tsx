@@ -166,6 +166,18 @@ describe('ChatPanel parity surface', () => {
             status: 'idle',
           }),
         ]}
+        workspaceContext={{
+          workspaceId: 'workspace:focused',
+          activeFileId: 'note-1',
+          selectedFileIds: ['note-1', 'note-2'],
+          selectedText: 'Focused runtime paragraph',
+          contextScope: 'open-panes',
+          includeSelectedText: true,
+        }}
+        contextScope="open-panes"
+        setContextScope={vi.fn()}
+        includeSelectedText={true}
+        setIncludeSelectedText={vi.fn()}
         activeSessionId="notebook:in-app-assistant:primary"
         activeSessionTitle="Primary App Session"
         onCreateSession={onCreateSession}

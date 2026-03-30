@@ -448,18 +448,22 @@ describe('App chat context threading', () => {
       setContextScope: unknown;
       setIncludeSelectedText: unknown;
       workspaceContext: {
+        activeFileId?: string;
+        selectedFileIds?: string[];
+        selectedText?: string;
         contextScope?: string;
         includeSelectedText?: boolean;
-        workspaceId?: string;
       };
     };
 
     expect(chatPanelProps.contextScope).toBe('open-panes');
     expect(chatPanelProps.includeSelectedText).toBe(true);
     expect(chatPanelProps.workspaceContext).toMatchObject({
+      activeFileId: 'note-2',
+      selectedFileIds: ['note-2', 'note-3'],
+      selectedText: 'Selected evidence',
       contextScope: 'open-panes',
       includeSelectedText: true,
-      workspaceId: 'workspace:assistant',
     });
     expect(typeof chatPanelProps.setContextScope).toBe('function');
     expect(typeof chatPanelProps.setIncludeSelectedText).toBe('function');
