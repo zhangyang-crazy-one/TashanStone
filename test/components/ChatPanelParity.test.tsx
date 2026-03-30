@@ -166,6 +166,7 @@ describe('ChatPanel parity surface', () => {
         onClearChat={onClearChat}
         onCompactChat={onCompactChat}
         aiState={{ isThinking: false, error: null, message: null }}
+        activeFileName="Focused Draft"
         language="en"
         isStreaming
         onStopStreaming={onStopStreaming}
@@ -259,6 +260,7 @@ describe('ChatPanel parity surface', () => {
         onSendMessage={onSendMessage}
         onClearChat={vi.fn()}
         aiState={{ isThinking: false, error: null, message: null }}
+        activeFileName="Focused Draft"
         language="en"
         showToast={vi.fn()}
         workspaceContext={{
