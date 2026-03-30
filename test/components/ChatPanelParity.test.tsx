@@ -206,7 +206,8 @@ describe('ChatPanel parity surface', () => {
     expect(screen.getByText('Each thread keeps separate history and context.')).toBeInTheDocument();
     expect(screen.getByText('Active thread')).toBeInTheDocument();
     expect(screen.getByText('Active note')).toBeInTheDocument();
-    expect(screen.getByText('note-1')).toBeInTheDocument();
+    expect(screen.getByText('Focused Draft')).toBeInTheDocument();
+    expect(screen.queryByText('note-1')).not.toBeInTheDocument();
     expect(screen.getByRole('radio', { name: /Focused note only/i })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: /Open panes/i })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: /Include highlighted text/i })).toBeChecked();

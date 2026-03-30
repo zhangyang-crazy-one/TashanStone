@@ -24,6 +24,7 @@ describe('WorkspaceContextPanel', () => {
     expect(screen.getByText('Workspace context')).toBeInTheDocument();
     expect(screen.getByText('Active note')).toBeInTheDocument();
     expect(screen.getByText('Project Brief')).toBeInTheDocument();
+    expect(screen.queryByText('note-1')).not.toBeInTheDocument();
     expect(screen.getAllByText('Open panes')).toHaveLength(2);
     expect(screen.getAllByText('Selected text').length).toBeGreaterThan(0);
     expect(screen.getByText(/Focused runtime paragraph for the assistant\./i)).toBeInTheDocument();
