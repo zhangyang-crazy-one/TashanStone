@@ -189,6 +189,14 @@ describe('ChatPanel parity surface', () => {
     fireEvent.click(screen.getByRole('button', { name: /Compact Context/i }));
     expect(onCompactChat).toHaveBeenCalledTimes(1);
 
+    expect(screen.getByRole('button', { name: /Workspace context/i })).toBeInTheDocument();
+    expect(screen.getByText('Active note')).toBeInTheDocument();
+    expect(screen.getByText('note-1')).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /Focused note only/i })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /Open panes/i })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /Include highlighted text/i })).toBeChecked();
+    expect(screen.getByText('Focused runtime paragraph')).toBeInTheDocument();
+
     fireEvent.click(screen.getByRole('button', { name: /Clear History/i }));
     expect(onClearChat).toHaveBeenCalledTimes(1);
 
