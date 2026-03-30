@@ -7,7 +7,15 @@ import type { AssistantRuntimeInspectionState } from '../../src/app/hooks/useAss
 import type { AssistantSessionRecord } from '../../src/services/assistant-runtime/sessionTypes';
 import type { ChatMessage } from '../../types';
 
-const buildInjectedMessageMock = vi.fn(async (text: string) => `[Injected] ${text}`);
+const {
+  buildInjectedMessageMock,
+  speechRecognitionControls,
+} = vi.hoisted(() => ({
+  buildInjectedMessageMock: vi.fn(async (text: string) => `[Injected] ${text}`),
+  speechRecognitionControls: {
+    onResult: null as null | ((transcript: string, isFinal: boolean) => void),
+  },
+}));
 
 vi.mock('../../components/ChatPanel/useChatMemory', () => ({
   useChatMemory: () => ({
@@ -33,12 +41,15 @@ vi.mock('../../components/ChatPanel/useChatMemory', () => ({
 }));
 
 vi.mock('../../hooks/useSpeechRecognition', () => ({
-  useSpeechRecognition: () => ({
-    isListening: false,
-    isProcessing: false,
-    isSupported: false,
-    toggle: vi.fn(),
-  }),
+  useSpeechRecognition: (options: { onResult: (transcript: string, isFinal: boolean) => void }) => {
+    speechRecognitionControls.onResult = options.onResult;
+    return {
+      isListening: false,
+      isProcessing: false,
+      isSupported: false,
+      toggle: vi.fn(),
+    };
+  },
 }));
 
 vi.mock('../../components/ChatPanel/MessageList', () => ({
@@ -132,6 +143,7 @@ function createInspection(): AssistantRuntimeInspectionState {
 describe('ChatPanel parity surface', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    speechRecognitionControls.onResult = null;
   });
 
   it('renders parity controls alongside existing actions and still submits injected messages through the chat flow', async () => {
@@ -213,12 +225,58 @@ describe('ChatPanel parity surface', () => {
     fireEvent.click(screen.getByRole('button', { name: /Stop Generation/i }));
     expect(onStopStreaming).toHaveBeenCalledTimes(1);
 
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Explain this' } });
-    fireEvent.submit(screen.getByRole('textbox').closest('form') as HTMLFormElement);
+    const composer = screen.getByRole('textbox');
+    expect(composer.tagName).toBe('TEXTAREA');
+
+    fireEvent.change(composer, { target: { value: 'Explain this' } });
+    fireEvent.submit(composer.closest('form') as HTMLFormElement);
 
     await waitFor(() => {
       expect(buildInjectedMessageMock).toHaveBeenCalledWith('Explain this');
       expect(onSendMessage).toHaveBeenCalledWith('[Injected] Explain this');
+    });
+  });
+
+  it('keeps voice-input append working with the multiline composer', async () => {
+    const onSendMessage = vi.fn();
+
+    render(
+      <ChatPanel
+        isOpen
+        onClose={vi.fn()}
+        messages={[]}
+        onSendMessage={onSendMessage}
+        onClearChat={vi.fn()}
+        aiState={{ isThinking: false, error: null, message: null }}
+        language="en"
+        showToast={vi.fn()}
+        workspaceContext={{
+          workspaceId: 'workspace:focused',
+          activeFileId: 'note-1',
+          selectedFileIds: ['note-1'],
+          selectedText: 'Focused runtime paragraph',
+          contextScope: 'focused-note',
+          includeSelectedText: true,
+        }}
+        contextScope="focused-note"
+        setContextScope={vi.fn()}
+        includeSelectedText={true}
+        setIncludeSelectedText={vi.fn()}
+      />,
+    );
+
+    expect(speechRecognitionControls.onResult).not.toBeNull();
+
+    speechRecognitionControls.onResult?.('Voice append', true);
+
+    const composer = screen.getByRole('textbox');
+    expect(composer).toHaveValue('Voice append');
+
+    fireEvent.submit(composer.closest('form') as HTMLFormElement);
+
+    await waitFor(() => {
+      expect(buildInjectedMessageMock).toHaveBeenCalledWith('Voice append');
+      expect(onSendMessage).toHaveBeenCalledWith('[Injected] Voice append');
     });
   });
 });
