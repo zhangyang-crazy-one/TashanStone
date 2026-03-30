@@ -29,7 +29,7 @@
 ### In-App Parity
 
 - [x] **APP-01**: The in-app AI experience uses the new assistant runtime instead of bypassing it with UI-specific logic.
-- [ ] **APP-02**: In-app conversations can inspect session state, streaming state, and assistant context in ways that remain compatible with channel sessions.
+- [x] **APP-02**: In-app conversations can inspect session state, streaming state, and assistant context in ways that remain compatible with channel sessions.
 - [ ] **APP-03**: Existing notebook and knowledge workflows remain usable after the runtime extraction.
 
 ### Channels
@@ -79,7 +79,7 @@
 | TOOL-03 | Phase 3 | Complete |
 | TOOL-04 | Phase 3 | Pending |
 | APP-01 | Phase 4 | Complete |
-| APP-02 | Phase 4 | Pending |
+| APP-02 | Phase 4 | Complete |
 | APP-03 | Phase 4 | Pending |
 | CHAN-01 | Phase 5 | Pending |
 | CHAN-04 | Phase 5 | Pending |

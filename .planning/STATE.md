@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04-05-PLAN.md
-last_updated: "2026-03-30T02:31:32.453Z"
+stopped_at: Completed 04-06-PLAN.md
+last_updated: "2026-03-30T02:47:03.604Z"
 last_activity: 2026-03-30
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 20
-  completed_plans: 17
+  completed_plans: 18
   percent: 100
 ---
 
@@ -26,7 +26,7 @@ See: `.planning/PROJECT.md` (updated 2026-03-30)
 ## Current Position
 
 Phase: 04 (in-app-assistant-parity) — EXECUTING
-Plan: 2 of 8
+Plan: 4 of 8
 Status: Ready to execute
 Last activity: 2026-03-30
 
@@ -56,6 +56,7 @@ Progress: [██████████] 100%
 | Phase 01-assistant-runtime-foundation P03 | 16min | 2 tasks | 9 files |
 | Phase 01-assistant-runtime-foundation P04 | 6min | 2 tasks | 6 files |
 | Phase 03 P01 | 6 min | 2 tasks | 5 files |
+| Phase 04-in-app-assistant-parity P06 | 8 min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -79,6 +80,8 @@ Recent decisions affecting current work:
 - [Phase 01-assistant-runtime-foundation]: Resolve knowledge context with the latest AI config through a ref so runtime-backed searches stay aligned with the current provider settings.
 - [Phase 03]: Keep Phase 3 tool, media, and delivery contracts in one dedicated runtime module and re-export that module from the assistant-runtime barrel. — This gives downstream plans one stable import path and avoids callback or attachment shape drift across callers.
 - [Phase 03]: Represent media processing visibility through transport-neutral runtime media-status events instead of channel-specific payload fields. — The status seam now works for in-app and future channel adapters without hardcoding WhatsApp or QQ assumptions.
+- [Phase 04-in-app-assistant-parity]: Keep open-panes as the default explicit workspace context scope with selected-text inclusion enabled so the new contract preserves current grounding behavior while becoming inspectable.
+- [Phase 04-in-app-assistant-parity]: Thread the active session workspaceId through the chat-surface workspaceContext contract so future UI plans can expose session-bound grounding details without reopening shell plumbing.
 
 ### Pending Todos
 
@@ -90,6 +93,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-30T02:31:32.450Z
-Stopped at: Completed 04-05-PLAN.md
+Last session: 2026-03-30T02:47:03.602Z
+Stopped at: Completed 04-06-PLAN.md
 Resume file: None
