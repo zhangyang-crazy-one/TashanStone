@@ -59,6 +59,14 @@ export const translations = {
       noteCountSingle: "note",
       noteCountPlural: "notes"
     },
+    chatSessions: {
+      title: "Isolated threads",
+      subtitle: "Each thread keeps separate history and context.",
+      newThread: "New thread",
+      activeThread: "Active thread",
+      emptyTitle: "No isolated threads yet.",
+      emptyBody: "Start a new thread to keep a separate chat history and context."
+    },
     askMe: "Ask me to polish code, explain concepts, or brainstorm ideas!",
     clearHistory: "Clear History",
     exitQuiz: "Exit Quiz",
@@ -520,6 +528,14 @@ export const translations = {
       highlightedTextExcluded: "已选文本可见但不会注入",
       noteCountSingle: "篇笔记",
       noteCountPlural: "篇笔记"
+    },
+    chatSessions: {
+      title: "隔离线程",
+      subtitle: "每个线程都会保留独立的历史记录和上下文。",
+      newThread: "新建线程",
+      activeThread: "当前线程",
+      emptyTitle: "还没有隔离线程。",
+      emptyBody: "新建一个线程即可保留独立的对话历史和上下文。"
     },
     askMe: "让我来帮你润色代码、解释概念或头脑风暴！",
     clearHistory: "清除历史",

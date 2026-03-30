@@ -96,6 +96,8 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
           </span>
           {activeSessionTitle && (
             <span className="hidden sm:inline-flex items-center rounded-full border border-violet-200/60 bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-600 dark:border-violet-700/60 dark:bg-violet-900/20 dark:text-violet-300">
+              {t.chatSessions.activeThread}
+              {' · '}
               {activeSessionTitle}
               {sessionCount > 1 ? ` · ${sessionCount}` : ''}
             </span>
