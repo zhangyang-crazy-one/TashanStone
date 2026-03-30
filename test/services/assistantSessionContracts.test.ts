@@ -4,172 +4,127 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import type {
+  AssistantActivationContext,
   AssistantActivationDecision,
-  AssistantActivationPolicyInput,
-  AssistantCanonicalSession,
-  AssistantReplyContext,
-  AssistantSessionRoute,
-  AssistantSessionRouteParticipant,
+  AssistantActivationPolicy,
+  AssistantReplyContextRef,
+  AssistantRouteKind,
+  AssistantSessionRecord,
 } from '../../types';
-import {
-  ASSISTANT_ROUTE_KIND_ORDER,
-  ASSISTANT_SESSION_LIFECYCLE_ORDER,
-  DEFAULT_ASSISTANT_ACTIVATION_POLICY,
-  DEFAULT_ASSISTANT_SESSION_ROUTE_POLICY,
-} from '../../src/services/assistant-runtime/sessionRoutingConfig';
+import { ASSISTANT_ROUTE_KIND_ORDER, ASSISTANT_ROUTE_POLICY_DEFAULTS } from '../../src/services/assistant-runtime/sessionRoutingConfig';
 
-const sessionContractsPath = resolve(
+const sessionContractPath = resolve(
   dirname(fileURLToPath(import.meta.url)),
   '../../src/services/assistant-runtime/sessionTypes.ts',
 );
 
 describe('assistant session contracts', () => {
-  it('describes canonical session identity, route identity, participant scope, lifecycle, and reply context metadata', () => {
-    const participants: AssistantSessionRouteParticipant[] = [
-      {
-        participantId: 'user:primary',
-        scope: 'individual',
-        role: 'sender',
-        origin: 'app',
-        displayName: 'Primary User',
-        metadata: {
-          notebookId: 'notebook-1',
-        },
-      },
-      {
-        participantId: 'assistant:tashanstone',
-        scope: 'assistant',
-        role: 'assistant',
-        origin: 'automation',
-      },
-    ];
-
-    const route: AssistantSessionRoute = {
-      routeId: 'route-app-direct-primary',
-      kind: 'direct',
-      routeKey: 'app:direct:notebook-1:user-primary',
-      scope: 'notebook',
-      origin: 'app',
-      participantMode: 'one-to-one',
-      participants,
-      metadata: {
-        workspaceId: 'workspace-1',
-      },
+  it('describes a canonical session record with route identity, lifecycle status, and reply-context metadata', () => {
+    const replyContext: AssistantReplyContextRef = {
+      transportMessageId: 'msg-42',
+      replyToMessageId: 'msg-21',
+      replyTarget: 'thread-9',
+      channelThreadId: 'thread-9',
+      quotedText: 'Follow up on the earlier note',
     };
 
-    const replyContext: AssistantReplyContext = {
-      replyContextId: 'reply-1',
-      sessionId: 'session-1',
-      routeId: route.routeId,
-      routeKey: route.routeKey,
-      replyTarget: {
-        targetId: 'message-42',
-        targetKind: 'message',
-        participantId: 'user:primary',
-      },
-      sourceMessageId: 'assistant-message-9',
-      sourceThreadId: 'thread-app-primary',
-      metadata: {
-        via: 'primary',
-      },
-    };
-
-    const session: AssistantCanonicalSession = {
+    const session: AssistantSessionRecord = {
       sessionId: 'session-1',
       scope: 'notebook',
       origin: 'app',
       status: 'active',
-      route,
-      activation: {
-        status: 'active',
-        reason: 'direct-route',
-        confidence: 'high',
+      route: {
+        routeId: 'route-1',
+        kind: 'direct',
+        routeKey: 'app:primary',
+        transport: 'electron-ipc',
+        origin: 'app',
+        scope: 'notebook',
+        participantIds: ['user-primary'],
       },
+      title: 'Primary App Conversation',
+      notebookId: 'notebook-1',
+      workspaceId: 'workspace-1',
       replyContext,
-      createdAt: 1_743_240_000_000,
-      updatedAt: 1_743_240_000_100,
-      metadata: {
-        canonical: true,
-      },
+      startedAt: 1_747_000_000_000,
+      updatedAt: 1_747_000_001_000,
+      lastMessageAt: 1_747_000_002_000,
     };
 
-    expect(session.route.participants.map(participant => participant.scope)).toEqual([
-      'individual',
-      'assistant',
-    ]);
-    expect(session.replyContext?.replyTarget.targetId).toBe('message-42');
-    expect(session.activation.reason).toBe('direct-route');
-    expect(ASSISTANT_SESSION_LIFECYCLE_ORDER).toContain(session.status);
+    expect(session).toMatchObject({
+      sessionId: 'session-1',
+      status: 'active',
+      route: {
+        kind: 'direct',
+        routeKey: 'app:primary',
+      },
+      replyContext: {
+        replyToMessageId: 'msg-21',
+      },
+    });
   });
 
-  it('normalizes direct, group, and channel routes through one transport-neutral contract surface', () => {
-    const routes: AssistantSessionRoute[] = [
-      {
-        routeId: 'route-direct',
-        kind: 'direct',
-        routeKey: 'app:direct:notebook-1:user-primary',
-        scope: 'notebook',
-        origin: 'app',
-        participantMode: 'one-to-one',
-        participants: [],
-      },
-      {
+  it('keeps route kinds and activation defaults transport-neutral across direct, group, and channel routes', () => {
+    const routeKinds: AssistantRouteKind[] = ['direct', 'group', 'channel-thread', 'automation'];
+    expect(ASSISTANT_ROUTE_KIND_ORDER).toEqual(routeKinds);
+
+    const directPolicy: AssistantActivationPolicy = ASSISTANT_ROUTE_POLICY_DEFAULTS.direct;
+    const groupPolicy: AssistantActivationPolicy = ASSISTANT_ROUTE_POLICY_DEFAULTS.group;
+    const channelPolicy: AssistantActivationPolicy = ASSISTANT_ROUTE_POLICY_DEFAULTS['channel-thread'];
+
+    expect(directPolicy.mode).toBe('always');
+    expect(groupPolicy.mode).toBe('mentions-only');
+    expect(channelPolicy.allowReplies).toBe(true);
+    expect(channelPolicy.allowedRouteKinds).toEqual(['channel-thread']);
+  });
+
+  it('describes activation decisions without relying on transport-specific UI state', () => {
+    const context: AssistantActivationContext = {
+      route: {
         routeId: 'route-group',
         kind: 'group',
-        routeKey: 'app:group:workspace-1:study-circle',
-        scope: 'workspace',
-        origin: 'app',
-        participantMode: 'many-to-many',
-        participants: [],
-        threadId: 'thread-study-circle',
-      },
-      {
-        routeId: 'route-channel',
-        kind: 'channel',
-        routeKey: 'channel:qq:room-88:thread-9',
-        scope: 'channel',
+        routeKey: 'channel:qq:room-1',
+        transport: 'webhook',
         origin: 'channel',
-        participantMode: 'thread',
-        participants: [],
-        threadId: 'thread-9',
+        scope: 'channel',
+        threadId: 'room-1',
       },
-    ];
-
-    expect(routes.map(route => route.kind)).toEqual(ASSISTANT_ROUTE_KIND_ORDER);
-    expect(new Set(routes.map(route => route.routeKey)).size).toBe(routes.length);
-    expect(routes.every(route => typeof route.routeId === 'string')).toBe(true);
-  });
-
-  it('re-exports the canonical session, route, reply, and activation contracts without leaking UI-local hook state', () => {
-    const activationInput: AssistantActivationPolicyInput = {
-      routeKind: 'group',
-      routeScope: 'channel',
-      sessionOrigin: 'channel',
-      hasReplyContext: true,
-      mentionsAssistant: true,
-      addressedToAssistant: false,
-      initiatedByAssistant: false,
-      participantCount: 5,
+      caller: {
+        callerId: 'qq-channel',
+        surface: 'channel',
+        transport: 'webhook',
+        routeKey: 'channel:qq:room-1',
+      },
+      messageText: '@assistant summarize this thread',
+      mentioned: true,
+      isReply: true,
+      replyContext: {
+        replyToMessageId: 'msg-prev',
+      },
     };
 
     const decision: AssistantActivationDecision = {
-      status: 'active',
-      reason: 'reply-context',
-      confidence: 'high',
-      matchedRuleId: 'reply-context-wins',
-      metadata: {
-        normalized: true,
-      },
+      shouldInvoke: true,
+      reason: 'reply-allowed',
+      sessionKey: context.route.routeKey,
+      normalizedReplyContext: context.replyContext,
     };
 
-    expect(DEFAULT_ASSISTANT_ACTIVATION_POLICY.allowReplyContextActivation).toBe(true);
-    expect(DEFAULT_ASSISTANT_SESSION_ROUTE_POLICY.primaryDirectRouteKind).toBe('direct');
-    expect(decision.reason).toBe('reply-context');
-    expect(activationInput.routeScope).toBe('channel');
+    expect(decision).toMatchObject({
+      shouldInvoke: true,
+      reason: 'reply-allowed',
+      sessionKey: 'channel:qq:room-1',
+      normalizedReplyContext: {
+        replyToMessageId: 'msg-prev',
+      },
+    });
+  });
 
-    const source = readFileSync(sessionContractsPath, 'utf8');
-    expect(source).not.toContain('useState');
-    expect(source).not.toContain('SetStateAction');
-    expect(source).not.toContain('ChatMessage');
+  it('keeps the session contract surface free of React setters and component-local state', () => {
+    const source = readFileSync(sessionContractPath, 'utf8');
+
+    expect(source).not.toMatch(/Dispatch|SetStateAction|useState|useEffect|JSX|React/);
+    expect(source).toContain('export interface AssistantSessionRecord');
+    expect(source).toContain('export interface AssistantActivationDecision');
   });
 });

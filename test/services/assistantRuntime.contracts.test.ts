@@ -140,17 +140,26 @@ describe('assistant runtime contracts', () => {
         status: 'running',
       },
       {
-        type: 'result',
+        type: 'media-status',
         requestId: 'request-1',
         sessionId: 'session-1',
         timestamp: 4,
+        mediaId: 'media-1',
+        kind: 'image',
+        status: 'processing',
+      },
+      {
+        type: 'result',
+        requestId: 'request-1',
+        sessionId: 'session-1',
+        timestamp: 5,
         result: terminalResult,
       },
       {
         type: 'error',
         requestId: 'request-1',
         sessionId: 'session-1',
-        timestamp: 5,
+        timestamp: 6,
         error: {
           code: 'MODEL_TIMEOUT',
           message: 'provider timed out',
@@ -167,6 +176,8 @@ describe('assistant runtime contracts', () => {
           return `delta:${event.delta}`;
         case 'tool-status':
           return `tool:${event.toolName}:${event.status}`;
+        case 'media-status':
+          return `media:${event.kind}:${event.status}`;
         case 'result':
           return `result:${event.result.status}`;
         case 'error':
@@ -180,6 +191,7 @@ describe('assistant runtime contracts', () => {
       'lifecycle:queued',
       'delta:Notebook ',
       'tool:search_knowledge_base:running',
+      'media:image:processing',
       'result:success',
       'error:MODEL_TIMEOUT',
     ]);
@@ -225,6 +237,8 @@ describe('assistant runtime contracts', () => {
           return event.phase;
         case 'tool-status':
           return event.toolName;
+        case 'media-status':
+          return `${event.kind}:${event.status}`;
         default:
           return assertNever(event);
       }

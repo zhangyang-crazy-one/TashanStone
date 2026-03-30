@@ -9,6 +9,7 @@ interface StreamToolCardProps {
   toolName: string;
   status: 'executing' | 'success' | 'error';
   result?: string;
+  error?: string;
   args?: Record<string, JsonValue>;
   partialArgs?: Record<string, JsonValue>;
   rawArgs?: string;
@@ -21,6 +22,7 @@ export const StreamToolCard: React.FC<StreamToolCardProps> = memo(({
   toolName,
   status,
   result,
+  error,
   args,
   partialArgs,
   rawArgs,
@@ -190,6 +192,11 @@ export const StreamToolCard: React.FC<StreamToolCardProps> = memo(({
                   ))}
                 </div>
               )}
+              {typeof progress === 'number' && (
+                <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                  {Math.round(progress)}%
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -264,6 +271,19 @@ export const StreamToolCard: React.FC<StreamToolCardProps> = memo(({
                   />
                 </div>
               )}
+            </div>
+          )}
+          {actualStatus === 'error' && error && (
+            <div className="px-4 py-3 border-b border-slate-200 dark:border-white/10">
+              <div className="text-[10px] uppercase tracking-widest text-red-500 dark:text-red-400 mb-2 flex items-center gap-1">
+                <AlertTriangle size={10} />
+                ERROR
+              </div>
+              <div className="p-3 rounded-xl bg-red-950/70 border border-red-500/40">
+                <pre className="whitespace-pre-wrap break-words text-xs leading-relaxed font-mono text-red-200">
+                  {error}
+                </pre>
+              </div>
             </div>
           )}
           {result && (

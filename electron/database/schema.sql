@@ -35,10 +35,37 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
     content TEXT NOT NULL,
     timestamp INTEGER NOT NULL,
-    conversation_id TEXT DEFAULT 'default'
+    conversation_id TEXT DEFAULT 'default',
+    session_id TEXT,
+    route_key TEXT,
+    reply_context_json TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_chat_timestamp ON chat_messages(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_chat_conversation ON chat_messages(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_chat_session ON chat_messages(session_id);
+
+-- Canonical assistant sessions
+CREATE TABLE IF NOT EXISTS assistant_sessions (
+    id TEXT PRIMARY KEY,
+    route_kind TEXT NOT NULL,
+    route_key TEXT NOT NULL UNIQUE,
+    scope TEXT NOT NULL,
+    origin TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    title TEXT,
+    thread_id TEXT,
+    parent_session_id TEXT,
+    primary_participant_id TEXT,
+    participants_json TEXT,
+    reply_context_json TEXT,
+    metadata_json TEXT,
+    started_at INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+    updated_at INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+    last_message_at INTEGER,
+    FOREIGN KEY (parent_session_id) REFERENCES assistant_sessions(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_assistant_sessions_status ON assistant_sessions(status);
+CREATE INDEX IF NOT EXISTS idx_assistant_sessions_updated ON assistant_sessions(updated_at DESC);
 
 -- Themes (both built-in and custom)
 CREATE TABLE IF NOT EXISTS themes (

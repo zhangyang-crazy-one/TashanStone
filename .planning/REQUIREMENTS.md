@@ -21,9 +21,9 @@
 
 ### Tools and Media
 
-- [ ] **TOOL-01**: The assistant runtime can invoke TashanStone tools and existing AI capabilities through a unified execution layer.
-- [ ] **TOOL-02**: The system supports multimodal inbound normalization for text, images, audio, and documents.
-- [ ] **TOOL-03**: The system supports outbound chunking and delivery policies that can be configured per channel.
+- [x] **TOOL-01**: The assistant runtime can invoke TashanStone tools and existing AI capabilities through a unified execution layer.
+- [x] **TOOL-02**: The system supports multimodal inbound normalization for text, images, audio, and documents.
+- [x] **TOOL-03**: The system supports outbound chunking and delivery policies that can be configured per channel.
 - [ ] **TOOL-04**: Tool execution and media handling produce user-visible status and failure information instead of silent degradation.
 
 ### In-App Parity
@@ -74,9 +74,9 @@
 | SESS-02 | Phase 2 | Pending |
 | SESS-03 | Phase 2 | Pending |
 | SESS-04 | Phase 2 | Pending |
-| TOOL-01 | Phase 3 | Pending |
-| TOOL-02 | Phase 3 | Pending |
-| TOOL-03 | Phase 3 | Pending |
+| TOOL-01 | Phase 3 | Complete |
+| TOOL-02 | Phase 3 | Complete |
+| TOOL-03 | Phase 3 | Complete |
 | TOOL-04 | Phase 3 | Pending |
 | APP-01 | Phase 4 | Pending |
 | APP-02 | Phase 4 | Pending |

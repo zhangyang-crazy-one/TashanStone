@@ -86,7 +86,7 @@ impl Translator {
                 "Terminal Leader",
                 "",
                 "Esc normal/back   Tab cycle focus",
-                "Space 1-5 focus   Space s save",
+                "Space 1-5 focus   Space s save   Space S save all",
                 "Space / search    Space , settings",
                 "Space k AI        Space l knowledge",
                 "Space g graph     Space i index",
@@ -94,6 +94,8 @@ impl Translator {
                 "w/b words         0/$ line",
                 "gg/G top/bottom   Ctrl+u/d half page",
                 "p preview         Enter open target",
+                "Ctrl+s save       Ctrl+Shift+s save all",
+                "Ctrl+z/y undo redo   Ctrl+c/x/v copy cut paste",
                 "",
                 "Ctrl+Q quit   Ctrl+K AI   Ctrl+G help",
             ],
@@ -101,7 +103,7 @@ impl Translator {
                 "终端 Leader",
                 "",
                 "Esc 返回普通/关闭   Tab 循环焦点",
-                "Space 1-5 聚焦     Space s 保存",
+                "Space 1-5 聚焦     Space s 保存   Space S 全部保存",
                 "Space / 搜索       Space , 设置",
                 "Space k AI         Space l 知识",
                 "Space g 图谱       Space i 索引",
@@ -109,6 +111,8 @@ impl Translator {
                 "w/b 单词           0/$ 行首尾",
                 "gg/G 顶部/底部     Ctrl+u/d 半页",
                 "p 预览             Enter 打开目标",
+                "Ctrl+s 保存        Ctrl+Shift+s 全部保存",
+                "Ctrl+z/y 撤销重做  Ctrl+c/x/v 复制剪切粘贴",
                 "",
                 "Ctrl+Q 退出   Ctrl+K AI   Ctrl+G 帮助",
             ],
@@ -121,6 +125,8 @@ impl Translator {
                 "F10 Settings F11 Index   F12 Quit",
                 "",
                 "Esc back/close  Tab cycle focus",
+                "Ctrl+s save  Ctrl+Shift+s save all",
+                "Ctrl+z/y undo redo  Ctrl+c/x/v copy cut paste",
                 "Ctrl+Q quit    Ctrl+K AI",
             ],
             (Language::Zh, ShortcutProfile::IdeCompatible) => vec![
@@ -132,6 +138,8 @@ impl Translator {
                 "F10 设置     F11 索引     F12 退出",
                 "",
                 "Esc 返回/关闭   Tab 循环焦点",
+                "Ctrl+s 保存  Ctrl+Shift+s 全部保存",
+                "Ctrl+z/y 撤销重做  Ctrl+c/x/v 复制剪切粘贴",
                 "Ctrl+Q 退出    Ctrl+K AI",
             ],
         }
@@ -488,14 +496,14 @@ fn en_text(key: TextKey) -> &'static str {
         TextKey::AppKeyboardPreview => "Keyboard Preview",
         TextKey::TitleSaved => "Saved",
         TextKey::TitleModified => "Modified",
-        TextKey::ShortcutHintInsertLeader => "Esc Normal  Ctrl+K AI  Ctrl+Q Quit  Ctrl+G Help",
-        TextKey::ShortcutHintNormalLeader => "Space leader  i Insert  p Preview  / Search  ? Help",
+        TextKey::ShortcutHintInsertLeader => "Esc Normal  Ctrl+S Save  Ctrl+Z Undo  Ctrl+V Paste",
+        TextKey::ShortcutHintNormalLeader => "Space leader  i Insert  Ctrl+C/X Copy/Cut  Ctrl+V Paste",
         TextKey::ShortcutHintPreview => "j/k Scroll  Tab Next  Enter Open  Esc Back",
         TextKey::ShortcutHintGlobalLeader => {
-            "Tab Cycle  Shift+Tab Back  Space 1-5 Focus  Space g Graph"
+            "Tab Cycle  Shift+Tab Back  Space 1-5 Focus  Space g Graph  Ctrl+S Save"
         }
         TextKey::ShortcutHintIde => {
-            "F1-F5 Focus  F6 Search  F7 Graph  F9 Save  F10 Settings"
+            "F1-F5 Focus  F6 Search  F7 Graph  F9 Save  Ctrl+Z/Y Undo/Redo"
         }
         TextKey::ShortcutProfileTerminalLeader => "Terminal Leader",
         TextKey::ShortcutProfileIdeCompatible => "IDE Compatible",
@@ -522,7 +530,7 @@ fn en_text(key: TextKey) -> &'static str {
         TextKey::GraphCanvasPreviewTitle => "PREVIEW CARD",
         TextKey::GraphCanvasFallbackTitle => "HOW TO READ",
         TextKey::GraphCanvasFallbackBody => {
-            "Tab cycles nodes. h/j/k/l pans. +/- zooms. Space recenters. Enter opens the focused note."
+            "Macro zoom shows the whole graph as points. Tab or Ctrl+I cycles nodes, n/N provides a fallback. h/j/k/l pans. +/- zooms. 0 fits all. Space recenters focus. Enter opens the focused note."
         }
         TextKey::GraphCanvasEmpty => {
             "No visible relations for this filter. The root note stays available at center."
@@ -541,7 +549,7 @@ fn en_text(key: TextKey) -> &'static str {
             "↑↓ Move  → Expand  ← Collapse  o Open  p Pin  f Filter  Esc Close"
         }
         TextKey::GraphFooterHintCanvas => {
-            "Tab Cycle  h/j/k/l Pan  +/- Zoom  Space Center  p Preview  f Pin  Enter Open  v Tree"
+            "Tab/Ctrl+I Cycle  n/N Step  h/j/k/l Pan  +/- Zoom  0 Fit All  Space Focus  p Preview  f Pin  Enter Open  v Tree"
         }
         TextKey::GraphStateFollowCurrent => "Root follows the current note",
         TextKey::GraphStatePinned => "Pinned keeps this note stable",
@@ -690,13 +698,13 @@ fn zh_text(key: TextKey) -> &'static str {
         TextKey::AppKeyboardPreview => "键盘预览",
         TextKey::TitleSaved => "已保存",
         TextKey::TitleModified => "已修改",
-        TextKey::ShortcutHintInsertLeader => "Esc 普通  Ctrl+K AI  Ctrl+Q 退出  Ctrl+G 帮助",
-        TextKey::ShortcutHintNormalLeader => "Space 引导  i 插入  p 预览  / 搜索  ? 帮助",
+        TextKey::ShortcutHintInsertLeader => "Esc 普通  Ctrl+S 保存  Ctrl+Z 撤销  Ctrl+V 粘贴",
+        TextKey::ShortcutHintNormalLeader => "Space 引导  i 插入  Ctrl+C/X 复制剪切  Ctrl+V 粘贴",
         TextKey::ShortcutHintPreview => "j/k 滚动  Tab 下一个  Enter 打开  Esc 返回",
         TextKey::ShortcutHintGlobalLeader => {
-            "Tab 循环  Shift+Tab 返回  Space 1-5 聚焦  Space g 图谱"
+            "Tab 循环  Shift+Tab 返回  Space 1-5 聚焦  Space g 图谱  Ctrl+S 保存"
         }
-        TextKey::ShortcutHintIde => "F1-F5 聚焦  F6 搜索  F7 图谱  F9 保存  F10 设置",
+        TextKey::ShortcutHintIde => "F1-F5 聚焦  F6 搜索  F7 图谱  F9 保存  Ctrl+Z/Y 撤销重做",
         TextKey::ShortcutProfileTerminalLeader => "终端 Leader",
         TextKey::ShortcutProfileIdeCompatible => "IDE 兼容",
         TextKey::KeyboardNoteTerminalLeader => "终端 Leader：Space 引导键 + 类 Vim 编辑导航。",
@@ -718,7 +726,7 @@ fn zh_text(key: TextKey) -> &'static str {
         TextKey::GraphCanvasPreviewTitle => "预览卡片",
         TextKey::GraphCanvasFallbackTitle => "使用说明",
         TextKey::GraphCanvasFallbackBody => {
-            "Tab 切换节点，h/j/k/l 平移，+/- 缩放，Space 回到焦点，Enter 打开当前节点。"
+            "全局缩放会用点图显示完整图谱。Tab 或 Ctrl+I 切换节点，n/N 作为备用切换键。h/j/k/l 平移，+/- 缩放，0 回到全图，Space 回到焦点，Enter 打开当前节点。"
         }
         TextKey::GraphCanvasEmpty => "当前筛选下没有可见关联，画布会保留根节点。",
         TextKey::GraphCanvasZoom => "缩放",
@@ -733,7 +741,7 @@ fn zh_text(key: TextKey) -> &'static str {
         TextKey::GraphUnresolvedLabel => "该目标笔记在当前工作区中无法解析。",
         TextKey::GraphFooterHint => "↑↓ 移动  → 展开  ← 收起  o 打开  p 固定  f 筛选  Esc 关闭",
         TextKey::GraphFooterHintCanvas => {
-            "Tab 切换  h/j/k/l 平移  +/- 缩放  Space 居中  p 预览  f 固定  Enter 打开  v 树视图"
+            "Tab/Ctrl+I 切换  n/N 步进  h/j/k/l 平移  +/- 缩放  0 全图  Space 焦点  p 预览  f 固定  Enter 打开  v 树视图"
         }
         TextKey::GraphStateFollowCurrent => "根节点会跟随当前笔记",
         TextKey::GraphStatePinned => "已固定，保持当前上下文不变",

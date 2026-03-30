@@ -90,6 +90,20 @@ const operatorSections: AssistantSettingsSectionDescriptor[] = [
     wireframeRef: { en: 'Operator Settings - Tools', zh: '操作员设置 - 工具' },
   },
   {
+    id: 'plugins',
+    titleKey: 'assistantSettings.operator.sections.plugins.title',
+    helpKey: 'assistantSettings.operator.sections.plugins.help',
+    phase: 'deferred',
+    wireframeRef: { en: 'Settings - Plugins', zh: '设置 - 插件（中文）' },
+  },
+  {
+    id: 'skills',
+    titleKey: 'assistantSettings.operator.sections.skills.title',
+    helpKey: 'assistantSettings.operator.sections.skills.help',
+    phase: 'deferred',
+    wireframeRef: { en: 'Settings - Skills', zh: '设置 - 技能（中文）' },
+  },
+  {
     id: 'agents',
     titleKey: 'assistantSettings.operator.sections.agents.title',
     helpKey: 'assistantSettings.operator.sections.agents.help',

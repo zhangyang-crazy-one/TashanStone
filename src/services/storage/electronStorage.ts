@@ -1,5 +1,5 @@
 import { StorageService, ExportData, ImportResult } from './types';
-import { MarkdownFile, AIConfig, ChatMessage, AppTheme, MistakeRecord } from '../../../types';
+import { MarkdownFile, AIConfig, AssistantSessionRecord, ChatMessage, AppTheme, MistakeRecord } from '../../../types';
 import { DEFAULT_AI_CONFIG } from '@/src/app/appDefaults';
 
 function normalizeAIConfig(config: AIConfig): AIConfig {
@@ -88,6 +88,30 @@ export class ElectronStorageService implements StorageService {
 
     async clearChatMessages(conversationId?: string): Promise<void> {
         return window.electronAPI.db.chat.clear(conversationId);
+    }
+
+    async getAssistantSessions(): Promise<AssistantSessionRecord[]> {
+        return window.electronAPI.db.session.list();
+    }
+
+    async getAssistantSession(sessionId: string): Promise<AssistantSessionRecord | null> {
+        return window.electronAPI.db.session.get(sessionId);
+    }
+
+    async saveAssistantSession(session: AssistantSessionRecord): Promise<AssistantSessionRecord> {
+        return window.electronAPI.db.session.save(session);
+    }
+
+    async deleteAssistantSession(sessionId: string): Promise<boolean> {
+        return window.electronAPI.db.session.delete(sessionId);
+    }
+
+    async getSessionMessages(sessionId: string): Promise<ChatMessage[]> {
+        return window.electronAPI.db.session.getMessages(sessionId);
+    }
+
+    async replaceSessionMessages(sessionId: string, messages: ChatMessage[]): Promise<ChatMessage[]> {
+        return window.electronAPI.db.session.replaceMessages(sessionId, messages);
     }
 
     // ===== Themes =====

@@ -36,6 +36,7 @@ use crate::components::{
 };
 use crate::i18n::{Language, TextKey};
 use crate::services::ai::{AiService, ChatMessage, MessageRole};
+use crate::services::clipboard::ClipboardService;
 use crate::services::config::{AppSettings, ConfigService, ShortcutProfile};
 use crate::services::vector::VectorService;
 use crate::services::workspace::{GraphRoot, WorkspaceIndex, WorkspaceLinkPreview};
@@ -83,6 +84,12 @@ enum ShortcutCommand {
     OpenSearch,
     OpenSettings,
     Save,
+    SaveAll,
+    Undo,
+    Redo,
+    Copy,
+    Cut,
+    Paste,
     ToggleChat,
     ToggleKnowledge,
     OpenGraphExplorer,
@@ -135,6 +142,9 @@ pub struct App {
 
     /// Persistent app settings
     config_service: ConfigService,
+
+    /// Clipboard with SSH-safe internal fallback
+    clipboard: ClipboardService,
 
     /// Workspace root path
     workspace_root: PathBuf,
@@ -220,6 +230,7 @@ impl App {
             confirm_dialog: ConfirmDialog::new(),
             focus_manager: focus::FocusManager::new(),
             config_service: ConfigService::new(),
+            clipboard: ClipboardService::new(),
             workspace_root: PathBuf::from("."),
             workspace_index: WorkspaceIndex::empty(PathBuf::from(".")),
             workspace_index_rx: None,
@@ -263,8 +274,8 @@ impl App {
 
     /// Apply runtime settings that impact loaded workspace and UI state.
     fn apply_runtime_settings(&mut self, settings: &AppSettings) {
-        self.language = Language::from_code(&settings.language);
-        self.workspace_root = PathBuf::from(&settings.workspace_path);
+        self.language = Language::from_code(&settings.ui.language);
+        self.workspace_root = PathBuf::from(&settings.ui.workspace_path);
         if !self.workspace_root.exists() {
             self.workspace_root = PathBuf::from(".");
         }
@@ -286,16 +297,16 @@ impl App {
         self.sync_knowledge_panel();
         self.request_workspace_index_reload();
 
-        let theme = if settings.theme == "light" {
+        let theme = if settings.ui.theme == "light" {
             Theme::Light
         } else {
             Theme::Dark
         };
         self.theme_manager.set_theme(theme);
         self.settings_modal.set_theme(theme);
-        self.shortcut_profile = settings.shortcut_profile;
-        self.show_shortcut_hints = settings.show_shortcut_hints;
-        self.preview_focus_follows_editor = settings.preview_focus_follows_editor;
+        self.shortcut_profile = settings.keyboard.shortcut_profile;
+        self.show_shortcut_hints = settings.keyboard.show_shortcut_hints;
+        self.preview_focus_follows_editor = settings.keyboard.preview_focus_follows_editor;
         self.preview_scroll_offset = 0;
         self.preview_selected_target = None;
         self.leader_pending = false;
@@ -1007,6 +1018,7 @@ impl App {
     fn handle_event(&mut self, event: crossterm::event::Event) {
         let action = match event {
             CrosstermEvent::Key(key) => self.handle_key_event(key),
+            CrosstermEvent::Paste(text) => self.handle_paste_event(text),
             CrosstermEvent::Mouse(mouse) => self.handle_mouse_event(mouse),
             CrosstermEvent::Resize(width, height) => Some(Action::Resize { width, height }),
             _ => None,
@@ -1040,6 +1052,36 @@ impl App {
             }
             ShortcutCommand::Save => {
                 return Some(Action::File(crate::action::FileAction::Save));
+            }
+            ShortcutCommand::SaveAll => {
+                return Some(Action::File(crate::action::FileAction::SaveAll));
+            }
+            ShortcutCommand::Undo => {
+                return Some(Action::Editor(crate::action::EditorAction::Undo));
+            }
+            ShortcutCommand::Redo => {
+                return Some(Action::Editor(crate::action::EditorAction::Redo));
+            }
+            ShortcutCommand::Copy => {
+                if self.focus_manager.focused() == ComponentId::Editor {
+                    if let Some(text) = self.editor.copy_current_line() {
+                        self.clipboard.set_contents(text);
+                    }
+                }
+            }
+            ShortcutCommand::Cut => {
+                if self.focus_manager.focused() == ComponentId::Editor {
+                    if let Some(text) = self.editor.cut_current_line() {
+                        self.clipboard.set_contents(text);
+                    }
+                }
+            }
+            ShortcutCommand::Paste => {
+                if self.focus_manager.focused() == ComponentId::Editor {
+                    if let Some(text) = self.clipboard.get_contents() {
+                        self.editor.paste_text(&text);
+                    }
+                }
             }
             ShortcutCommand::ToggleChat => {
                 self.chat.toggle();
@@ -1139,11 +1181,39 @@ impl App {
         }
     }
 
+    fn editor_shortcuts_enabled(&self) -> bool {
+        self.focus_manager.focused() == ComponentId::Editor
+            && self.editor_mode != EditorMode::Preview
+    }
+
     fn route_global_shortcut(&self, key: KeyEvent) -> Option<ShortcutCommand> {
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            if let KeyCode::Char(c) = key.code {
+                let lower = c.to_ascii_lowercase();
+                let shifted = key.modifiers.contains(KeyModifiers::SHIFT) || c.is_ascii_uppercase();
+                return match lower {
+                    'q' => Some(ShortcutCommand::OpenQuitDialog),
+                    'k' => Some(ShortcutCommand::ToggleChat),
+                    'g' => Some(ShortcutCommand::ToggleHelp),
+                    's' => Some(if shifted {
+                        ShortcutCommand::SaveAll
+                    } else {
+                        ShortcutCommand::Save
+                    }),
+                    'z' if self.editor_shortcuts_enabled() && shifted => {
+                        Some(ShortcutCommand::Redo)
+                    }
+                    'z' if self.editor_shortcuts_enabled() => Some(ShortcutCommand::Undo),
+                    'y' if self.editor_shortcuts_enabled() => Some(ShortcutCommand::Redo),
+                    'c' if self.editor_shortcuts_enabled() => Some(ShortcutCommand::Copy),
+                    'x' if self.editor_shortcuts_enabled() => Some(ShortcutCommand::Cut),
+                    'v' if self.editor_shortcuts_enabled() => Some(ShortcutCommand::Paste),
+                    _ => None,
+                };
+            }
+        }
+
         match (key.modifiers, key.code) {
-            (KeyModifiers::CONTROL, KeyCode::Char('q')) => Some(ShortcutCommand::OpenQuitDialog),
-            (KeyModifiers::CONTROL, KeyCode::Char('k')) => Some(ShortcutCommand::ToggleChat),
-            (KeyModifiers::CONTROL, KeyCode::Char('g')) => Some(ShortcutCommand::ToggleHelp),
             (_, KeyCode::F(1)) => Some(ShortcutCommand::Focus(ComponentId::Sidebar)),
             (_, KeyCode::F(2)) => Some(ShortcutCommand::Focus(ComponentId::Editor)),
             (_, KeyCode::F(3)) => Some(ShortcutCommand::Focus(ComponentId::Preview)),
@@ -1180,7 +1250,8 @@ impl App {
             KeyCode::Char('3') => Some(ShortcutCommand::Focus(ComponentId::Preview)),
             KeyCode::Char('4') => Some(ShortcutCommand::Focus(ComponentId::Chat)),
             KeyCode::Char('5') => Some(ShortcutCommand::Focus(ComponentId::Knowledge)),
-            KeyCode::Char('s') | KeyCode::Char('S') => Some(ShortcutCommand::Save),
+            KeyCode::Char('s') => Some(ShortcutCommand::Save),
+            KeyCode::Char('S') => Some(ShortcutCommand::SaveAll),
             KeyCode::Char('/') => Some(ShortcutCommand::OpenSearch),
             KeyCode::Char(',') => Some(ShortcutCommand::OpenSettings),
             KeyCode::Char('k') | KeyCode::Char('K') => Some(ShortcutCommand::ToggleChat),
@@ -1514,6 +1585,24 @@ impl App {
         None
     }
 
+    fn handle_paste_event(&mut self, text: String) -> Option<Action> {
+        if self.confirm_dialog.is_open()
+            || self.new_file_dialog.is_open()
+            || self.settings_modal.is_open()
+            || self.graph_explorer.is_open()
+            || self.shortcut_help_open
+        {
+            return None;
+        }
+
+        if self.focus_manager.focused() == ComponentId::Editor {
+            self.editor.paste_text(&text);
+            self.refresh_link_preview_for_focus();
+        }
+
+        None
+    }
+
     /// Handle an action
     fn handle_action(&mut self, action: Action) {
         tracing::debug!(action = action.name(), "Handling action");
@@ -1794,7 +1883,7 @@ impl App {
             }
             Action::Tick => {
                 let latest_settings = self.config_service.settings().clone();
-                let configured_root = PathBuf::from(&latest_settings.workspace_path);
+                let configured_root = PathBuf::from(&latest_settings.ui.workspace_path);
                 if configured_root != self.workspace_root && configured_root.exists() {
                     self.apply_runtime_settings(&latest_settings);
                 }

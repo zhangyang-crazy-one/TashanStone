@@ -54,8 +54,6 @@ pub struct ChatPanel {
     model: ChatModel,
     /// Is open
     is_open: bool,
-    /// Config service for AI settings
-    config_service: ConfigService,
     /// Current UI language
     language: Language,
 }
@@ -70,7 +68,6 @@ impl ChatPanel {
                 model: "gemini-2.0-flash".to_string(),
             },
             is_open: false,
-            config_service: ConfigService::new(),
             language: Language::En,
         }
     }
@@ -181,13 +178,13 @@ impl ChatPanel {
 
         tracing::info!(
             "Reading AI config from disk: provider={}, model={}, api_key_set={}",
-            settings.ai_provider,
-            settings.ai_model,
-            settings.ai_api_key.is_some()
+            settings.models.primary_provider,
+            settings.models.primary_model,
+            settings.models.primary_api_key.is_some()
         );
 
         // Parse provider from settings
-        let provider = match settings.ai_provider.as_str() {
+        let provider = match settings.models.primary_provider.as_str() {
             "openai" => AiProvider::OpenAI,
             "gemini" => AiProvider::Gemini,
             "ollama" => AiProvider::Ollama,
@@ -195,16 +192,16 @@ impl ChatPanel {
             _ => {
                 tracing::warn!(
                     "Unknown provider '{}', defaulting to OpenAI",
-                    settings.ai_provider
+                    settings.models.primary_provider
                 );
                 AiProvider::OpenAI
             }
         };
 
         // Use model from settings
-        let model = settings.ai_model.clone();
-        let api_key = settings.ai_api_key.clone();
-        let base_url = settings.ai_base_url.clone();
+        let model = settings.models.primary_model.clone();
+        let api_key = settings.models.primary_api_key.clone();
+        let base_url = settings.models.primary_base_url.clone();
 
         tracing::info!(
             "Using AI provider: {:?}, model: {}, base_url: {:?}",
@@ -228,8 +225,12 @@ impl ChatPanel {
 
     /// Get provider display name from current settings
     pub fn get_provider_display(&self) -> String {
-        let settings = self.config_service.settings();
-        format!("{} ({})", settings.ai_provider, settings.ai_model)
+        let config_service = ConfigService::new();
+        let settings = config_service.settings();
+        format!(
+            "{} ({})",
+            settings.models.primary_provider, settings.models.primary_model
+        )
     }
 
     /// Add AI response message

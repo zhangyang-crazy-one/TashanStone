@@ -639,5 +639,87 @@ export const migrations: Migration[] = [
             db.exec(`ALTER TABLE compacted_sessions DROP COLUMN tier`);
             logger.info('Memory tier tracking columns and tables dropped');
         }
+    },
+
+    // Version 12: canonical assistant sessions and reply-context metadata
+    {
+        version: 12,
+        description: 'Add canonical assistant sessions plus route and reply-context persistence',
+        up: (db) => {
+            db.exec(`
+                ALTER TABLE chat_messages ADD COLUMN session_id TEXT;
+                ALTER TABLE chat_messages ADD COLUMN route_key TEXT;
+                ALTER TABLE chat_messages ADD COLUMN reply_context_json TEXT;
+
+                CREATE INDEX IF NOT EXISTS idx_chat_session ON chat_messages(session_id);
+
+                CREATE TABLE IF NOT EXISTS assistant_sessions (
+                    id TEXT PRIMARY KEY,
+                    route_kind TEXT NOT NULL,
+                    route_key TEXT NOT NULL UNIQUE,
+                    scope TEXT NOT NULL,
+                    origin TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'active',
+                    title TEXT,
+                    thread_id TEXT,
+                    parent_session_id TEXT,
+                    primary_participant_id TEXT,
+                    participants_json TEXT,
+                    reply_context_json TEXT,
+                    metadata_json TEXT,
+                    started_at INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+                    updated_at INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+                    last_message_at INTEGER,
+                    FOREIGN KEY (parent_session_id) REFERENCES assistant_sessions(id) ON DELETE SET NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_assistant_sessions_status ON assistant_sessions(status);
+                CREATE INDEX IF NOT EXISTS idx_assistant_sessions_updated ON assistant_sessions(updated_at DESC);
+
+                UPDATE chat_messages
+                SET session_id = COALESCE(session_id, conversation_id),
+                    route_key = COALESCE(route_key, conversation_id);
+
+                INSERT OR IGNORE INTO assistant_sessions (
+                    id,
+                    route_kind,
+                    route_key,
+                    scope,
+                    origin,
+                    status,
+                    title,
+                    started_at,
+                    updated_at,
+                    last_message_at
+                )
+                SELECT
+                    conversation_id,
+                    'direct',
+                    conversation_id,
+                    'notebook',
+                    'app',
+                    'active',
+                    conversation_id,
+                    MIN(timestamp),
+                    MAX(timestamp),
+                    MAX(timestamp)
+                FROM chat_messages
+                GROUP BY conversation_id;
+            `);
+            logger.info('Canonical assistant session metadata created');
+        },
+        down: (db) => {
+            db.exec(`
+                DROP INDEX IF EXISTS idx_assistant_sessions_updated;
+                DROP INDEX IF EXISTS idx_assistant_sessions_status;
+                DROP TABLE IF EXISTS assistant_sessions;
+
+                DROP INDEX IF EXISTS idx_chat_session;
+                ALTER TABLE chat_messages DROP COLUMN reply_context_json;
+                ALTER TABLE chat_messages DROP COLUMN route_key;
+                ALTER TABLE chat_messages DROP COLUMN session_id;
+            `);
+            logger.info('Canonical assistant session metadata dropped');
+        }
     }
 ];

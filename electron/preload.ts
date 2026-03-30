@@ -36,6 +36,51 @@ interface ChatMessage {
     timestamp: string;
 }
 
+interface AssistantRouteParticipant {
+    participantId: string;
+    role: 'primary' | 'member' | 'assistant' | 'system';
+    displayName?: string;
+    metadata?: Record<string, unknown>;
+}
+
+interface AssistantReplyContextRef {
+    transportMessageId?: string;
+    replyToMessageId?: string;
+    replyTarget?: string;
+    channelThreadId?: string;
+    quotedText?: string;
+    metadata?: Record<string, unknown>;
+}
+
+interface AssistantSessionRecord {
+    sessionId: string;
+    threadId?: string;
+    scope: 'notebook' | 'workspace' | 'channel' | 'automation';
+    origin: 'app' | 'channel' | 'automation' | 'test';
+    parentSessionId?: string;
+    route: {
+        routeId: string;
+        kind: 'direct' | 'group' | 'channel-thread' | 'automation';
+        routeKey: string;
+        transport: 'electron-ipc' | 'http' | 'webhook' | 'cli' | 'internal';
+        origin: 'app' | 'channel' | 'automation' | 'test';
+        scope: 'notebook' | 'workspace' | 'channel' | 'automation';
+        threadId?: string;
+        participantIds?: string[];
+        participants?: AssistantRouteParticipant[];
+        metadata?: Record<string, unknown>;
+    };
+    status: 'active' | 'idle' | 'archived';
+    title?: string;
+    notebookId?: string;
+    workspaceId?: string;
+    replyContext?: AssistantReplyContextRef;
+    startedAt: number;
+    updatedAt: number;
+    lastMessageAt?: number;
+    metadata?: Record<string, unknown>;
+}
+
 interface AppTheme {
     id: string;
     name: string;
@@ -170,6 +215,22 @@ try {
                 ipcRenderer.invoke('db:chat:add', message, conversationId),
             clear: (conversationId?: string): Promise<void> =>
                 ipcRenderer.invoke('db:chat:clear', conversationId)
+        },
+
+        // Assistant sessions
+        session: {
+            list: (): Promise<AssistantSessionRecord[]> =>
+                ipcRenderer.invoke('db:session:list'),
+            get: (sessionId: string): Promise<AssistantSessionRecord | null> =>
+                ipcRenderer.invoke('db:session:get', sessionId),
+            save: (session: AssistantSessionRecord): Promise<AssistantSessionRecord> =>
+                ipcRenderer.invoke('db:session:save', session),
+            delete: (sessionId: string): Promise<boolean> =>
+                ipcRenderer.invoke('db:session:delete', sessionId),
+            getMessages: (sessionId: string): Promise<ChatMessage[]> =>
+                ipcRenderer.invoke('db:session:getMessages', sessionId),
+            replaceMessages: (sessionId: string, messages: ChatMessage[]): Promise<ChatMessage[]> =>
+                ipcRenderer.invoke('db:session:replaceMessages', sessionId, messages)
         },
 
         // Themes

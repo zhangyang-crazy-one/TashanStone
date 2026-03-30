@@ -46,6 +46,7 @@ interface McpToolDependencies {
 
 interface NotebookToolExecutorDependencies {
   aiConfig: AIConfig;
+  getAiConfig?: () => AIConfig;
   files: FileMutation;
   knowledge: KnowledgeToolDependencies;
   mcp?: McpToolDependencies;
@@ -82,7 +83,7 @@ const toJsonValue = (value: unknown): JsonValue => {
     typeof value === 'number' ||
     typeof value === 'boolean'
   ) {
-    return value;
+    return value as JsonValue;
   }
 
   if (Array.isArray(value)) {
@@ -335,7 +336,7 @@ const createSearchFilesHandler = (files: FileMutation): AssistantToolHandler => 
 
 const createKnowledgeBaseHandler = (
   knowledge: KnowledgeToolDependencies,
-  aiConfig: AIConfig,
+  getAiConfig: () => AIConfig,
 ): AssistantToolHandler => ({
   source: 'knowledge',
   async execute(args) {
@@ -351,7 +352,7 @@ const createKnowledgeBaseHandler = (
     }
 
     await knowledge.prepareSearch?.();
-    const ragResponse = await knowledge.search(query, maxResults, aiConfig);
+    const ragResponse = await knowledge.search(query, maxResults, getAiConfig());
 
     return {
       success: true,
@@ -444,6 +445,7 @@ export function createNotebookToolExecutor(
   dependencies: NotebookToolExecutorDependencies,
 ): AssistantToolExecutor {
   const now = dependencies.now ?? (() => Date.now());
+  const getAiConfig = dependencies.getAiConfig ?? (() => dependencies.aiConfig);
   const handlers: Record<string, AssistantToolHandler> = {
     create_file: createCreateFileHandler(dependencies.files, now),
     update_file: createUpdateFileHandler(dependencies.files, now),
@@ -452,7 +454,7 @@ export function createNotebookToolExecutor(
     search_files: createSearchFilesHandler(dependencies.files),
     search_knowledge_base: createKnowledgeBaseHandler(
       dependencies.knowledge,
-      dependencies.aiConfig,
+      getAiConfig,
     ),
   };
 

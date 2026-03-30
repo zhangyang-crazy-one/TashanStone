@@ -38,10 +38,14 @@ const {
   supportsNativeStreamingToolCallsMock: vi.fn(),
 }));
 
-vi.mock('@/src/services/assistant-runtime', () => ({
-  createAssistantRuntime: createAssistantRuntimeMock,
-  createNotebookContextAssembler: createNotebookContextAssemblerMock,
-}));
+vi.mock('@/src/services/assistant-runtime', async () => {
+  const actual = await vi.importActual<typeof import('../../src/services/assistant-runtime')>('@/src/services/assistant-runtime');
+  return {
+    ...actual,
+    createAssistantRuntime: createAssistantRuntimeMock,
+    createNotebookContextAssembler: createNotebookContextAssemblerMock,
+  };
+});
 
 vi.mock('@/services/aiService', () => ({
   compactConversation: compactConversationMock,
@@ -361,50 +365,76 @@ describe('in-app assistant runtime adapter', () => {
 
     const runtimeExecute = vi.fn(async function* (
       request: AssistantRuntimeRequest,
-      options?: { toolsCallback?: (name: string, args: Record<string, JsonValue>) => Promise<JsonValue> },
     ): AsyncGenerator<AssistantRuntimeEvent, void, void> {
-      const createResult = await options?.toolsCallback?.('create_file', {
-        filename: 'runtime-note.md',
-        content: 'Created from runtime',
-      });
-      const searchResult = await options?.toolsCallback?.('search_knowledge_base', {
-        query: 'runtime bridge',
-        maxResults: 5,
-      });
-
-      yield createToolEvent(
-        request.requestId,
-        request.session.sessionId,
-        'tool-create',
-        'create_file',
-        'success',
-        createResult,
-      );
-      yield createToolEvent(
-        request.requestId,
-        request.session.sessionId,
-        'tool-search',
-        'search_knowledge_base',
-        'success',
-        searchResult,
-      );
-      yield createResultEvent(request.requestId, request.session.sessionId, 'Notebook actions complete', [
-        {
-          toolCallId: 'tool-create',
-          toolName: 'create_file',
-          status: 'success',
-          result: createResult,
-        },
-        {
-          toolCallId: 'tool-search',
-          toolName: 'search_knowledge_base',
-          status: 'success',
-          result: searchResult,
-        },
-      ]);
+      yield createResultEvent(request.requestId, request.session.sessionId, 'Notebook actions complete');
     });
 
-    createAssistantRuntimeMock.mockReturnValue({ execute: runtimeExecute });
+    createAssistantRuntimeMock.mockImplementation(({ toolExecutor }) => ({
+      execute: async function* (
+        request: AssistantRuntimeRequest,
+      ): AsyncGenerator<AssistantRuntimeEvent, void, void> {
+        const createExecution = await toolExecutor.execute({
+          executionId: 'exec-create',
+          toolCallId: 'tool-create',
+          toolName: 'create_file',
+          sessionId: request.session.sessionId,
+          callerId: request.caller.callerId,
+          transport: request.caller.transport,
+          arguments: {
+            filename: 'runtime-note.md',
+            content: 'Created from runtime',
+          },
+          media: [],
+        });
+        const createResult = createExecution.status === 'success' ? createExecution.result : undefined;
+
+        const searchExecution = await toolExecutor.execute({
+          executionId: 'exec-search',
+          toolCallId: 'tool-search',
+          toolName: 'search_knowledge_base',
+          sessionId: request.session.sessionId,
+          callerId: request.caller.callerId,
+          transport: request.caller.transport,
+          arguments: {
+            query: 'runtime bridge',
+            maxResults: 5,
+          },
+          media: [],
+        });
+        const searchResult = searchExecution.status === 'success' ? searchExecution.result : undefined;
+
+        yield createToolEvent(
+          request.requestId,
+          request.session.sessionId,
+          'tool-create',
+          'create_file',
+          'success',
+          createResult,
+        );
+        yield createToolEvent(
+          request.requestId,
+          request.session.sessionId,
+          'tool-search',
+          'search_knowledge_base',
+          'success',
+          searchResult,
+        );
+        yield createResultEvent(request.requestId, request.session.sessionId, 'Notebook actions complete', [
+          {
+            toolCallId: 'tool-create',
+            toolName: 'create_file',
+            status: 'success',
+            result: createResult,
+          },
+          {
+            toolCallId: 'tool-search',
+            toolName: 'search_knowledge_base',
+            status: 'success',
+            result: searchResult,
+          },
+        ]);
+      },
+    }));
 
     const { result } = renderHook(() => useAIWorkflow(harness.options));
 

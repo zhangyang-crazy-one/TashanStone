@@ -3,6 +3,7 @@
 //! Provides AI, storage, search, vector, and learning services.
 
 pub mod ai;
+pub mod clipboard;
 pub mod config;
 pub mod learning;
 pub mod storage;

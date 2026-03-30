@@ -3,6 +3,7 @@ import { getDatabase } from '../database/index.js';
 import { fileRepository } from '../database/repositories/fileRepository.js';
 import { configRepository, settingsRepository } from '../database/repositories/configRepository.js';
 import { chatRepository } from '../database/repositories/chatRepository.js';
+import { sessionRepository } from '../database/repositories/sessionRepository.js';
 import { themeRepository } from '../database/repositories/themeRepository.js';
 import { mistakeRepository } from '../database/repositories/mistakeRepository.js';
 import { vectorRepository } from '../database/repositories/vectorRepository.js';
@@ -12,6 +13,7 @@ import { logger } from '../utils/logger.js';
 import type { MarkdownFile } from '../database/repositories/fileRepository.js';
 import type { AIConfig } from '../database/repositories/configRepository.js';
 import type { ChatMessage } from '../database/repositories/chatRepository.js';
+import type { AssistantSessionRecord } from '../../types.js';
 import type { AppTheme } from '../database/repositories/themeRepository.js';
 import type { MistakeRecord } from '../database/repositories/mistakeRepository.js';
 import type { VectorChunk, IndexMeta } from '../database/repositories/vectorRepository.js';
@@ -141,6 +143,55 @@ export function registerDbHandlers(): void {
             chatRepository.clear(conversationId);
         } catch (error) {
             handleError('db:chat:clear', error);
+        }
+    });
+
+    // ===== Assistant Session Handlers =====
+    ipcMain.handle('db:session:list', async () => {
+        try {
+            return sessionRepository.list();
+        } catch (error) {
+            handleError('db:session:list', error);
+        }
+    });
+
+    ipcMain.handle('db:session:get', async (_, sessionId: string) => {
+        try {
+            return sessionRepository.getById(sessionId);
+        } catch (error) {
+            handleError('db:session:get', error);
+        }
+    });
+
+    ipcMain.handle('db:session:save', async (_, session: AssistantSessionRecord) => {
+        try {
+            return sessionRepository.save(session);
+        } catch (error) {
+            handleError('db:session:save', error);
+        }
+    });
+
+    ipcMain.handle('db:session:delete', async (_, sessionId: string) => {
+        try {
+            return sessionRepository.delete(sessionId);
+        } catch (error) {
+            handleError('db:session:delete', error);
+        }
+    });
+
+    ipcMain.handle('db:session:getMessages', async (_, sessionId: string) => {
+        try {
+            return sessionRepository.getMessages(sessionId);
+        } catch (error) {
+            handleError('db:session:getMessages', error);
+        }
+    });
+
+    ipcMain.handle('db:session:replaceMessages', async (_, sessionId: string, messages: ChatMessage[]) => {
+        try {
+            return sessionRepository.replaceMessages(sessionId, messages);
+        } catch (error) {
+            handleError('db:session:replaceMessages', error);
         }
     });
 

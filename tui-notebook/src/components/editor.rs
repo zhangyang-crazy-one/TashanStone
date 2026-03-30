@@ -26,6 +26,7 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 const DEFAULT_PREVIEW_FONT_SIZE: (u16, u16) = (10, 20);
 const MIN_PREVIEW_IMAGE_HEIGHT: u16 = 6;
 const MAX_PREVIEW_IMAGE_HEIGHT: u16 = 18;
+const MAX_EDIT_HISTORY: usize = 256;
 
 /// Editor state
 pub struct Editor {
@@ -53,8 +54,14 @@ pub struct Editor {
     document_index_dirty: Cell<bool>,
     /// Monotonic version used to invalidate preview render cache on edits
     document_version: Cell<u64>,
+    /// Snapshot used to determine whether the current buffer is dirty
+    saved_snapshot: Rope,
     /// Modified files pending save
     modified_files: HashMap<String, Rope>,
+    /// Undo history entries
+    undo_stack: Vec<EditHistoryEntry>,
+    /// Redo history entries
+    redo_stack: Vec<EditHistoryEntry>,
     /// Workspace root for resolving image paths
     workspace_root: Option<PathBuf>,
     /// Terminal image protocol picker initialized after entering alt screen
@@ -65,6 +72,32 @@ pub struct Editor {
     preview_render_cache: RefCell<HashMap<u16, PreviewRenderCacheValue>>,
     /// Current UI language
     language: Language,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CursorSnapshot {
+    line: usize,
+    column: usize,
+    scroll_offset: usize,
+    horizontal_scroll: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EditKind {
+    Insert,
+    Paste,
+    Backspace,
+    Delete,
+    Cut,
+}
+
+#[derive(Debug, Clone)]
+struct EditHistoryEntry {
+    before: Rope,
+    after: Rope,
+    before_cursor: CursorSnapshot,
+    after_cursor: CursorSnapshot,
+    kind: EditKind,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3025,7 +3058,10 @@ impl Editor {
             block_refs: RefCell::new(HashMap::new()),
             document_index_dirty: Cell::new(false),
             document_version: Cell::new(0),
+            saved_snapshot: Rope::new(),
             modified_files: HashMap::new(),
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
             workspace_root: None,
             preview_picker: RefCell::new(None),
             preview_image_cache: RefCell::new(HashMap::new()),
@@ -3424,8 +3460,13 @@ impl Editor {
                 self.cursor_col = 0;
                 self.scroll_offset = 0;
                 self.horizontal_scroll = 0;
+                self.saved_snapshot = self.buffer.clone();
+                self.modified_files.clear();
+                self.undo_stack.clear();
+                self.redo_stack.clear();
                 self.invalidate_buffer_caches();
                 self.parse_document();
+                self.refresh_modified_tracking();
                 self.ensure_cursor_visible();
                 self.preview_image_cache.borrow_mut().clear();
             }
@@ -3439,12 +3480,16 @@ impl Editor {
     pub fn create_file(&mut self, name: &str) {
         self.buffer = Rope::from_str("");
         self.current_file = Some(name.to_string());
-        self.is_modified = false;
         self.cursor_line = 0;
         self.cursor_col = 0;
         self.scroll_offset = 0;
         self.horizontal_scroll = 0;
+        self.saved_snapshot = self.buffer.clone();
+        self.modified_files.clear();
+        self.undo_stack.clear();
+        self.redo_stack.clear();
         self.invalidate_buffer_caches();
+        self.refresh_modified_tracking();
         self.preview_image_cache.borrow_mut().clear();
     }
 
@@ -3457,7 +3502,8 @@ impl Editor {
         if let Err(e) = std::fs::write(path, content) {
             tracing::error!("Failed to save file {}: {}", path, e);
         } else {
-            self.is_modified = false;
+            self.saved_snapshot = self.buffer.clone();
+            self.refresh_modified_tracking();
             tracing::info!("Saved file: {}", path);
         }
     }
@@ -3469,7 +3515,11 @@ impl Editor {
                 tracing::error!("Failed to save file {}: {}", path, e);
             }
         }
+        if self.current_file.is_some() {
+            self.saved_snapshot = self.buffer.clone();
+        }
         self.modified_files.clear();
+        self.refresh_modified_tracking();
     }
 
     /// Parse the document for wiki links and block references
@@ -3867,10 +3917,93 @@ impl Editor {
         char_idx.min(text.chars().count())
     }
 
+    fn cursor_snapshot(&self) -> CursorSnapshot {
+        CursorSnapshot {
+            line: self.cursor_line,
+            column: self.cursor_col,
+            scroll_offset: self.scroll_offset,
+            horizontal_scroll: self.horizontal_scroll,
+        }
+    }
+
+    fn restore_cursor_snapshot(&mut self, snapshot: CursorSnapshot) {
+        self.cursor_line = snapshot.line;
+        self.cursor_col = snapshot.column;
+        self.scroll_offset = snapshot.scroll_offset;
+        self.horizontal_scroll = snapshot.horizontal_scroll;
+        self.ensure_cursor_visible();
+    }
+
+    fn refresh_modified_tracking(&mut self) {
+        self.is_modified = self.buffer != self.saved_snapshot;
+
+        self.modified_files.clear();
+        if self.is_modified {
+            if let Some(path) = self.current_file.clone() {
+                self.modified_files.insert(path, self.buffer.clone());
+            }
+        }
+    }
+
+    fn push_edit_history(&mut self, entry: EditHistoryEntry, merge: bool) {
+        if merge {
+            if let Some(last) = self.undo_stack.last_mut() {
+                if last.kind == entry.kind
+                    && last.after == entry.before
+                    && last.after_cursor == entry.before_cursor
+                    && matches!(entry.kind, EditKind::Insert)
+                {
+                    last.after = entry.after;
+                    last.after_cursor = entry.after_cursor;
+                    self.redo_stack.clear();
+                    return;
+                }
+            }
+        }
+
+        self.undo_stack.push(entry);
+        if self.undo_stack.len() > MAX_EDIT_HISTORY {
+            self.undo_stack.remove(0);
+        }
+        self.redo_stack.clear();
+    }
+
+    fn apply_edit<F>(&mut self, kind: EditKind, merge: bool, mutate: F) -> bool
+    where
+        F: FnOnce(&mut Self),
+    {
+        let before = self.buffer.clone();
+        let before_cursor = self.cursor_snapshot();
+        mutate(self);
+        if self.buffer == before {
+            return false;
+        }
+
+        self.invalidate_buffer_caches();
+        self.ensure_cursor_visible();
+        self.refresh_modified_tracking();
+        let after = self.buffer.clone();
+        let after_cursor = self.cursor_snapshot();
+        self.push_edit_history(
+            EditHistoryEntry {
+                before,
+                after,
+                before_cursor,
+                after_cursor,
+                kind,
+            },
+            merge,
+        );
+        true
+    }
+
     /// Handle key events
     pub fn handle_key_event(&mut self, key: KeyEvent) -> Option<Action> {
         match key.code {
-            crossterm::event::KeyCode::Char(c) => {
+            crossterm::event::KeyCode::Char(c)
+                if key.modifiers.is_empty()
+                    || key.modifiers == crossterm::event::KeyModifiers::SHIFT =>
+            {
                 self.insert_char(c);
                 Some(Action::Editor(EditorAction::Insert(c.to_string())))
             }
@@ -3922,16 +4055,64 @@ impl Editor {
                 }
             }
             EditorAction::Undo => {
-                // TODO: Implement undo
+                self.undo();
             }
             EditorAction::Redo => {
-                // TODO: Implement redo
+                self.redo();
             }
             EditorAction::Scroll(delta) => {
                 self.scroll_by(*delta);
             }
             _ => {}
         }
+    }
+
+    pub fn undo(&mut self) -> bool {
+        let Some(entry) = self.undo_stack.pop() else {
+            return false;
+        };
+
+        self.buffer = entry.before.clone();
+        self.invalidate_buffer_caches();
+        self.restore_cursor_snapshot(entry.before_cursor);
+        self.refresh_modified_tracking();
+        self.redo_stack.push(entry);
+        true
+    }
+
+    pub fn redo(&mut self) -> bool {
+        let Some(entry) = self.redo_stack.pop() else {
+            return false;
+        };
+
+        self.buffer = entry.after.clone();
+        self.invalidate_buffer_caches();
+        self.restore_cursor_snapshot(entry.after_cursor);
+        self.refresh_modified_tracking();
+        self.undo_stack.push(entry);
+        true
+    }
+
+    pub fn copy_current_line(&self) -> Option<String> {
+        self.current_line_text_with_newline()
+    }
+
+    pub fn cut_current_line(&mut self) -> Option<String> {
+        let copied = self.current_line_text_with_newline()?;
+        if !self.apply_edit(EditKind::Cut, false, |editor| editor.raw_cut_current_line()) {
+            return None;
+        }
+        Some(copied)
+    }
+
+    pub fn paste_text(&mut self, text: &str) -> bool {
+        if text.is_empty() {
+            return false;
+        }
+
+        self.apply_edit(EditKind::Paste, false, |editor| {
+            editor.raw_insert_text(text)
+        })
     }
 
     /// Set scroll offset (for sync scrolling)
@@ -3952,39 +4133,37 @@ impl Editor {
         self.clamp_cursor_to_view();
     }
 
-    /// Insert a character at cursor
-    fn insert_char(&mut self, c: char) {
-        self.clamp_cursor_to_buffer();
-        let pos = self.buffer.line_to_char(self.cursor_line) + self.cursor_col;
-        self.buffer.insert(pos, c.to_string().as_str());
-        self.cursor_col += 1;
-        self.is_modified = true;
-        self.invalidate_buffer_caches();
-        self.ensure_cursor_visible();
+    fn current_line_text_with_newline(&self) -> Option<String> {
+        if self.buffer.len_lines() == 0 {
+            return None;
+        }
+        Some(
+            self.buffer
+                .line(self.clamp_line_index(self.cursor_line))
+                .to_string(),
+        )
     }
 
-    /// Insert a newline
-    fn insert_newline(&mut self) {
+    fn raw_insert_text(&mut self, text: &str) {
         self.clamp_cursor_to_buffer();
         let pos = self.buffer.line_to_char(self.cursor_line) + self.cursor_col;
-        self.buffer.insert(pos, "\n");
-        self.cursor_line += 1;
-        self.cursor_col = 0;
-        self.is_modified = true;
-        self.invalidate_buffer_caches();
-        self.ensure_cursor_visible();
+        self.buffer.insert(pos, text);
+        for ch in text.chars() {
+            if ch == '\n' {
+                self.cursor_line += 1;
+                self.cursor_col = 0;
+            } else {
+                self.cursor_col += 1;
+            }
+        }
     }
 
-    /// Delete character backward
-    fn delete_backward(&mut self) {
+    fn raw_delete_backward(&mut self) {
         self.clamp_cursor_to_buffer();
         if self.cursor_col > 0 {
             let pos = self.buffer.line_to_char(self.cursor_line) + self.cursor_col - 1;
             self.buffer.remove(pos..pos + 1);
             self.cursor_col -= 1;
-            self.is_modified = true;
-            self.invalidate_buffer_caches();
-            self.ensure_cursor_visible();
         } else if self.cursor_line > 0 {
             let prev_line = self.cursor_line - 1;
             let prev_line_end = self.buffer.line_to_char(prev_line + 1) - 1;
@@ -3992,22 +4171,60 @@ impl Editor {
             self.buffer.remove(prev_line_end..current_line_start);
             self.cursor_line -= 1;
             self.cursor_col = self.line_len_chars(self.cursor_line);
-            self.is_modified = true;
-            self.invalidate_buffer_caches();
-            self.ensure_cursor_visible();
         }
     }
 
-    /// Delete character forward
-    fn delete_forward(&mut self) {
+    fn raw_delete_forward(&mut self) {
         self.clamp_cursor_to_buffer();
         let pos = self.buffer.line_to_char(self.cursor_line) + self.cursor_col;
         if pos < self.buffer.len_chars() {
             self.buffer.remove(pos..pos + 1);
-            self.is_modified = true;
-            self.invalidate_buffer_caches();
-            self.ensure_cursor_visible();
         }
+    }
+
+    fn raw_cut_current_line(&mut self) {
+        self.clamp_cursor_to_buffer();
+        let start = self.buffer.line_to_char(self.cursor_line);
+        let end = if self.cursor_line < self.max_line_index() {
+            self.buffer.line_to_char(self.cursor_line + 1)
+        } else {
+            self.buffer.len_chars()
+        };
+
+        if start < end {
+            self.buffer.remove(start..end);
+        }
+        self.cursor_line = self.cursor_line.min(self.max_line_index());
+        self.cursor_col = 0;
+    }
+
+    /// Insert a character at cursor
+    fn insert_char(&mut self, c: char) {
+        let text = c.to_string();
+        let _ = self.apply_edit(EditKind::Insert, c != '\n', |editor| {
+            editor.raw_insert_text(&text)
+        });
+    }
+
+    /// Insert a newline
+    fn insert_newline(&mut self) {
+        let _ = self.apply_edit(EditKind::Insert, false, |editor| {
+            editor.raw_insert_text("\n")
+        });
+    }
+
+    /// Delete character backward
+    fn delete_backward(&mut self) {
+        let _ = self.apply_edit(EditKind::Backspace, false, |editor| {
+            editor.raw_delete_backward()
+        });
+    }
+
+    /// Delete character forward
+    fn delete_forward(&mut self) {
+        let _ = self.apply_edit(EditKind::Delete, false, |editor| {
+            editor.raw_delete_forward()
+        });
     }
 
     /// Move cursor up
@@ -4055,9 +4272,9 @@ impl Editor {
 
     /// Insert tab
     fn insert_tab(&mut self) {
-        for _ in 0..4 {
-            self.insert_char(' ');
-        }
+        let _ = self.apply_edit(EditKind::Insert, false, |editor| {
+            editor.raw_insert_text("    ")
+        });
     }
 
     /// Render the editor
@@ -5069,5 +5286,51 @@ mod tests {
                 && link.target == "img/photo.jpg"
                 && link.label.as_deref() == Some("Alt")
         }));
+    }
+
+    #[test]
+    fn test_undo_redo_merges_contiguous_insertions() {
+        let mut editor = Editor::new();
+        editor.create_file("notes.md");
+
+        editor.insert_char('a');
+        editor.insert_char('b');
+
+        assert_eq!(editor.buffer.to_string(), "ab");
+        assert!(editor.is_modified());
+        assert!(editor.undo());
+        assert_eq!(editor.buffer.to_string(), "");
+        assert!(!editor.is_modified());
+        assert!(editor.redo());
+        assert_eq!(editor.buffer.to_string(), "ab");
+        assert!(editor.is_modified());
+    }
+
+    #[test]
+    fn test_paste_is_single_undo_transaction() {
+        let mut editor = Editor::new();
+        editor.create_file("notes.md");
+
+        assert!(editor.paste_text("alpha\nbeta"));
+        assert_eq!(editor.buffer.to_string(), "alpha\nbeta");
+        assert!(editor.undo());
+        assert_eq!(editor.buffer.to_string(), "");
+        assert!(editor.redo());
+        assert_eq!(editor.buffer.to_string(), "alpha\nbeta");
+    }
+
+    #[test]
+    fn test_copy_and_cut_current_line() {
+        let mut editor = Editor::new();
+        editor.buffer = Rope::from_str("alpha\nbeta\n");
+        editor.saved_snapshot = editor.buffer.clone();
+        editor.set_cursor_position(0, 0);
+
+        assert_eq!(editor.copy_current_line().as_deref(), Some("alpha\n"));
+        assert_eq!(editor.cut_current_line().as_deref(), Some("alpha\n"));
+        assert_eq!(editor.buffer.to_string(), "beta\n");
+        assert!(editor.is_modified());
+        assert!(editor.undo());
+        assert_eq!(editor.buffer.to_string(), "alpha\nbeta\n");
     }
 }

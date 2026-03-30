@@ -362,14 +362,20 @@ impl NewFileDialog {
         primary: bool,
     ) {
         let (bg, fg) = if primary {
-            (Color::Rgb(35, 134, 54), Color::Rgb(201, 209, 217))
+            if focused {
+                (Color::Rgb(46, 160, 67), Color::White)
+            } else {
+                (Color::Rgb(35, 134, 54), Color::Rgb(201, 209, 217))
+            }
+        } else if focused {
+            (Color::Rgb(35, 58, 92), Color::Rgb(241, 246, 252))
         } else {
             (Color::Rgb(33, 38, 45), Color::Rgb(139, 148, 158))
         };
         let border = if focused {
-            Color::Rgb(88, 166, 255)
+            Color::Rgb(121, 192, 255)
         } else {
-            bg
+            Color::Rgb(48, 54, 61)
         };
         let button = Block::default()
             .borders(Borders::ALL)
@@ -377,13 +383,13 @@ impl NewFileDialog {
             .style(Style::default().bg(bg));
         f.render_widget(button, area);
         let text = Paragraph::new(label)
-            .style(Style::default().fg(fg).add_modifier(if primary {
+            .style(Style::default().fg(fg).add_modifier(if focused || primary {
                 Modifier::BOLD
             } else {
                 Modifier::empty()
             }))
             .alignment(ratatui::layout::Alignment::Center);
-        f.render_widget(text, area);
+        f.render_widget(text, Self::button_inner_rect(area));
     }
 
     fn contains(rect: Rect, point: (u16, u16)) -> bool {
@@ -423,6 +429,14 @@ impl NewFileDialog {
             cancel_button,
             create_button,
         }
+    }
+
+    fn button_inner_rect(area: Rect) -> Rect {
+        if area.width <= 2 || area.height <= 2 {
+            return area;
+        }
+
+        Rect::new(area.x + 1, area.y + area.height / 2, area.width - 2, 1)
     }
 }
 

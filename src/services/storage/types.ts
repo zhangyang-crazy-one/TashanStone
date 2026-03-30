@@ -1,4 +1,4 @@
-import { MarkdownFile, AIConfig, ChatMessage, AppTheme, MistakeRecord } from '../../../types';
+import { MarkdownFile, AIConfig, AssistantSessionRecord, ChatMessage, AppTheme, MistakeRecord } from '../../../types';
 
 /**
  * Export data structure for backup/restore
@@ -50,6 +50,14 @@ export interface StorageService {
     getChatMessages(conversationId?: string): Promise<ChatMessage[]>;
     addChatMessage(message: ChatMessage, conversationId?: string): Promise<ChatMessage>;
     clearChatMessages(conversationId?: string): Promise<void>;
+
+    // ===== Assistant Sessions =====
+    getAssistantSessions(): Promise<AssistantSessionRecord[]>;
+    getAssistantSession(sessionId: string): Promise<AssistantSessionRecord | null>;
+    saveAssistantSession(session: AssistantSessionRecord): Promise<AssistantSessionRecord>;
+    deleteAssistantSession(sessionId: string): Promise<boolean>;
+    getSessionMessages(sessionId: string): Promise<ChatMessage[]>;
+    replaceSessionMessages(sessionId: string, messages: ChatMessage[]): Promise<ChatMessage[]>;
 
     // ===== Themes =====
     getThemes(): Promise<AppTheme[]>;

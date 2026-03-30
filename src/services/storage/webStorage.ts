@@ -1,5 +1,5 @@
 import { StorageService, ExportData, ImportResult } from './types';
-import { MarkdownFile, AIConfig, ChatMessage, AppTheme, MistakeRecord } from '../../../types';
+import { MarkdownFile, AIConfig, AssistantSessionRecord, ChatMessage, AppTheme, MistakeRecord } from '../../../types';
 
 // Default themes - duplicated here to avoid circular import
 const DEFAULT_THEMES: AppTheme[] = [
@@ -114,11 +114,15 @@ const KEYS = {
     FILES: 'neon-files',
     ACTIVE_ID: 'neon-active-id',
     AI_CONFIG: 'neon-ai-config',
+    ASSISTANT_SESSIONS: 'neon-assistant-sessions',
     CHAT_HISTORY: 'neon-chat-history',
+    SESSION_MESSAGES: 'neon-session-messages',
     ACTIVE_THEME: 'neon-active-theme-id',
     CUSTOM_THEMES: 'neon-custom-themes',
     MISTAKES: 'neon-quiz-mistakes'
 };
+
+const DEFAULT_CHAT_SESSION_ID = 'default';
 
 /**
  * Web storage service - uses localStorage for browser-only mode
@@ -182,6 +186,19 @@ export class WebStorageService implements StorageService {
         localStorage.setItem(KEYS.FILES, JSON.stringify(toSave));
     }
 
+    private readJson<T>(key: string, fallback: T): T {
+        try {
+            const saved = localStorage.getItem(key);
+            if (saved) {
+                return JSON.parse(saved) as T;
+            }
+        } catch (e) {
+            console.error(`Failed to load ${key}:`, e);
+        }
+
+        return fallback;
+    }
+
     // ===== AI Config =====
     async getAIConfig(): Promise<AIConfig> {
         try {
@@ -207,26 +224,86 @@ export class WebStorageService implements StorageService {
 
     // ===== Chat =====
     async getChatMessages(conversationId?: string): Promise<ChatMessage[]> {
-        try {
-            const saved = localStorage.getItem(KEYS.CHAT_HISTORY);
-            if (saved) {
-                return JSON.parse(saved);
-            }
-        } catch (e) {
-            console.error('Failed to load chat history:', e);
-        }
-        return [];
+        return this.getSessionMessages(conversationId ?? DEFAULT_CHAT_SESSION_ID);
     }
 
     async addChatMessage(message: ChatMessage, conversationId?: string): Promise<ChatMessage> {
-        const messages = await this.getChatMessages();
+        const sessionId = conversationId ?? DEFAULT_CHAT_SESSION_ID;
+        const messages = await this.getSessionMessages(sessionId);
         messages.push(message);
-        localStorage.setItem(KEYS.CHAT_HISTORY, JSON.stringify(messages));
+        await this.replaceSessionMessages(sessionId, messages);
         return message;
     }
 
     async clearChatMessages(conversationId?: string): Promise<void> {
-        localStorage.setItem(KEYS.CHAT_HISTORY, JSON.stringify([]));
+        await this.replaceSessionMessages(conversationId ?? DEFAULT_CHAT_SESSION_ID, []);
+    }
+
+    async getAssistantSessions(): Promise<AssistantSessionRecord[]> {
+        return this.readJson<AssistantSessionRecord[]>(KEYS.ASSISTANT_SESSIONS, []);
+    }
+
+    async getAssistantSession(sessionId: string): Promise<AssistantSessionRecord | null> {
+        const sessions = await this.getAssistantSessions();
+        return sessions.find(session => session.sessionId === sessionId) ?? null;
+    }
+
+    async saveAssistantSession(session: AssistantSessionRecord): Promise<AssistantSessionRecord> {
+        const sessions = await this.getAssistantSessions();
+        const index = sessions.findIndex(existing => existing.sessionId === session.sessionId);
+
+        if (index >= 0) {
+            sessions[index] = session;
+        } else {
+            sessions.push(session);
+        }
+
+        localStorage.setItem(KEYS.ASSISTANT_SESSIONS, JSON.stringify(sessions));
+        return session;
+    }
+
+    async deleteAssistantSession(sessionId: string): Promise<boolean> {
+        const sessions = await this.getAssistantSessions();
+        const nextSessions = sessions.filter(session => session.sessionId !== sessionId);
+        if (nextSessions.length === sessions.length) {
+            return false;
+        }
+
+        const sessionMessages = this.readJson<Record<string, ChatMessage[]>>(KEYS.SESSION_MESSAGES, {});
+        delete sessionMessages[sessionId];
+        localStorage.setItem(KEYS.SESSION_MESSAGES, JSON.stringify(sessionMessages));
+        localStorage.setItem(KEYS.ASSISTANT_SESSIONS, JSON.stringify(nextSessions));
+
+        if (sessionId === DEFAULT_CHAT_SESSION_ID) {
+            localStorage.setItem(KEYS.CHAT_HISTORY, JSON.stringify([]));
+        }
+
+        return true;
+    }
+
+    async getSessionMessages(sessionId: string): Promise<ChatMessage[]> {
+        const sessionMessages = this.readJson<Record<string, ChatMessage[]>>(KEYS.SESSION_MESSAGES, {});
+        if (sessionMessages[sessionId]) {
+            return sessionMessages[sessionId];
+        }
+
+        if (sessionId === DEFAULT_CHAT_SESSION_ID) {
+            return this.readJson<ChatMessage[]>(KEYS.CHAT_HISTORY, []);
+        }
+
+        return [];
+    }
+
+    async replaceSessionMessages(sessionId: string, messages: ChatMessage[]): Promise<ChatMessage[]> {
+        const sessionMessages = this.readJson<Record<string, ChatMessage[]>>(KEYS.SESSION_MESSAGES, {});
+        sessionMessages[sessionId] = messages;
+        localStorage.setItem(KEYS.SESSION_MESSAGES, JSON.stringify(sessionMessages));
+
+        if (sessionId === DEFAULT_CHAT_SESSION_ID) {
+            localStorage.setItem(KEYS.CHAT_HISTORY, JSON.stringify(messages));
+        }
+
+        return messages;
     }
 
     // ===== Themes =====

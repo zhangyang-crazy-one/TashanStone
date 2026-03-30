@@ -203,14 +203,20 @@ impl ConfirmDialog {
         destructive: bool,
     ) {
         let (bg, fg) = if destructive {
-            (Color::Rgb(218, 54, 51), Color::Rgb(201, 209, 217))
+            if focused {
+                (Color::Rgb(235, 73, 70), Color::White)
+            } else {
+                (Color::Rgb(218, 54, 51), Color::Rgb(201, 209, 217))
+            }
+        } else if focused {
+            (Color::Rgb(35, 58, 92), Color::Rgb(241, 246, 252))
         } else {
             (Color::Rgb(33, 38, 45), Color::Rgb(139, 148, 158))
         };
         let border = if focused {
-            Color::Rgb(88, 166, 255)
+            Color::Rgb(121, 192, 255)
         } else {
-            bg
+            Color::Rgb(48, 54, 61)
         };
         let button = Block::default()
             .borders(Borders::ALL)
@@ -218,13 +224,17 @@ impl ConfirmDialog {
             .style(Style::default().bg(bg));
         f.render_widget(button, area);
         let text = Paragraph::new(label)
-            .style(Style::default().fg(fg).add_modifier(if destructive {
-                Modifier::BOLD
-            } else {
-                Modifier::empty()
-            }))
+            .style(
+                Style::default()
+                    .fg(fg)
+                    .add_modifier(if focused || destructive {
+                        Modifier::BOLD
+                    } else {
+                        Modifier::empty()
+                    }),
+            )
             .alignment(ratatui::layout::Alignment::Center);
-        f.render_widget(text, area);
+        f.render_widget(text, Self::button_inner_rect(area));
     }
 
     fn contains(rect: Rect, point: (u16, u16)) -> bool {
@@ -248,14 +258,22 @@ impl ConfirmDialog {
             modal,
             header: Rect::new(modal.x + 1, modal.y + 1, modal.width - 2, 1),
             body: Rect::new(modal.x + 3, modal.y + 3, modal.width - 6, 3),
-            cancel_button: Rect::new(modal.x + 8, modal.y + modal.height - 3, 10, 2),
+            cancel_button: Rect::new(modal.x + 8, modal.y + modal.height - 4, 12, 3),
             confirm_button: Rect::new(
-                modal.x + modal.width - 18,
-                modal.y + modal.height - 3,
-                10,
-                2,
+                modal.x + modal.width - 20,
+                modal.y + modal.height - 4,
+                12,
+                3,
             ),
         }
+    }
+
+    fn button_inner_rect(area: Rect) -> Rect {
+        if area.width <= 2 || area.height <= 2 {
+            return area;
+        }
+
+        Rect::new(area.x + 1, area.y + area.height / 2, area.width - 2, 1)
     }
 }
 

@@ -1,4 +1,4 @@
-import type { AIConfig, AppTheme, ChatMessage, MarkdownFile, MistakeRecord } from '../../types';
+import type { AIConfig, AppTheme, AssistantSessionRecord, ChatMessage, MarkdownFile, MistakeRecord } from '../../types';
 import type { FetchResult } from '../services/ai/platformFetch';
 import type { MemoryDocument as BaseMemoryDocument } from '../services/context/types';
 import type { MidTermMemoryRecord, PermanentMemoryTemplate } from '../services/context/memoryAutoUpgrade';
@@ -147,6 +147,14 @@ export interface ElectronAPI {
       getAll: (conversationId?: string) => Promise<ChatMessage[]>;
       add: (message: ChatMessage, conversationId?: string) => Promise<ChatMessage>;
       clear: (conversationId?: string) => Promise<void>;
+    };
+    session: {
+      list: () => Promise<AssistantSessionRecord[]>;
+      get: (sessionId: string) => Promise<AssistantSessionRecord | null>;
+      save: (session: AssistantSessionRecord) => Promise<AssistantSessionRecord>;
+      delete: (sessionId: string) => Promise<boolean>;
+      getMessages: (sessionId: string) => Promise<ChatMessage[]>;
+      replaceMessages: (sessionId: string, messages: ChatMessage[]) => Promise<ChatMessage[]>;
     };
     themes: {
       getAll: () => Promise<AppTheme[]>;

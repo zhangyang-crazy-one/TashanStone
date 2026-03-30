@@ -3,20 +3,16 @@
 use crate::action::{Action, GraphAction, GraphFilter};
 use crate::i18n::{Language, TextKey};
 use crate::services::workspace::{GraphEdgeKind, GraphNodeRef, GraphRoot};
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    symbols::Marker,
     text::{Line as TextLine, Span},
-    widgets::{
-        canvas::{Canvas, Line as CanvasLine},
-        Block, Borders, Clear, Paragraph, Wrap,
-    },
+    widgets::{Block, Borders, Clear, Paragraph, Wrap},
     Frame,
 };
 use std::cell::Cell;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::f64::consts::{FRAC_PI_2, PI};
 use unicode_width::UnicodeWidthChar;
 
@@ -37,13 +33,13 @@ const ROW_SELECTED_BG: Color = Color::Rgb(31, 43, 70);
 const ROOT_CARD_BG: Color = Color::Rgb(20, 27, 42);
 const TAB_ACTIVE_BG: Color = Color::Rgb(38, 56, 88);
 const TAB_INACTIVE_BG: Color = Color::Rgb(24, 30, 44);
-const NODE_ROOT_BG: Color = Color::Rgb(37, 46, 68);
-const NODE_LINK_BG: Color = Color::Rgb(170, 212, 255);
-const NODE_BACKLINK_BG: Color = Color::Rgb(183, 242, 198);
-const NODE_TAG_BG: Color = Color::Rgb(243, 212, 140);
-const NODE_FOCUS_BG: Color = Color::Rgb(53, 63, 90);
+const NODE_ROOT_BG: Color = Color::Rgb(15, 23, 42);
+const NODE_LINK_BG: Color = Color::Rgb(29, 53, 87);
+const NODE_BACKLINK_BG: Color = Color::Rgb(19, 42, 30);
+const NODE_TAG_BG: Color = Color::Rgb(43, 33, 17);
+const NODE_FOCUS_BG: Color = Color::Rgb(23, 46, 79);
 const NODE_DANGER_BG: Color = Color::Rgb(104, 44, 39);
-const NODE_TEXT_DARK: Color = Color::Rgb(27, 34, 50);
+const POINT_FOCUS_BG: Color = Color::Rgb(28, 54, 92);
 const EDGE_TAG: Color = Color::Rgb(225, 183, 85);
 
 #[derive(Debug, Clone)]
@@ -70,6 +66,12 @@ enum CanvasZoomLevel {
     Detail,
     Standard,
     Macro,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CanvasNodeRenderMode {
+    Point,
+    Card,
 }
 
 impl CanvasZoomLevel {
@@ -102,6 +104,29 @@ impl CanvasZoomLevel {
             Self::Detail => TextKey::GraphCanvasZoomDetail,
             Self::Standard => TextKey::GraphCanvasZoomStandard,
             Self::Macro => TextKey::GraphCanvasZoomMacro,
+        }
+    }
+
+    fn viewport_factor(self) -> f64 {
+        match self {
+            Self::Detail => 0.46,
+            Self::Standard => 0.76,
+            Self::Macro => 1.0,
+        }
+    }
+
+    fn graph_padding(self) -> (f64, f64) {
+        match self {
+            Self::Detail => (8.0, 6.0),
+            Self::Standard => (10.0, 8.0),
+            Self::Macro => (12.0, 10.0),
+        }
+    }
+
+    fn node_render_mode(self) -> CanvasNodeRenderMode {
+        match self {
+            Self::Macro => CanvasNodeRenderMode::Point,
+            Self::Detail | Self::Standard => CanvasNodeRenderMode::Card,
         }
     }
 }
@@ -140,6 +165,23 @@ impl CanvasGraphModel {
     fn focused_node(&self) -> Option<&CanvasNode> {
         self.focus_index.and_then(|index| self.nodes.get(index))
     }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct ScreenLineCell {
+    up: bool,
+    down: bool,
+    left: bool,
+    right: bool,
+    color: Option<Color>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ScreenAnchor {
+    Left,
+    Right,
+    Top,
+    Bottom,
 }
 
 pub struct GraphExplorer {
@@ -185,7 +227,7 @@ impl GraphExplorer {
             scroll_offset: 0,
             last_viewport_rows: Cell::new(8),
             last_error: None,
-            canvas_zoom: CanvasZoomLevel::Standard,
+            canvas_zoom: CanvasZoomLevel::Macro,
             canvas_center_x: 0.0,
             canvas_center_y: 0.0,
             canvas_focus_id: None,
@@ -210,7 +252,7 @@ impl GraphExplorer {
         self.pinned = false;
         self.last_error = None;
         self.view_mode = GraphViewMode::Tree;
-        self.canvas_zoom = CanvasZoomLevel::Standard;
+        self.canvas_zoom = CanvasZoomLevel::Macro;
         self.canvas_center_x = 0.0;
         self.canvas_center_y = 0.0;
         self.canvas_preview_open = false;
@@ -246,7 +288,7 @@ impl GraphExplorer {
         }
 
         self.sync_canvas_focus_from_selection();
-        self.center_canvas_on_focus();
+        self.center_canvas_on_graph();
     }
 
     pub fn toggle_pin(&mut self) {
@@ -410,6 +452,11 @@ impl GraphExplorer {
     }
 
     fn handle_tree_key_event(&mut self, key: KeyEvent) -> Option<Action> {
+        if Self::is_canvas_switch_key(key) {
+            self.switch_view_mode(GraphViewMode::Canvas);
+            return None;
+        }
+
         match key.code {
             KeyCode::Esc | KeyCode::Char('q') => Some(Action::Graph(GraphAction::Close)),
             KeyCode::Up | KeyCode::Char('k') => Some(Action::Graph(GraphAction::MoveSelection(-1))),
@@ -434,7 +481,7 @@ impl GraphExplorer {
             KeyCode::Char('3') => Some(Action::Graph(GraphAction::SetFilter(
                 GraphFilter::BacklinksOnly,
             ))),
-            KeyCode::Tab | KeyCode::BackTab | KeyCode::Char('v') | KeyCode::Char('V') => {
+            KeyCode::Char('v') | KeyCode::Char('V') => {
                 self.switch_view_mode(GraphViewMode::Canvas);
                 None
             }
@@ -443,6 +490,15 @@ impl GraphExplorer {
     }
 
     fn handle_canvas_key_event(&mut self, key: KeyEvent) -> Option<Action> {
+        if Self::is_cycle_forward_key(key) {
+            self.cycle_canvas_focus(1);
+            return None;
+        }
+        if Self::is_cycle_backward_key(key) {
+            self.cycle_canvas_focus(-1);
+            return None;
+        }
+
         match key.code {
             KeyCode::Esc => {
                 if self.canvas_preview_open {
@@ -453,14 +509,6 @@ impl GraphExplorer {
                 }
             }
             KeyCode::Char('q') => Some(Action::Graph(GraphAction::Close)),
-            KeyCode::Tab => {
-                self.cycle_canvas_focus(1);
-                None
-            }
-            KeyCode::BackTab => {
-                self.cycle_canvas_focus(-1);
-                None
-            }
             KeyCode::Char('v') | KeyCode::Char('V') => {
                 self.switch_view_mode(GraphViewMode::Tree);
                 None
@@ -487,6 +535,11 @@ impl GraphExplorer {
             }
             KeyCode::Char('-') => {
                 self.zoom_canvas(false);
+                None
+            }
+            KeyCode::Char('0') => {
+                self.canvas_zoom = CanvasZoomLevel::Macro;
+                self.center_canvas_on_graph();
                 None
             }
             KeyCode::Char(' ') => {
@@ -596,7 +649,7 @@ impl GraphExplorer {
             GraphViewMode::Canvas => {
                 let columns = Layout::new(
                     Direction::Horizontal,
-                    [Constraint::Percentage(66), Constraint::Percentage(34)],
+                    [Constraint::Percentage(72), Constraint::Percentage(28)],
                 )
                 .split(area);
                 self.render_canvas_panel(f, columns[0]);
@@ -898,42 +951,19 @@ impl GraphExplorer {
     }
 
     fn render_canvas_stage(&self, f: &mut Frame<'_>, area: Rect, model: &CanvasGraphModel) {
-        let (span_x, span_y) = self.canvas_zoom.span();
-        let x_bounds = [
-            self.canvas_center_x - span_x / 2.0,
-            self.canvas_center_x + span_x / 2.0,
-        ];
-        let y_bounds = [
-            self.canvas_center_y - span_y / 2.0,
-            self.canvas_center_y + span_y / 2.0,
-        ];
-
-        let edges = model.edges.clone();
-        let nodes = model.nodes.clone();
-        let focus_id = model.focused_node().map(|node| node.id.clone());
-        let canvas = Canvas::default()
-            .background_color(CANVAS_BG)
-            .marker(Marker::Braille)
-            .x_bounds(x_bounds)
-            .y_bounds(y_bounds)
-            .paint(move |ctx| {
-                for edge in &edges {
-                    let Some(source) = nodes.iter().find(|node| node.id == edge.from_id) else {
-                        continue;
-                    };
-                    let Some(target) = nodes.iter().find(|node| node.id == edge.to_id) else {
-                        continue;
-                    };
-
-                    for (x1, y1, x2, y2) in
-                        Self::canvas_edge_segments(source, target, focus_id.as_deref())
-                    {
-                        ctx.draw(&CanvasLine::new(x1, y1, x2, y2, edge.color));
-                    }
-                }
-            });
-        f.render_widget(canvas, area);
-        self.render_canvas_node_cards(f, area, model, x_bounds, y_bounds);
+        let render_mode = self.canvas_zoom.node_render_mode();
+        let (x_bounds, y_bounds) = self.canvas_view_bounds(model);
+        let card_rects = self.canvas_node_rects(area, model, x_bounds, y_bounds);
+        f.render_widget(Block::default().style(Style::default().bg(CANVAS_BG)), area);
+        if render_mode == CanvasNodeRenderMode::Point {
+            self.render_canvas_screen_edges(f, area, model, &card_rects);
+            self.render_canvas_node_shells(f, model, &card_rects);
+            self.render_canvas_point_focus_label(f, area, model, &card_rects);
+        } else {
+            self.render_canvas_node_shells(f, model, &card_rects);
+            self.render_canvas_screen_edges(f, area, model, &card_rects);
+            self.render_canvas_node_labels(f, model, &card_rects);
+        }
 
         if model.nodes.len() <= 1 && area.width > 8 && area.height > 3 {
             let notice = Rect::new(
@@ -991,6 +1021,60 @@ impl GraphExplorer {
         );
     }
 
+    fn render_canvas_screen_edges(
+        &self,
+        f: &mut Frame<'_>,
+        area: Rect,
+        model: &CanvasGraphModel,
+        card_rects: &HashMap<String, Rect>,
+    ) {
+        let mut cells: HashMap<(u16, u16), ScreenLineCell> = HashMap::new();
+
+        for edge in &model.edges {
+            let Some(source_rect) = card_rects.get(&edge.from_id).copied() else {
+                continue;
+            };
+            let Some(target_rect) = card_rects.get(&edge.to_id).copied() else {
+                continue;
+            };
+            let Some(source_node) = model.nodes.iter().find(|node| node.id == edge.from_id) else {
+                continue;
+            };
+            let Some(target_node) = model.nodes.iter().find(|node| node.id == edge.to_id) else {
+                continue;
+            };
+
+            let polyline = Self::screen_edge_polyline(
+                area,
+                source_rect,
+                target_rect,
+                source_node,
+                target_node,
+            );
+            let anchors = polyline
+                .first()
+                .copied()
+                .into_iter()
+                .chain(polyline.last().copied())
+                .collect::<HashSet<_>>();
+            Self::accumulate_screen_polyline(
+                &mut cells, &polyline, edge.color, area, card_rects, &anchors,
+            );
+        }
+
+        let buffer = f.buffer_mut();
+        for ((x, y), cell) in cells {
+            let Some(color) = cell.color else {
+                continue;
+            };
+            if let Some(buffer_cell) = buffer.cell_mut((x, y)) {
+                buffer_cell
+                    .set_char(Self::screen_line_glyph(cell))
+                    .set_fg(color);
+            }
+        }
+    }
+
     fn render_canvas_details_panel(&self, f: &mut Frame<'_>, area: Rect) {
         let model = self.build_canvas_model();
         let chunks = Layout::new(
@@ -1006,6 +1090,105 @@ impl GraphExplorer {
         self.render_canvas_focus_card(f, chunks[0], model.as_ref());
         self.render_canvas_session_card(f, chunks[1]);
         self.render_canvas_secondary_card(f, chunks[2], model.as_ref());
+    }
+
+    fn render_canvas_point_focus_label(
+        &self,
+        f: &mut Frame<'_>,
+        area: Rect,
+        model: &CanvasGraphModel,
+        card_rects: &HashMap<String, Rect>,
+    ) {
+        let Some(node) = model.focused_node() else {
+            return;
+        };
+        let Some(&point_rect) = card_rects.get(&node.id) else {
+            return;
+        };
+
+        let point_x = point_rect.x;
+        let point_y = point_rect.y;
+        let accent = if node.is_cycle || !node.resolved {
+            WARNING
+        } else {
+            node.kind.map(Self::edge_color).unwrap_or(ACCENT)
+        };
+        let buffer = f.buffer_mut();
+
+        for dx in -1i16..=1 {
+            for dy in -1i16..=1 {
+                let x = point_x as i16 + dx;
+                let y = point_y as i16 + dy;
+                if x < 0 || y < 0 {
+                    continue;
+                }
+                let x = x as u16;
+                let y = y as u16;
+                if Self::point_in_rect(area, x, y) {
+                    if let Some(cell) = buffer.cell_mut((x, y)) {
+                        cell.set_bg(POINT_FOCUS_BG);
+                    }
+                }
+            }
+        }
+
+        if point_x > area.x {
+            if let Some(cell) = buffer.cell_mut((point_x - 1, point_y)) {
+                cell.set_char('─').set_fg(accent).set_bg(POINT_FOCUS_BG);
+            }
+        }
+        if point_x + 1 < area.x.saturating_add(area.width) {
+            if let Some(cell) = buffer.cell_mut((point_x + 1, point_y)) {
+                cell.set_char('─').set_fg(accent).set_bg(POINT_FOCUS_BG);
+            }
+        }
+        if point_y > area.y {
+            if let Some(cell) = buffer.cell_mut((point_x, point_y - 1)) {
+                cell.set_char('│').set_fg(accent).set_bg(POINT_FOCUS_BG);
+            }
+        }
+        if point_y + 1 < area.y.saturating_add(area.height) {
+            if let Some(cell) = buffer.cell_mut((point_x, point_y + 1)) {
+                cell.set_char('│').set_fg(accent).set_bg(POINT_FOCUS_BG);
+            }
+        }
+
+        if let Some(cell) = buffer.cell_mut((point_x, point_y)) {
+            cell.set_style(
+                Style::default()
+                    .fg(Color::White)
+                    .bg(POINT_FOCUS_BG)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .set_char(Self::canvas_point_char(node, true));
+        }
+
+        let label = Self::truncate_label(&self.canvas_card_label(node, true), 18);
+        let chip = format!(" {} ", label);
+        let chip_width = Self::display_width(&chip) as u16;
+        let area_right = area.x.saturating_add(area.width);
+        let prefer_right = point_x.saturating_add(2).saturating_add(chip_width) < area_right;
+        let chip_x = if prefer_right {
+            point_x.saturating_add(2)
+        } else {
+            point_x
+                .saturating_sub(chip_width.saturating_add(2))
+                .max(area.x)
+        };
+        let chip_y = point_y.saturating_sub(1).max(area.y);
+        let chip_width = chip_width.min(area_right.saturating_sub(chip_x));
+        if chip_width == 0 {
+            return;
+        }
+
+        let style = Style::default()
+            .fg(TEXT_PRIMARY)
+            .bg(NODE_FOCUS_BG)
+            .add_modifier(Modifier::BOLD);
+        f.render_widget(
+            Paragraph::new(TextLine::from(Span::styled(chip, style))),
+            Rect::new(chip_x, chip_y, chip_width, 1),
+        );
     }
 
     fn render_canvas_focus_card(
@@ -1078,6 +1261,23 @@ impl GraphExplorer {
 
     fn render_canvas_session_card(&self, f: &mut Frame<'_>, area: Rect) {
         let t = self.language.translator();
+        let model = self.build_canvas_model();
+        let focus_line = model.as_ref().and_then(|canvas| {
+            let total = canvas.nodes.len();
+            if total == 0 {
+                return None;
+            }
+            let focused = canvas.focus_index.unwrap_or(0).saturating_add(1);
+            let label = canvas
+                .focused_node()
+                .map(|node| Self::truncate_label(&node.title, 18))
+                .unwrap_or_else(|| t.text(TextKey::GraphRootLabel).to_string());
+            Some(format!(
+                "• {} {focused}/{total} · {label}",
+                t.text(TextKey::StatusFocus)
+            ))
+        });
+
         let block = Block::default()
             .title(format!(" {} ", t.text(TextKey::GraphCanvasSessionTitle)))
             .borders(Borders::ALL)
@@ -1085,7 +1285,7 @@ impl GraphExplorer {
             .style(Style::default().bg(SECTION_BG));
         f.render_widget(block, area);
 
-        let lines = vec![
+        let mut lines = vec![
             TextLine::from(Span::styled(
                 format!(
                     "• {}",
@@ -1105,6 +1305,14 @@ impl GraphExplorer {
                 ),
                 Style::default().fg(TEXT_MUTED),
             )),
+        ];
+        if let Some(line) = focus_line {
+            lines.push(TextLine::from(Span::styled(
+                line,
+                Style::default().fg(TEXT_MUTED),
+            )));
+        }
+        lines.extend([
             TextLine::from(Span::styled(
                 format!(
                     "• {} {}",
@@ -1124,7 +1332,7 @@ impl GraphExplorer {
                 t.text(TextKey::GraphFooterHintCanvas),
                 Style::default().fg(TEXT_SUBTLE),
             )),
-        ];
+        ]);
 
         f.render_widget(
             Paragraph::new(lines).wrap(Wrap { trim: false }),
@@ -1318,6 +1526,32 @@ impl GraphExplorer {
             .and_then(|model| model.focused_node().cloned())
     }
 
+    fn canvas_rows(&self) -> Vec<VisibleGraphRow> {
+        let mut rows = Vec::new();
+        let mut root_ancestors = BTreeSet::new();
+        let root_key = self.root_relative_path.as_deref().map(Self::root_canvas_id);
+        if let Some(root_path) = &self.root_relative_path {
+            root_ancestors.insert(root_path.clone());
+        }
+
+        for node in self
+            .root_children
+            .iter()
+            .filter(|node| self.matches_filter(node.kind))
+        {
+            self.collect_canvas_rows(
+                node,
+                0,
+                &root_ancestors,
+                self.root_relative_path.clone(),
+                root_key.clone(),
+                &mut rows,
+            );
+        }
+
+        rows
+    }
+
     fn build_canvas_model(&self) -> Option<CanvasGraphModel> {
         let root_relative_path = self.root_relative_path.clone()?;
         let root_id = Self::root_canvas_id(&root_relative_path);
@@ -1352,7 +1586,7 @@ impl GraphExplorer {
         let mut nodes = vec![root_node];
         let mut edges = Vec::new();
         let mut children_by_parent: HashMap<String, Vec<VisibleGraphRow>> = HashMap::new();
-        for row in self.visible_rows() {
+        for row in self.canvas_rows() {
             let parent = row.parent_key.clone().unwrap_or_else(|| root_id.clone());
             children_by_parent.entry(parent).or_default().push(row);
         }
@@ -1450,6 +1684,57 @@ impl GraphExplorer {
         }
     }
 
+    fn collect_canvas_rows(
+        &self,
+        node: &GraphNodeRef,
+        depth: usize,
+        ancestors: &BTreeSet<String>,
+        parent_relative_path: Option<String>,
+        parent_key: Option<String>,
+        rows: &mut Vec<VisibleGraphRow>,
+    ) {
+        let is_cycle = ancestors.contains(&node.relative_path);
+        let is_leaf = self.leaf_paths.contains(&node.relative_path);
+        let key = Self::row_key(parent_key.as_deref(), depth, node);
+
+        rows.push(VisibleGraphRow {
+            key: key.clone(),
+            node: node.clone(),
+            depth,
+            parent_key: parent_key.clone(),
+            parent_relative_path: parent_relative_path.clone(),
+            is_cycle,
+            is_expanded: self.loaded_children.contains_key(&node.relative_path),
+            is_leaf,
+            can_expand: node.resolved && !is_cycle && !is_leaf,
+        });
+
+        if is_cycle {
+            return;
+        }
+
+        let Some(children) = self.loaded_children.get(&node.relative_path) else {
+            return;
+        };
+
+        let mut next_ancestors = ancestors.clone();
+        next_ancestors.insert(node.relative_path.clone());
+
+        for child in children
+            .iter()
+            .filter(|child| self.matches_filter(child.kind))
+        {
+            self.collect_canvas_rows(
+                child,
+                depth + 1,
+                &next_ancestors,
+                Some(node.relative_path.clone()),
+                Some(key.clone()),
+                rows,
+            );
+        }
+    }
+
     fn retain_or_sync_canvas_focus(&mut self, preferred: Option<&str>) {
         if let Some(id) = preferred {
             if self
@@ -1489,6 +1774,20 @@ impl GraphExplorer {
             return;
         }
 
+        let canvas_rows = self.canvas_rows();
+        let row_by_key: HashMap<&str, &VisibleGraphRow> =
+            canvas_rows.iter().map(|row| (row.key.as_str(), row)).collect();
+        let mut current_key = Some(focus_id.as_str());
+        while let Some(key) = current_key {
+            if let Some(index) = visible_rows.iter().position(|row| row.key == key) {
+                self.selected_index = Some(index);
+                self.ensure_selection_visible();
+                return;
+            }
+
+            current_key = row_by_key.get(key).and_then(|row| row.parent_key.as_deref());
+        }
+
         let focused_relative_path = self.build_canvas_model().and_then(|model| {
             model
                 .nodes
@@ -1519,7 +1818,8 @@ impl GraphExplorer {
             }
             GraphViewMode::Canvas => {
                 self.sync_canvas_focus_from_selection();
-                self.center_canvas_on_focus();
+                self.canvas_zoom = CanvasZoomLevel::Macro;
+                self.center_canvas_on_graph();
             }
         }
 
@@ -1542,6 +1842,12 @@ impl GraphExplorer {
             .unwrap_or(0) as i32;
         let next = (current + delta).rem_euclid(len) as usize;
         self.canvas_focus_id = model.nodes.get(next).map(|node| node.id.clone());
+        self.sync_selection_from_canvas_focus();
+        if self.canvas_zoom == CanvasZoomLevel::Macro {
+            self.center_canvas_on_graph();
+        } else {
+            self.center_canvas_on_focus();
+        }
     }
 
     fn pan_canvas(&mut self, dx: f64, dy: f64) {
@@ -1559,12 +1865,34 @@ impl GraphExplorer {
         }
     }
 
+    fn center_canvas_on_graph(&mut self) {
+        if let Some(model) = self.build_canvas_model() {
+            if let Some((min_x, max_x, min_y, max_y)) = Self::canvas_graph_bounds(&model) {
+                self.canvas_center_x = (min_x + max_x) / 2.0;
+                self.canvas_center_y = (min_y + max_y) / 2.0;
+                return;
+            }
+        }
+
+        self.center_canvas_on_focus();
+    }
+
     fn zoom_canvas(&mut self, zoom_in: bool) {
-        self.canvas_zoom = if zoom_in {
+        let next = if zoom_in {
             self.canvas_zoom.zoom_in()
         } else {
             self.canvas_zoom.zoom_out()
         };
+        if next == self.canvas_zoom {
+            return;
+        }
+
+        self.canvas_zoom = next;
+        if self.canvas_zoom == CanvasZoomLevel::Macro {
+            self.center_canvas_on_graph();
+        } else if zoom_in {
+            self.center_canvas_on_focus();
+        }
     }
 
     fn toggle_canvas_preview(&mut self) {
@@ -1761,13 +2089,44 @@ impl GraphExplorer {
         Span::styled(format!(" {} ", t.text(label_key)), style)
     }
 
-    fn render_canvas_node_cards(
+    fn canvas_view_bounds(&self, model: &CanvasGraphModel) -> ([f64; 2], [f64; 2]) {
+        let (base_span_x, base_span_y) = self.canvas_zoom.span();
+        let Some((min_x, max_x, min_y, max_y)) = Self::canvas_graph_bounds(model) else {
+            return (
+                [
+                    self.canvas_center_x - base_span_x / 2.0,
+                    self.canvas_center_x + base_span_x / 2.0,
+                ],
+                [
+                    self.canvas_center_y - base_span_y / 2.0,
+                    self.canvas_center_y + base_span_y / 2.0,
+                ],
+            );
+        };
+
+        let (pad_x, pad_y) = self.canvas_zoom.graph_padding();
+        let fit_span_x = (max_x - min_x + pad_x * 2.0).max(base_span_x);
+        let fit_span_y = (max_y - min_y + pad_y * 2.0).max(base_span_y);
+        let span_x = (fit_span_x * self.canvas_zoom.viewport_factor()).max(base_span_x);
+        let span_y = (fit_span_y * self.canvas_zoom.viewport_factor()).max(base_span_y);
+
+        (
+            [
+                self.canvas_center_x - span_x / 2.0,
+                self.canvas_center_x + span_x / 2.0,
+            ],
+            [
+                self.canvas_center_y - span_y / 2.0,
+                self.canvas_center_y + span_y / 2.0,
+            ],
+        )
+    }
+
+    fn render_canvas_node_shells(
         &self,
         f: &mut Frame<'_>,
-        area: Rect,
         model: &CanvasGraphModel,
-        x_bounds: [f64; 2],
-        y_bounds: [f64; 2],
+        card_rects: &HashMap<String, Rect>,
     ) {
         let focus_id = model.focused_node().map(|node| node.id.as_str());
 
@@ -1776,59 +2135,121 @@ impl GraphExplorer {
             .iter()
             .filter(|node| !node.is_root && focus_id != Some(node.id.as_str()))
         {
-            self.render_canvas_node_card(f, area, node, false, x_bounds, y_bounds);
+            self.render_canvas_node_shell(f, node, false, card_rects);
         }
 
         if let Some(root) = model.nodes.iter().find(|node| node.is_root) {
-            self.render_canvas_node_card(
-                f,
-                area,
-                root,
-                focus_id == Some(root.id.as_str()),
-                x_bounds,
-                y_bounds,
-            );
+            self.render_canvas_node_shell(f, root, focus_id == Some(root.id.as_str()), card_rects);
         }
 
         if let Some(node) = model.focused_node().filter(|node| !node.is_root) {
-            self.render_canvas_node_card(f, area, node, true, x_bounds, y_bounds);
+            self.render_canvas_node_shell(f, node, true, card_rects);
         }
     }
 
-    fn render_canvas_node_card(
+    fn render_canvas_node_labels(
         &self,
         f: &mut Frame<'_>,
-        area: Rect,
+        model: &CanvasGraphModel,
+        card_rects: &HashMap<String, Rect>,
+    ) {
+        let focus_id = model.focused_node().map(|node| node.id.as_str());
+
+        for node in model
+            .nodes
+            .iter()
+            .filter(|node| !node.is_root && focus_id != Some(node.id.as_str()))
+        {
+            self.render_canvas_node_label(f, node, false, card_rects);
+        }
+
+        if let Some(root) = model.nodes.iter().find(|node| node.is_root) {
+            self.render_canvas_node_label(f, root, focus_id == Some(root.id.as_str()), card_rects);
+        }
+
+        if let Some(node) = model.focused_node().filter(|node| !node.is_root) {
+            self.render_canvas_node_label(f, node, true, card_rects);
+        }
+    }
+
+    fn render_canvas_node_shell(
+        &self,
+        f: &mut Frame<'_>,
         node: &CanvasNode,
         focused: bool,
-        x_bounds: [f64; 2],
-        y_bounds: [f64; 2],
+        card_rects: &HashMap<String, Rect>,
     ) {
-        let Some(card_rect) = self.canvas_node_screen_rect(area, node, focused, x_bounds, y_bounds)
-        else {
+        let Some(&card_rect) = card_rects.get(&node.id) else {
             return;
         };
 
-        let (block_style, icon_style, text_style, border_style) =
-            self.canvas_card_styles(node, focused);
-        if card_rect.height > 1 {
-            let block = Block::default()
-                .borders(Borders::ALL)
-                .border_style(border_style)
-                .style(block_style);
-            f.render_widget(block, card_rect);
-            f.render_widget(
-                Paragraph::new(self.canvas_card_lines(node, icon_style, text_style))
-                    .wrap(Wrap { trim: true }),
-                Self::inner_rect(card_rect),
-            );
-        } else {
-            f.render_widget(Block::default().style(block_style), card_rect);
-            f.render_widget(
-                Paragraph::new(self.canvas_chip_line(node, icon_style, text_style)),
-                card_rect,
-            );
+        if self.canvas_zoom.node_render_mode() == CanvasNodeRenderMode::Point {
+            let point = (card_rect.x, card_rect.y);
+            let style = self.canvas_point_style(node, focused);
+            if let Some(cell) = f.buffer_mut().cell_mut(point) {
+                cell.set_char(Self::canvas_point_char(node, focused))
+                    .set_style(style);
+            }
+            return;
         }
+
+        let (block_style, border_style, _) = self.canvas_card_styles(node, focused);
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(border_style)
+            .style(block_style);
+        f.render_widget(block, card_rect);
+    }
+
+    fn render_canvas_node_label(
+        &self,
+        f: &mut Frame<'_>,
+        node: &CanvasNode,
+        focused: bool,
+        card_rects: &HashMap<String, Rect>,
+    ) {
+        let Some(&card_rect) = card_rects.get(&node.id) else {
+            return;
+        };
+        if self.canvas_zoom.node_render_mode() == CanvasNodeRenderMode::Point {
+            return;
+        }
+        let (_, _, text_style) = self.canvas_card_styles(node, focused);
+        let inner = Self::inner_rect(card_rect);
+        if inner.width == 0 || inner.height == 0 {
+            return;
+        }
+
+        f.render_widget(
+            Paragraph::new(TextLine::from(Span::styled(
+                self.canvas_card_label(node, focused),
+                text_style,
+            )))
+            .alignment(Alignment::Center),
+            inner,
+        );
+    }
+
+    fn canvas_node_rects(
+        &self,
+        area: Rect,
+        model: &CanvasGraphModel,
+        x_bounds: [f64; 2],
+        y_bounds: [f64; 2],
+    ) -> HashMap<String, Rect> {
+        let focus_id = model.focused_node().map(|node| node.id.as_str());
+        let mut rects = HashMap::new();
+
+        for node in &model.nodes {
+            let focused = focus_id == Some(node.id.as_str());
+            if let Some(rect) =
+                self.canvas_node_screen_rect(area, node, focused, x_bounds, y_bounds)
+            {
+                rects.insert(node.id.clone(), rect);
+            }
+        }
+
+        rects
     }
 
     fn canvas_node_screen_rect(
@@ -1840,7 +2261,11 @@ impl GraphExplorer {
         y_bounds: [f64; 2],
     ) -> Option<Rect> {
         let (screen_x, screen_y) = Self::world_to_screen(area, node.x, node.y, x_bounds, y_bounds)?;
-        let (width_u16, height_u16) = Self::canvas_card_size(node, focused);
+        if self.canvas_zoom.node_render_mode() == CanvasNodeRenderMode::Point {
+            return Some(Rect::new(screen_x as u16, screen_y as u16, 1, 1));
+        }
+
+        let (width_u16, height_u16) = self.canvas_card_size(node, focused);
         let width = width_u16.min(area.width.saturating_sub(1)).max(8) as i32;
         let height = height_u16.min(area.height.saturating_sub(1).max(1)) as i32;
         let area_left = area.x as i32;
@@ -1860,15 +2285,10 @@ impl GraphExplorer {
 
         let mut y = if node.is_root {
             screen_y - height / 2
-        } else if focused {
-            match node.kind.unwrap_or(GraphEdgeKind::Link) {
-                GraphEdgeKind::Tag => screen_y - height,
-                _ => screen_y - height / 2,
-            }
         } else {
             match node.kind.unwrap_or(GraphEdgeKind::Link) {
-                GraphEdgeKind::Tag => screen_y - 1,
-                _ => screen_y,
+                GraphEdgeKind::Tag => screen_y - height - 1,
+                _ => screen_y - height / 2,
             }
         };
 
@@ -1906,19 +2326,18 @@ impl GraphExplorer {
         Some((screen_x.round() as i32, screen_y.round() as i32))
     }
 
-    fn canvas_card_styles(&self, node: &CanvasNode, focused: bool) -> (Style, Style, Style, Style) {
+    fn canvas_card_styles(&self, node: &CanvasNode, focused: bool) -> (Style, Style, Style) {
         if focused {
             return (
                 Style::default().bg(NODE_FOCUS_BG),
                 Style::default()
-                    .fg(Self::canvas_icon_color(node))
+                    .fg(ACCENT)
                     .bg(NODE_FOCUS_BG)
                     .add_modifier(Modifier::BOLD),
                 Style::default()
                     .fg(TEXT_PRIMARY)
                     .bg(NODE_FOCUS_BG)
                     .add_modifier(Modifier::BOLD),
-                Style::default().fg(ACCENT).bg(NODE_FOCUS_BG),
             );
         }
 
@@ -1926,14 +2345,13 @@ impl GraphExplorer {
             return (
                 Style::default().bg(NODE_DANGER_BG),
                 Style::default()
-                    .fg(Color::White)
+                    .fg(WARNING)
                     .bg(NODE_DANGER_BG)
                     .add_modifier(Modifier::BOLD),
                 Style::default()
                     .fg(Color::White)
                     .bg(NODE_DANGER_BG)
                     .add_modifier(Modifier::BOLD),
-                Style::default().fg(WARNING).bg(NODE_DANGER_BG),
             );
         }
 
@@ -1946,146 +2364,399 @@ impl GraphExplorer {
                 GraphEdgeKind::Tag => NODE_TAG_BG,
             }
         };
-        let text_color = if node.is_root {
-            TEXT_PRIMARY
-        } else {
-            NODE_TEXT_DARK
-        };
         (
             Style::default().bg(background),
             Style::default()
-                .fg(Self::canvas_icon_color(node))
+                .fg(if node.is_root {
+                    ACCENT
+                } else {
+                    node.kind.map(Self::edge_color).unwrap_or(ACCENT)
+                })
                 .bg(background)
                 .add_modifier(Modifier::BOLD),
             Style::default()
-                .fg(text_color)
+                .fg(TEXT_PRIMARY)
                 .bg(background)
                 .add_modifier(Modifier::BOLD),
-            Style::default()
-                .fg(if node.is_root { BORDER } else { background })
-                .bg(background),
         )
     }
 
-    fn canvas_chip_line(
-        &self,
-        node: &CanvasNode,
-        icon_style: Style,
-        text_style: Style,
-    ) -> TextLine<'static> {
-        let label = Self::truncate_label(&node.title, if node.is_root { 28 } else { 22 });
-        let icon = if node.is_root { "◆" } else { "●" };
-        TextLine::from(vec![
-            Span::styled(" ", text_style),
-            Span::styled(icon.to_string(), icon_style),
-            Span::styled(" ", text_style),
-            Span::styled(label, text_style),
-            Span::styled(" ", text_style),
-        ])
-    }
-
-    fn canvas_card_lines(
-        &self,
-        node: &CanvasNode,
-        icon_style: Style,
-        text_style: Style,
-    ) -> Vec<TextLine<'static>> {
-        let title = Self::truncate_label(&node.title, if node.is_root { 26 } else { 24 });
-        let subtitle =
-            Self::truncate_label(&node.relative_path, if node.is_root { 28 } else { 26 });
-        let icon = if node.is_root { "◆" } else { "●" };
-        vec![
-            TextLine::from(vec![
-                Span::styled(icon.to_string(), icon_style),
-                Span::styled(" ", text_style),
-                Span::styled(title, text_style),
-            ]),
-            TextLine::from(Span::styled(
-                subtitle,
-                text_style.add_modifier(Modifier::DIM),
-            )),
-        ]
-    }
-
-    fn canvas_icon_color(node: &CanvasNode) -> Color {
-        if node.is_cycle || !node.resolved {
-            Color::White
+    fn canvas_point_style(&self, node: &CanvasNode, focused: bool) -> Style {
+        let mut style = Style::default().bg(CANVAS_BG);
+        style = if focused {
+            style
+                .fg(Color::White)
+                .bg(POINT_FOCUS_BG)
+                .add_modifier(Modifier::BOLD)
+        } else if node.is_cycle || !node.resolved {
+            style.fg(WARNING).add_modifier(Modifier::BOLD)
         } else if node.is_root {
-            Color::Rgb(152, 196, 255)
+            style.fg(ACCENT).add_modifier(Modifier::BOLD)
         } else {
-            match node.kind.unwrap_or(GraphEdgeKind::Link) {
-                GraphEdgeKind::Link => ACCENT,
-                GraphEdgeKind::Backlink => SUCCESS,
-                GraphEdgeKind::Tag => EDGE_TAG,
-            }
+            style.fg(node.kind.map(Self::edge_color).unwrap_or(ACCENT))
+        };
+
+        style
+    }
+
+    fn canvas_point_char(node: &CanvasNode, focused: bool) -> char {
+        if focused && node.is_root {
+            '◈'
+        } else if focused {
+            '◉'
+        } else if node.is_cycle || !node.resolved {
+            '!'
+        } else if node.is_root {
+            '◆'
+        } else {
+            '•'
         }
     }
 
-    fn canvas_card_size(node: &CanvasNode, focused: bool) -> (u16, u16) {
-        if node.is_root || focused {
-            let label = Self::truncate_label(&node.title, if node.is_root { 26 } else { 24 });
-            let subtitle = Self::truncate_label(&node.relative_path, 28);
-            let width = (Self::display_width(&label).max(Self::display_width(&subtitle)) + 4)
-                .clamp(if node.is_root { 24 } else { 22 }, 34) as u16;
-            (width, 4)
+    fn canvas_card_label(&self, node: &CanvasNode, focused: bool) -> String {
+        let label = if node.is_root {
+            format!(
+                "[{}] {}",
+                self.language.translator().text(TextKey::GraphRootLabel),
+                node.title
+            )
         } else {
-            let label = Self::truncate_label(&node.title, 22);
-            let width = (Self::display_width(&label) + 5).clamp(10, 28) as u16;
-            (width, 1)
+            node.title.clone()
+        };
+        let max_width = if node.is_root || focused { 22 } else { 20 };
+        Self::truncate_label(&label, max_width)
+    }
+
+    fn canvas_card_size(&self, node: &CanvasNode, focused: bool) -> (u16, u16) {
+        if self.canvas_zoom.node_render_mode() == CanvasNodeRenderMode::Point {
+            return (1, 1);
+        }
+
+        let label = self.canvas_card_label(node, focused);
+        let width = (Self::display_width(&label) + 4).clamp(
+            if node.is_root || focused { 16 } else { 14 },
+            if node.is_root || focused { 28 } else { 22 },
+        ) as u16;
+        (width, 3)
+    }
+
+    fn screen_edge_polyline(
+        area: Rect,
+        source_rect: Rect,
+        target_rect: Rect,
+        source_node: &CanvasNode,
+        target_node: &CanvasNode,
+    ) -> Vec<(u16, u16)> {
+        let source_center = Self::rect_center(source_rect);
+        let target_center = Self::rect_center(target_rect);
+        let preferred_source =
+            Self::preferred_source_anchor(source_rect, target_rect, source_node, target_node);
+        let preferred_target =
+            Self::preferred_target_anchor(source_rect, target_rect, source_node, target_node);
+
+        let source_side = Self::resolve_anchor(
+            area,
+            source_rect,
+            preferred_source,
+            target_center.0 as i32 - source_center.0 as i32,
+            target_center.1 as i32 - source_center.1 as i32,
+        );
+        let target_side = Self::resolve_anchor(
+            area,
+            target_rect,
+            preferred_target,
+            source_center.0 as i32 - target_center.0 as i32,
+            source_center.1 as i32 - target_center.1 as i32,
+        );
+
+        let start = Self::screen_anchor_point(source_rect, source_side);
+        let end = Self::screen_anchor_point(target_rect, target_side);
+        let start_out = Self::screen_anchor_step(area, start, source_side);
+        let end_out = Self::screen_anchor_step(area, end, target_side);
+
+        let mut points = Vec::with_capacity(6);
+        Self::push_polyline_point(&mut points, start);
+        Self::push_polyline_point(&mut points, start_out);
+
+        if start_out.0 == end_out.0 || start_out.1 == end_out.1 {
+            Self::push_polyline_point(&mut points, end_out);
+        } else if Self::anchor_is_horizontal(source_side) && Self::anchor_is_horizontal(target_side)
+        {
+            let mid_x = ((start_out.0 as i32 + end_out.0 as i32) / 2) as u16;
+            Self::push_polyline_point(&mut points, (mid_x, start_out.1));
+            Self::push_polyline_point(&mut points, (mid_x, end_out.1));
+            Self::push_polyline_point(&mut points, end_out);
+        } else if Self::anchor_is_vertical(source_side) && Self::anchor_is_vertical(target_side) {
+            let mid_y = ((start_out.1 as i32 + end_out.1 as i32) / 2) as u16;
+            Self::push_polyline_point(&mut points, (start_out.0, mid_y));
+            Self::push_polyline_point(&mut points, (end_out.0, mid_y));
+            Self::push_polyline_point(&mut points, end_out);
+        } else if Self::anchor_is_horizontal(source_side) {
+            Self::push_polyline_point(&mut points, (end_out.0, start_out.1));
+            Self::push_polyline_point(&mut points, end_out);
+        } else {
+            Self::push_polyline_point(&mut points, (start_out.0, end_out.1));
+            Self::push_polyline_point(&mut points, end_out);
+        }
+
+        Self::push_polyline_point(&mut points, end);
+        points
+    }
+
+    fn preferred_source_anchor(
+        source_rect: Rect,
+        target_rect: Rect,
+        source_node: &CanvasNode,
+        target_node: &CanvasNode,
+    ) -> ScreenAnchor {
+        if source_node.is_root {
+            return match target_node.kind.unwrap_or(GraphEdgeKind::Link) {
+                GraphEdgeKind::Link => ScreenAnchor::Right,
+                GraphEdgeKind::Backlink => ScreenAnchor::Left,
+                GraphEdgeKind::Tag => ScreenAnchor::Top,
+            };
+        }
+
+        Self::relative_anchor(source_rect, target_rect)
+    }
+
+    fn preferred_target_anchor(
+        source_rect: Rect,
+        target_rect: Rect,
+        _source_node: &CanvasNode,
+        target_node: &CanvasNode,
+    ) -> ScreenAnchor {
+        if matches!(target_node.kind, Some(GraphEdgeKind::Tag)) {
+            return ScreenAnchor::Bottom;
+        }
+
+        match Self::relative_anchor(target_rect, source_rect) {
+            ScreenAnchor::Left => ScreenAnchor::Left,
+            ScreenAnchor::Right => ScreenAnchor::Right,
+            ScreenAnchor::Top => ScreenAnchor::Top,
+            ScreenAnchor::Bottom => ScreenAnchor::Bottom,
         }
     }
 
-    fn canvas_card_world_half_size(node: &CanvasNode, focused: bool) -> (f64, f64) {
-        if node.is_root || focused {
-            (6.2, 1.7)
-        } else {
-            match node.kind.unwrap_or(GraphEdgeKind::Link) {
-                GraphEdgeKind::Link => (4.4, 0.55),
-                GraphEdgeKind::Backlink => (4.4, 0.55),
-                GraphEdgeKind::Tag => (4.0, 0.55),
-            }
-        }
-    }
-
-    fn canvas_edge_segments(
-        source: &CanvasNode,
-        target: &CanvasNode,
-        focus_id: Option<&str>,
-    ) -> Vec<(f64, f64, f64, f64)> {
-        let source_focused = focus_id == Some(source.id.as_str());
-        let target_focused = focus_id == Some(target.id.as_str());
-        let (source_half_w, source_half_h) =
-            Self::canvas_card_world_half_size(source, source_focused);
-        let (target_half_w, target_half_h) =
-            Self::canvas_card_world_half_size(target, target_focused);
-        let dx = target.x - source.x;
-        let dy = target.y - source.y;
+    fn relative_anchor(from: Rect, to: Rect) -> ScreenAnchor {
+        let from_center = Self::rect_center(from);
+        let to_center = Self::rect_center(to);
+        let dx = to_center.0 as i32 - from_center.0 as i32;
+        let dy = to_center.1 as i32 - from_center.1 as i32;
 
         if dx.abs() >= dy.abs() {
-            let direction = if dx >= 0.0 { 1.0 } else { -1.0 };
-            let start_x = source.x + source_half_w * direction;
-            let start_y = source.y;
-            let end_x = target.x - target_half_w * direction;
-            let end_y = target.y;
-            let mid_x = start_x + (end_x - start_x) * 0.55;
-            vec![
-                (start_x, start_y, mid_x, start_y),
-                (mid_x, start_y, mid_x, end_y),
-                (mid_x, end_y, end_x, end_y),
-            ]
+            if dx >= 0 {
+                ScreenAnchor::Right
+            } else {
+                ScreenAnchor::Left
+            }
+        } else if dy >= 0 {
+            ScreenAnchor::Bottom
         } else {
-            let direction = if dy >= 0.0 { 1.0 } else { -1.0 };
-            let start_x = source.x;
-            let start_y = source.y + source_half_h * direction;
-            let end_x = target.x;
-            let end_y = target.y - target_half_h * direction;
-            let mid_y = start_y + (end_y - start_y) * 0.5;
-            vec![
-                (start_x, start_y, start_x, mid_y),
-                (start_x, mid_y, end_x, mid_y),
-                (end_x, mid_y, end_x, end_y),
-            ]
+            ScreenAnchor::Top
         }
+    }
+
+    fn rect_center(rect: Rect) -> (u16, u16) {
+        (
+            rect.x.saturating_add(rect.width.saturating_sub(1) / 2),
+            rect.y.saturating_add(rect.height.saturating_sub(1) / 2),
+        )
+    }
+
+    fn resolve_anchor(
+        area: Rect,
+        rect: Rect,
+        preferred: ScreenAnchor,
+        dx: i32,
+        dy: i32,
+    ) -> ScreenAnchor {
+        let mut candidates = vec![preferred];
+        if dx >= 0 {
+            candidates.push(ScreenAnchor::Right);
+        } else {
+            candidates.push(ScreenAnchor::Left);
+        }
+        if dy >= 0 {
+            candidates.push(ScreenAnchor::Bottom);
+        } else {
+            candidates.push(ScreenAnchor::Top);
+        }
+        candidates.extend([
+            ScreenAnchor::Left,
+            ScreenAnchor::Right,
+            ScreenAnchor::Top,
+            ScreenAnchor::Bottom,
+        ]);
+
+        candidates
+            .into_iter()
+            .find(|anchor| Self::anchor_has_space(area, rect, *anchor))
+            .unwrap_or(preferred)
+    }
+
+    fn anchor_has_space(area: Rect, rect: Rect, anchor: ScreenAnchor) -> bool {
+        match anchor {
+            ScreenAnchor::Left => rect.x > area.x,
+            ScreenAnchor::Right => {
+                rect.x.saturating_add(rect.width) < area.x.saturating_add(area.width)
+            }
+            ScreenAnchor::Top => rect.y > area.y,
+            ScreenAnchor::Bottom => {
+                rect.y.saturating_add(rect.height) < area.y.saturating_add(area.height)
+            }
+        }
+    }
+
+    fn screen_anchor_point(rect: Rect, anchor: ScreenAnchor) -> (u16, u16) {
+        match anchor {
+            ScreenAnchor::Left => (rect.x, rect.y.saturating_add(rect.height / 2)),
+            ScreenAnchor::Right => (
+                rect.x.saturating_add(rect.width.saturating_sub(1)),
+                rect.y.saturating_add(rect.height / 2),
+            ),
+            ScreenAnchor::Top => (rect.x.saturating_add(rect.width / 2), rect.y),
+            ScreenAnchor::Bottom => (
+                rect.x.saturating_add(rect.width / 2),
+                rect.y.saturating_add(rect.height.saturating_sub(1)),
+            ),
+        }
+    }
+
+    fn screen_anchor_step(area: Rect, point: (u16, u16), anchor: ScreenAnchor) -> (u16, u16) {
+        match anchor {
+            ScreenAnchor::Left if point.0 > area.x => (point.0 - 1, point.1),
+            ScreenAnchor::Right if point.0 + 1 < area.x.saturating_add(area.width) => {
+                (point.0 + 1, point.1)
+            }
+            ScreenAnchor::Top if point.1 > area.y => (point.0, point.1 - 1),
+            ScreenAnchor::Bottom if point.1 + 1 < area.y.saturating_add(area.height) => {
+                (point.0, point.1 + 1)
+            }
+            _ => point,
+        }
+    }
+
+    fn anchor_is_horizontal(anchor: ScreenAnchor) -> bool {
+        matches!(anchor, ScreenAnchor::Left | ScreenAnchor::Right)
+    }
+
+    fn anchor_is_vertical(anchor: ScreenAnchor) -> bool {
+        matches!(anchor, ScreenAnchor::Top | ScreenAnchor::Bottom)
+    }
+
+    fn push_polyline_point(points: &mut Vec<(u16, u16)>, point: (u16, u16)) {
+        if points.last().copied() != Some(point) {
+            points.push(point);
+        }
+    }
+
+    fn accumulate_screen_polyline(
+        cells: &mut HashMap<(u16, u16), ScreenLineCell>,
+        points: &[(u16, u16)],
+        color: Color,
+        area: Rect,
+        card_rects: &HashMap<String, Rect>,
+        anchors: &HashSet<(u16, u16)>,
+    ) {
+        for segment in points.windows(2) {
+            let (x1, y1) = segment[0];
+            let (x2, y2) = segment[1];
+            Self::accumulate_screen_segment(
+                cells, x1, y1, x2, y2, color, area, card_rects, anchors,
+            );
+        }
+    }
+
+    fn accumulate_screen_segment(
+        cells: &mut HashMap<(u16, u16), ScreenLineCell>,
+        x1: u16,
+        y1: u16,
+        x2: u16,
+        y2: u16,
+        color: Color,
+        area: Rect,
+        card_rects: &HashMap<String, Rect>,
+        anchors: &HashSet<(u16, u16)>,
+    ) {
+        if x1 == x2 {
+            let min_y = y1.min(y2);
+            let max_y = y1.max(y2);
+            for y in min_y..=max_y {
+                if !Self::point_in_rect(area, x1, y)
+                    || Self::point_covered_by_card(card_rects, x1, y, anchors)
+                {
+                    continue;
+                }
+                let cell = cells.entry((x1, y)).or_default();
+                cell.color = Some(color);
+                if y > min_y {
+                    cell.up = true;
+                }
+                if y < max_y {
+                    cell.down = true;
+                }
+            }
+        } else if y1 == y2 {
+            let min_x = x1.min(x2);
+            let max_x = x1.max(x2);
+            for x in min_x..=max_x {
+                if !Self::point_in_rect(area, x, y1)
+                    || Self::point_covered_by_card(card_rects, x, y1, anchors)
+                {
+                    continue;
+                }
+                let cell = cells.entry((x, y1)).or_default();
+                cell.color = Some(color);
+                if x > min_x {
+                    cell.left = true;
+                }
+                if x < max_x {
+                    cell.right = true;
+                }
+            }
+        }
+    }
+
+    fn screen_line_glyph(cell: ScreenLineCell) -> char {
+        match (cell.up, cell.down, cell.left, cell.right) {
+            (true, true, true, true) => '┼',
+            (true, true, true, false) => '┤',
+            (true, true, false, true) => '├',
+            (true, false, true, true) => '┴',
+            (false, true, true, true) => '┬',
+            (true, true, false, false) => '│',
+            (false, false, true, true) => '─',
+            (false, true, false, true) => '┌',
+            (false, true, true, false) => '┐',
+            (true, false, false, true) => '└',
+            (true, false, true, false) => '┘',
+            (true, false, false, false) | (false, true, false, false) => '│',
+            (false, false, true, false) | (false, false, false, true) => '─',
+            _ => '·',
+        }
+    }
+
+    fn point_in_rect(area: Rect, x: u16, y: u16) -> bool {
+        x >= area.x
+            && x < area.x.saturating_add(area.width)
+            && y >= area.y
+            && y < area.y.saturating_add(area.height)
+    }
+
+    fn point_covered_by_card(
+        card_rects: &HashMap<String, Rect>,
+        x: u16,
+        y: u16,
+        anchors: &HashSet<(u16, u16)>,
+    ) -> bool {
+        if anchors.contains(&(x, y)) {
+            return false;
+        }
+
+        card_rects
+            .values()
+            .any(|rect| Self::point_in_rect(*rect, x, y))
     }
 
     fn truncate_label(label: &str, max_width: usize) -> String {
@@ -2107,6 +2778,42 @@ impl GraphExplorer {
         text.chars()
             .map(|ch| UnicodeWidthChar::width(ch).unwrap_or(1))
             .sum()
+    }
+
+    fn is_canvas_switch_key(key: KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Tab | KeyCode::BackTab | KeyCode::Char('v') | KeyCode::Char('V'))
+            || Self::is_ctrl_i(key)
+    }
+
+    fn is_cycle_forward_key(key: KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Tab | KeyCode::Char('n'))
+            || Self::is_ctrl_i(key)
+    }
+
+    fn is_cycle_backward_key(key: KeyEvent) -> bool {
+        matches!(key.code, KeyCode::BackTab | KeyCode::Char('N'))
+    }
+
+    fn is_ctrl_i(key: KeyEvent) -> bool {
+        key.code == KeyCode::Char('i') && key.modifiers.contains(KeyModifiers::CONTROL)
+    }
+
+    fn canvas_graph_bounds(model: &CanvasGraphModel) -> Option<(f64, f64, f64, f64)> {
+        let mut nodes = model.nodes.iter();
+        let first = nodes.next()?;
+        let mut min_x = first.x;
+        let mut max_x = first.x;
+        let mut min_y = first.y;
+        let mut max_y = first.y;
+
+        for node in nodes {
+            min_x = min_x.min(node.x);
+            max_x = max_x.max(node.x);
+            min_y = min_y.min(node.y);
+            max_y = max_y.max(node.y);
+        }
+
+        Some((min_x, max_x, min_y, max_y))
     }
 
     fn row_key(parent_key: Option<&str>, depth: usize, node: &GraphNodeRef) -> String {
@@ -2164,5 +2871,205 @@ impl GraphExplorer {
             width,
             height,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn node(kind: Option<GraphEdgeKind>, is_root: bool) -> CanvasNode {
+        CanvasNode {
+            id: "node".to_string(),
+            title: "notes.md".to_string(),
+            relative_path: "notes.md".to_string(),
+            absolute_path: None,
+            context: String::new(),
+            line_number: None,
+            kind,
+            x: 0.0,
+            y: 0.0,
+            is_root,
+            is_cycle: false,
+            resolved: true,
+        }
+    }
+
+    fn graph_child(title: &str, relative_path: &str, kind: GraphEdgeKind) -> GraphNodeRef {
+        GraphNodeRef {
+            kind,
+            title: title.to_string(),
+            relative_path: relative_path.to_string(),
+            absolute_path: Some(format!("/tmp/{relative_path}")),
+            context: String::new(),
+            line_number: None,
+            resolved: true,
+        }
+    }
+
+    #[test]
+    fn screen_edge_polyline_stays_inside_canvas_for_clamped_cards() {
+        let area = Rect::new(0, 0, 40, 12);
+        let root_rect = Rect::new(10, 5, 14, 3);
+        let target_rect = Rect::new(26, 0, 14, 3);
+        let root = node(None, true);
+        let target = node(Some(GraphEdgeKind::Link), false);
+
+        let polyline =
+            GraphExplorer::screen_edge_polyline(area, root_rect, target_rect, &root, &target);
+
+        assert!(polyline.len() >= 2);
+        assert!(polyline
+            .iter()
+            .all(|(x, y)| *x < area.width && *y < area.height));
+    }
+
+    #[test]
+    fn secondary_canvas_nodes_render_as_box_cards() {
+        let mut explorer = GraphExplorer::new();
+        explorer.canvas_zoom = CanvasZoomLevel::Standard;
+        let node = node(Some(GraphEdgeKind::Backlink), false);
+
+        assert_eq!(explorer.canvas_card_size(&node, false), (14, 3));
+    }
+
+    #[test]
+    fn macro_canvas_nodes_render_as_points() {
+        let explorer = GraphExplorer::new();
+        let node = node(Some(GraphEdgeKind::Link), false);
+
+        assert_eq!(explorer.canvas_card_size(&node, false), (1, 1));
+    }
+
+    #[test]
+    fn canvas_tab_cycle_wraps_across_all_nodes() {
+        let mut explorer = GraphExplorer::new();
+        explorer.set_root(Some(GraphRoot {
+            title: "Root".to_string(),
+            relative_path: "root.md".to_string(),
+            absolute_path: Some("/tmp/root.md".to_string()),
+            children: vec![
+                graph_child("Link Child", "link.md", GraphEdgeKind::Link),
+                graph_child("Backlink Child", "back.md", GraphEdgeKind::Backlink),
+            ],
+        }));
+        explorer.switch_view_mode(GraphViewMode::Canvas);
+
+        let initial = explorer.canvas_focus_id.clone();
+        let root_id = Some("root::root.md".to_string());
+        assert_ne!(initial, root_id);
+
+        explorer.cycle_canvas_focus(1);
+        let second = explorer.canvas_focus_id.clone();
+        assert_ne!(second, initial);
+
+        explorer.cycle_canvas_focus(1);
+        let third = explorer.canvas_focus_id.clone();
+        assert_ne!(third, second);
+        assert_ne!(third, initial);
+        assert_eq!(third, root_id);
+
+        explorer.cycle_canvas_focus(1);
+        assert_eq!(explorer.canvas_focus_id, initial);
+    }
+
+    #[test]
+    fn canvas_tab_cycle_keeps_loaded_descendants_after_tree_collapse() {
+        let mut explorer = GraphExplorer::new();
+        explorer.set_root(Some(GraphRoot {
+            title: "Root".to_string(),
+            relative_path: "root.md".to_string(),
+            absolute_path: Some("/tmp/root.md".to_string()),
+            children: vec![
+                graph_child("Link Child", "link.md", GraphEdgeKind::Link),
+                graph_child("Backlink Child", "back.md", GraphEdgeKind::Backlink),
+            ],
+        }));
+
+        explorer.set_loaded_children(
+            "link.md".to_string(),
+            vec![graph_child("Grand Child", "grand.md", GraphEdgeKind::Link)],
+        );
+        explorer.collapse_selected();
+        explorer.switch_view_mode(GraphViewMode::Canvas);
+
+        let model = explorer.build_canvas_model().expect("canvas model");
+        assert_eq!(model.nodes.len(), 4);
+        assert!(
+            model
+                .nodes
+                .iter()
+                .any(|node| node.relative_path == "grand.md"),
+            "collapsed descendants should remain available in canvas"
+        );
+
+        let initial = explorer.canvas_focus_id.clone();
+        explorer.cycle_canvas_focus(1);
+        assert_eq!(
+            explorer
+                .focused_canvas_node()
+                .map(|node| node.relative_path),
+            Some("grand.md".to_string())
+        );
+
+        explorer.cycle_canvas_focus(1);
+        assert_eq!(
+            explorer
+                .focused_canvas_node()
+                .map(|node| node.relative_path),
+            Some("back.md".to_string())
+        );
+
+        explorer.cycle_canvas_focus(1);
+        assert_eq!(explorer.canvas_focus_id, Some("root::root.md".to_string()));
+
+        explorer.cycle_canvas_focus(1);
+        assert_eq!(explorer.canvas_focus_id, initial);
+    }
+
+    #[test]
+    fn canvas_cycle_accepts_ctrl_i_as_tab_fallback() {
+        let mut explorer = GraphExplorer::new();
+        explorer.open(Some(GraphRoot {
+            title: "Root".to_string(),
+            relative_path: "root.md".to_string(),
+            absolute_path: Some("/tmp/root.md".to_string()),
+            children: vec![
+                graph_child("Link Child", "link.md", GraphEdgeKind::Link),
+                graph_child("Backlink Child", "back.md", GraphEdgeKind::Backlink),
+            ],
+        }));
+        explorer.switch_view_mode(GraphViewMode::Canvas);
+
+        let initial = explorer.canvas_focus_id.clone();
+        explorer.handle_key_event(KeyEvent::new(
+            KeyCode::Char('i'),
+            KeyModifiers::CONTROL,
+        ));
+
+        assert_ne!(explorer.canvas_focus_id, initial);
+    }
+
+    #[test]
+    fn canvas_cycle_accepts_n_shortcuts() {
+        let mut explorer = GraphExplorer::new();
+        explorer.open(Some(GraphRoot {
+            title: "Root".to_string(),
+            relative_path: "root.md".to_string(),
+            absolute_path: Some("/tmp/root.md".to_string()),
+            children: vec![
+                graph_child("Link Child", "link.md", GraphEdgeKind::Link),
+                graph_child("Backlink Child", "back.md", GraphEdgeKind::Backlink),
+            ],
+        }));
+        explorer.switch_view_mode(GraphViewMode::Canvas);
+
+        let initial = explorer.canvas_focus_id.clone();
+        explorer.handle_key_event(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE));
+        let after_forward = explorer.canvas_focus_id.clone();
+        assert_ne!(after_forward, initial);
+
+        explorer.handle_key_event(KeyEvent::new(KeyCode::Char('N'), KeyModifiers::SHIFT));
+        assert_eq!(explorer.canvas_focus_id, initial);
     }
 }
