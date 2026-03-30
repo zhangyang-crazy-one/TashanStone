@@ -235,7 +235,7 @@ describe('assistant settings persistence', () => {
     expect(localStorageSetSpy).not.toHaveBeenCalled();
   });
 
-  it('renders descriptor-backed operator and notebook shell metadata while deferred sections stay metadata-only', () => {
+  it('renders shipped settings tabs without exposing planning-state shell copy', () => {
     render(
       <AISettingsModal
         isOpen={true}
@@ -252,10 +252,12 @@ describe('assistant settings persistence', () => {
       />,
     );
 
-    expect(screen.getByText(translations.en.assistantSettings.surfaces.operator.title)).toBeInTheDocument();
-    expect(screen.getByText(translations.en.assistantSettings.surfaces.notebook.title)).toBeInTheDocument();
-    expect(screen.getByText(translations.en.assistantSettings.operator.sections.runtime.title)).toBeInTheDocument();
-    expect(screen.getByText(translations.en.assistantSettings.notebook.sections.workspace.title)).toBeInTheDocument();
-    expect(screen.getAllByText(translations.en.assistantSettings.phaseLabels.laterPhase).length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: translations.en.aiConfig })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: translations.en.appearance })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'MCP / Tools' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Context' })).toBeInTheDocument();
+    expect(screen.queryByText('Settings Blueprint')).not.toBeInTheDocument();
+    expect(screen.queryByText('Phase 1 ready')).not.toBeInTheDocument();
+    expect(screen.queryByText('Later phase')).not.toBeInTheDocument();
   });
 });
