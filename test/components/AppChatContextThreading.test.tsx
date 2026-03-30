@@ -443,6 +443,7 @@ describe('App chat context threading', () => {
     );
 
     const chatPanelProps = chatPanelPropsSpy.mock.calls.at(-1)?.[0] as {
+      activeFileName?: string;
       contextScope: string;
       includeSelectedText: boolean;
       setContextScope: unknown;
@@ -458,6 +459,8 @@ describe('App chat context threading', () => {
 
     expect(chatPanelProps.contextScope).toBe('open-panes');
     expect(chatPanelProps.includeSelectedText).toBe(true);
+    expect(chatPanelProps.activeFileName).toBe('Focused Draft');
+    expect(chatPanelProps.activeFileName).not.toBe(chatPanelProps.workspaceContext.activeFileId);
     expect(chatPanelProps.workspaceContext).toMatchObject({
       activeFileId: 'note-2',
       selectedFileIds: ['note-2', 'note-3'],
