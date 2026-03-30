@@ -23,6 +23,13 @@ import { translations, type Language } from '../utils/translations';
 
 export { MessageItem } from './ChatPanel/MessageItem';
 
+const ACTIVE_RUNTIME_PHASES = new Set([
+  'queued',
+  'assembling-context',
+  'executing',
+  'streaming',
+]);
+
 interface Checkpoint {
   id: string;
   name: string;
@@ -250,6 +257,16 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     scrollToBottom();
   }, [messages, isOpen, scrollToBottom]);
 
+  useEffect(() => {
+    if (!assistantRuntimeInspection) {
+      return;
+    }
+
+    if (ACTIVE_RUNTIME_PHASES.has(assistantRuntimeInspection.lifecyclePhase)) {
+      setShowRuntimeInspector(true);
+    }
+  }, [assistantRuntimeInspection]);
+
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || aiState.isThinking) return;
@@ -297,6 +314,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           onToggleWorkspaceContext={handleToggleWorkspaceContext}
           activeSessionTitle={activeSessionTitle}
           sessionCount={sessions.length}
+          runtimeInspection={assistantRuntimeInspection}
           showRuntimeInspector={showRuntimeInspector}
           onToggleRuntimeInspector={assistantRuntimeInspection ? handleToggleRuntimeInspector : undefined}
           onClearChat={onClearChat}

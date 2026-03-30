@@ -1,7 +1,7 @@
 import React from 'react';
 
 import type { AssistantRuntimeInspectionState } from '@/src/app/hooks/useAssistantRuntimeInspection';
-import type { Language } from '@/utils/translations';
+import { translations, type Language } from '@/utils/translations';
 
 interface RuntimeInspectorPanelProps {
   inspection: AssistantRuntimeInspectionState;
@@ -30,75 +30,58 @@ export const RuntimeInspectorPanel: React.FC<RuntimeInspectorPanelProps> = ({
   inspection,
   language = 'en',
 }) => {
-  const labels = language === 'zh'
-    ? {
-        title: '运行检查',
-        subtitle: '只读显示当前会话、执行阶段与上下文装配结果',
-        idle: '尚未产生运行时事件',
-        requestId: '请求',
-        sessionId: '会话',
-        threadId: '线程',
-        routeKey: '路由',
-        lifecycle: '阶段',
-        transport: '传输',
-        caller: '调用方',
-        stream: '流式状态',
-        adapters: '上下文适配器',
-        noContext: '当前没有上下文分段',
-        updatedAt: '更新时间',
-      }
-    : {
-        title: 'Runtime Inspector',
-        subtitle: 'Read-only visibility into session, lifecycle, and assembled context.',
-        idle: 'No runtime activity yet.',
-        requestId: 'Request',
-        sessionId: 'Session',
-        threadId: 'Thread',
-        routeKey: 'Route',
-        lifecycle: 'Lifecycle',
-        transport: 'Transport',
-        caller: 'Caller',
-        stream: 'Streaming',
-        adapters: 'Context Adapters',
-        noContext: 'No context sections assembled yet.',
-        updatedAt: 'Updated',
-      };
-
-  const updatedAt = inspection.updatedAt ? new Date(inspection.updatedAt).toLocaleString() : 'n/a';
+  const labels = translations[language].chatRuntime;
+  const isActive = ['queued', 'assembling-context', 'executing', 'streaming'].includes(inspection.lifecyclePhase);
+  const updatedAt = inspection.updatedAt ? new Date(inspection.updatedAt).toLocaleString() : labels.notAvailable;
   const streamSummary = inspection.streamed
-    ? `${inspection.streamDeltaCount} deltas · ${inspection.accumulatedTextLength} chars`
+    ? `${inspection.streamDeltaCount} ${labels.deltaCountShort} · ${inspection.accumulatedTextLength} chars`
     : inspection.lifecyclePhase === 'idle'
-      ? 'idle'
-      : 'not streaming';
+      ? labels.idle
+      : labels.notStreaming;
   const adapterSummary = inspection.contextAdapterIds.length > 0
     ? inspection.contextAdapterIds.join(', ')
-    : 'none';
+    : labels.notAvailable;
+  const lastDelta = inspection.streamed && inspection.lastDelta ? inspection.lastDelta : labels.noLastDelta;
+  const showDeltaPill = inspection.streamDeltaCount > 0 || isActive;
 
   return (
     <div
       className="border-b border-cyan-200/40 bg-cyan-50/70 px-3 py-3 dark:border-cyan-800/50 dark:bg-cyan-950/20"
       data-testid="runtime-inspector-panel"
     >
-      <div className="mb-3">
-        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-700 dark:text-cyan-300">
-          {labels.title}
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-700 dark:text-cyan-300">
+            {labels.liveRuntime}
+          </div>
+          <div className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+            {labels.subtitle}
+          </div>
         </div>
-        <div className="mt-1 text-xs text-slate-600 dark:text-slate-300">
-          {labels.subtitle}
+        <div className="flex flex-wrap justify-end gap-2">
+          <span className="rounded-full bg-white/80 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-cyan-700 dark:bg-cyber-900/70 dark:text-cyan-200">
+            {inspection.lifecyclePhase}
+          </span>
+          {showDeltaPill && (
+            <span className="rounded-full bg-cyan-500/10 px-2 py-1 text-[10px] font-semibold text-cyan-700 dark:bg-cyan-500/20 dark:text-cyan-200">
+              {inspection.streamDeltaCount} {labels.deltaCountShort}
+            </span>
+          )}
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-2">
         <Field label={labels.lifecycle} value={inspection.lifecycleDetail ? `${inspection.lifecyclePhase} · ${inspection.lifecycleDetail}` : inspection.lifecyclePhase} />
         <Field label={labels.stream} value={streamSummary} />
-        <Field label={labels.sessionId} value={inspection.sessionId ?? labels.idle} />
-        <Field label={labels.requestId} value={inspection.requestId ?? 'n/a'} />
-        <Field label={labels.threadId} value={inspection.threadId ?? 'n/a'} />
-        <Field label={labels.routeKey} value={inspection.routeKey ?? 'n/a'} />
-        <Field label={labels.transport} value={inspection.transport ?? 'n/a'} />
-        <Field label={labels.caller} value={inspection.callerId ?? 'n/a'} />
+        <Field label={labels.lastDelta} value={lastDelta} />
+        <Field label={labels.lastUpdate} value={updatedAt} />
+        <Field label={labels.sessionId} value={inspection.sessionId ?? labels.notAvailable} />
+        <Field label={labels.requestId} value={inspection.requestId ?? labels.notAvailable} />
+        <Field label={labels.threadId} value={inspection.threadId ?? labels.notAvailable} />
+        <Field label={labels.routeKey} value={inspection.routeKey ?? labels.notAvailable} />
+        <Field label={labels.transport} value={inspection.transport ?? labels.notAvailable} />
+        <Field label={labels.caller} value={inspection.callerId ?? labels.notAvailable} />
         <Field label={labels.adapters} value={adapterSummary} />
-        <Field label={labels.updatedAt} value={updatedAt} />
       </div>
 
       <div className="mt-3 space-y-2">

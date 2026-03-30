@@ -210,7 +210,7 @@ describe('ChatPanel parity surface', () => {
     expect(screen.getByRole('radio', { name: /Focused note only/i })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: /Open panes/i })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: /Include highlighted text/i })).toBeChecked();
-    expect(screen.getByText('Focused runtime paragraph')).toBeInTheDocument();
+    expect(screen.getAllByText('Focused runtime paragraph').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: /Live runtime/i })).toBeInTheDocument();
     expect(screen.getByTestId('runtime-inspector-panel')).toBeInTheDocument();
     expect(screen.getByText('2 deltas · 64 chars')).toBeInTheDocument();

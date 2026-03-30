@@ -2,6 +2,7 @@ import React from 'react';
 import { Archive, Brain, Eye, Maximize2, Minimize2, Sparkles, Trash2, X } from 'lucide-react';
 
 import type { AIState } from '../../types';
+import type { AssistantRuntimeInspectionState } from '@/src/app/hooks/useAssistantRuntimeInspection';
 import Tooltip from '../Tooltip';
 import { MemoryPanel, type InjectedMemory, type MemorySearchResult } from './MemoryPanel';
 import type { Language } from '../../utils/translations';
@@ -33,6 +34,7 @@ interface ChatHeaderProps {
   onToggleWorkspaceContext: () => void;
   activeSessionTitle?: string | null;
   sessionCount?: number;
+  runtimeInspection?: AssistantRuntimeInspectionState | null;
   showRuntimeInspector?: boolean;
   onToggleRuntimeInspector?: () => void;
   onClearChat: () => void;
@@ -64,6 +66,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   onToggleWorkspaceContext,
   activeSessionTitle,
   sessionCount = 0,
+  runtimeInspection,
   showRuntimeInspector = false,
   onToggleRuntimeInspector,
   onClearChat,
@@ -83,11 +86,21 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
     : tokenRatio > 0.7
       ? 'text-amber-500'
       : 'text-emerald-500';
+  const runtimeIsActive = runtimeInspection
+    ? ['queued', 'assembling-context', 'executing', 'streaming'].includes(runtimeInspection.lifecyclePhase)
+    : false;
+  const runtimeButtonText = runtimeIsActive || showRuntimeInspector
+    ? t.chatRuntime.liveRuntime
+    : t.chatRuntime.runtimeDetails;
+  const runtimePhase = runtimeInspection?.lifecyclePhase ?? t.chatRuntime.idleLabel;
+  const runtimeDeltaSummary = runtimeInspection && (runtimeInspection.streamDeltaCount > 0 || runtimeIsActive)
+    ? `${runtimeInspection.streamDeltaCount} ${t.chatRuntime.deltaCountShort}`
+    : null;
 
   return (
     <div className="relative bg-gradient-to-r from-violet-500/5 via-transparent to-cyan-500/5 dark:from-violet-600/10 dark:to-cyan-600/10 border-b border-violet-200/30 dark:border-violet-700/30">
-      <div className="h-12 flex items-center justify-between px-3">
-        <div className="flex items-center gap-2 min-w-0">
+      <div className="flex items-start justify-between px-3 py-2">
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
           <div className="w-7 h-7 bg-gradient-to-br from-violet-500 to-cyan-500 rounded-lg flex items-center justify-center shrink-0 shadow-sm shadow-violet-500/20">
             <Sparkles size={14} className="text-white" />
           </div>
@@ -190,18 +203,31 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
           )}
 
           {onToggleRuntimeInspector && (
-            <Tooltip content={showRuntimeInspector ? (language === 'zh' ? '隐藏运行状态' : 'Hide runtime inspector') : (language === 'zh' ? '查看运行状态' : 'Inspect runtime state')}>
-              <button
-                onClick={onToggleRuntimeInspector}
-                className={`p-1.5 rounded-md transition-all ${showRuntimeInspector
-                  ? 'text-cyan-500 bg-cyan-100/50 dark:bg-cyan-900/30'
-                  : 'text-slate-400 hover:text-cyan-500 hover:bg-cyan-100/50 dark:hover:bg-cyan-900/30'
-                  }`}
-                aria-label={showRuntimeInspector ? (language === 'zh' ? '隐藏运行状态' : 'Hide runtime inspector') : (language === 'zh' ? '查看运行状态' : 'Inspect runtime state')}
-              >
-                <Eye size={15} />
-              </button>
-            </Tooltip>
+            <button
+              type="button"
+              onClick={onToggleRuntimeInspector}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[11px] font-medium transition ${showRuntimeInspector
+                ? 'border-cyan-300 bg-cyan-100/80 text-cyan-700 dark:border-cyan-600 dark:bg-cyan-900/40 dark:text-cyan-200'
+                : 'border-slate-200 bg-white/70 text-slate-600 hover:border-cyan-300 hover:text-cyan-700 dark:border-cyber-700 dark:bg-cyber-900/60 dark:text-slate-300 dark:hover:border-cyan-600 dark:hover:text-cyan-200'
+                }`}
+              aria-label={t.chatRuntime.toggleAriaLabel}
+              aria-pressed={showRuntimeInspector}
+            >
+              <Eye size={14} />
+              <span>{runtimeButtonText}</span>
+              {runtimeInspection && (
+                <>
+                  <span className="rounded-full bg-white/70 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-cyan-700 dark:bg-cyan-950/70 dark:text-cyan-200">
+                    {runtimePhase}
+                  </span>
+                  {runtimeDeltaSummary && (
+                    <span className="rounded-full bg-cyan-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-cyan-700 dark:bg-cyan-500/20 dark:text-cyan-200">
+                      {runtimeDeltaSummary}
+                    </span>
+                  )}
+                </>
+              )}
+            </button>
           )}
 
           <Tooltip content={t.clearHistory}>
