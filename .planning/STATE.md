@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: verifying
-stopped_at: Completed 04-08-PLAN.md
-last_updated: "2026-03-30T03:24:07.209Z"
-last_activity: 2026-03-30
+status: executing
+stopped_at: Completed 04-09-PLAN.md
+last_updated: "2026-03-30T03:51:58.930Z"
+last_activity: 2026-03-30 -- Completed 04-09 gap-closure plan and closed the APP-02 active-note-title verification gap
 progress:
   total_phases: 7
   completed_phases: 4
-  total_plans: 20
-  completed_plans: 20
-  percent: 95
+  total_plans: 21
+  completed_plans: 21
+  percent: 100
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-03-30)
 
 **Core value:** TashanStone must provide an OpenClaw-class assistant core that feels native to the notebook product while remaining reusable across in-app and channel-based conversations.
-**Current focus:** Phase 04 — in-app-assistant-parity
+**Current focus:** Phase 04 — in-app-assistant-parity (complete)
 
 ## Current Position
 
-Phase: 04 (in-app-assistant-parity) — VERIFYING
-Plan: 8 of 8
-Status: Phase complete — ready for verification
-Last activity: 2026-03-30
+Phase: 04 (in-app-assistant-parity) — COMPLETE
+Plan: 9 of 9
+Status: Completed 04-09 gap closure
+Last activity: 2026-03-30 -- Completed 04-09 gap-closure plan and closed the APP-02 active-note-title verification gap
 
 Progress: [██████████] 100%
 
@@ -59,6 +59,7 @@ Progress: [██████████] 100%
 | Phase 04-in-app-assistant-parity P06 | 8 min | 2 tasks | 8 files |
 | Phase 04-in-app-assistant-parity P07 | 9min | 2 tasks | 8 files |
 | Phase 04-in-app-assistant-parity P08 | 16min | 2 tasks | 8 files |
+| Phase 04-in-app-assistant-parity P09 | 8 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -88,6 +89,7 @@ Recent decisions affecting current work:
 - [Phase 04-in-app-assistant-parity]: Implement composer keyboard behavior with a textarea plus native form submission dispatch so Enter submit, Shift+Enter newline, and existing voice-input append all share the same input state.
 - [Phase 04-in-app-assistant-parity]: Keep isolated-thread discoverability on the canonical session model instead of introducing UI-owned thread state.
 - [Phase 04-in-app-assistant-parity]: Auto-open runtime inspection for active lifecycle phases and expose the control as labeled live-runtime status in the chat header.
+- [Phase 04-in-app-assistant-parity]: Cover the active-note-title fix at both the app-shell contract level and the rendered chat-shell level so the UI cannot silently regress back to opaque ids.
 
 ### Pending Todos
 
@@ -99,6 +101,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-30T03:24:07.207Z
-Stopped at: Completed 04-08-PLAN.md
+Last session: 2026-03-30T03:51:58.928Z
+Stopped at: Completed 04-09-PLAN.md
 Resume file: None

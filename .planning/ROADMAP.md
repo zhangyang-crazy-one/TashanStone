@@ -76,7 +76,7 @@ Plans:
   1. A user can chat in the in-app assistant interface through the shared runtime and receive streamed responses.
   2. A user can inspect session state, streaming state, and assembled assistant context from the in-app view.
   3. A user can keep using notebook editing, knowledge retrieval, and existing in-app workflows after the runtime extraction.
-**Plans**: 8 plans
+**Plans**: 9 plans
 Plans:
 - [x] 04-01-PLAN.md — Define inspectable runtime/session/context parity contracts and an app-facing inspection bridge.
 - [x] 04-02-PLAN.md — Replace placeholder notebook-context assembly with real workspace state and preserve runtime-backed notebook workflows.
@@ -86,6 +86,7 @@ Plans:
 - [x] 04-06-PLAN.md — Thread explicit workspace-context state through the app shell and shared runtime, with tests proving it reaches ChatPanel.
 - [x] 04-07-PLAN.md — Add visible workspace-context controls plus a multiline auto-growing composer to the in-app assistant surface.
 - [x] 04-08-PLAN.md — Make isolated threads and live runtime inspection discoverable from the default chat surface.
+- [x] 04-09-PLAN.md — Close the active-note-title truthfulness gap so the visible workspace-context panel shows real note titles instead of file ids.
 **UI hint**: yes
 
 ### Phase 5: WhatsApp Channel Launch
@@ -125,7 +126,7 @@ Plans:
 | 1. Assistant Runtime Foundation | 4/4 | Complete   | 2026-03-28 |
 | 2. Session Routing and Persistence | 4/4 | Complete   | 2026-03-29 |
 | 3. Tools and Multimodal Delivery | 0/4 | Not started | - |
-| 4. In-App Assistant Parity | 8/8 | Complete | 2026-03-30 |
+| 4. In-App Assistant Parity | 9/9 | Complete | 2026-03-30 |
 | 5. WhatsApp Channel Launch | 0/TBD | Not started | - |
 | 6. QQ Channel and Adapter Generalization | 0/TBD | Not started | - |
 | 7. Safety and Operations Controls | 0/TBD | Not started | - |
