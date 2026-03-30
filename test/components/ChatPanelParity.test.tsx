@@ -117,12 +117,12 @@ function createInspection(): AssistantRuntimeInspectionState {
     callerId: 'in-app-assistant',
     surface: 'app-chat',
     transport: 'in-app',
-    lifecyclePhase: 'completed',
-    lifecycleDetail: 'runtime complete',
+    lifecyclePhase: 'streaming',
+    lifecycleDetail: 'assembling notebook context',
     streamed: true,
     streamDeltaCount: 2,
     accumulatedTextLength: 64,
-    lastDelta: 'Done',
+    lastDelta: 'Focused runtime delta',
     contextAdapterIds: ['workspace-state'],
     contextSources: ['workspace'],
     contextSections: [
@@ -146,7 +146,7 @@ describe('ChatPanel parity surface', () => {
     speechRecognitionControls.onResult = null;
   });
 
-  it('keeps visible context controls while making isolated threads discoverable in the chat shell', async () => {
+  it('keeps visible context controls while surfacing live runtime activity in the chat shell', async () => {
     const onSendMessage = vi.fn();
     const onClearChat = vi.fn();
     const onCompactChat = vi.fn().mockResolvedValue(undefined);
@@ -211,11 +211,18 @@ describe('ChatPanel parity surface', () => {
     expect(screen.getByRole('radio', { name: /Open panes/i })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: /Include highlighted text/i })).toBeChecked();
     expect(screen.getByText('Focused runtime paragraph')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Live runtime/i })).toBeInTheDocument();
+    expect(screen.getByTestId('runtime-inspector-panel')).toBeInTheDocument();
+    expect(screen.getByText('2 deltas · 64 chars')).toBeInTheDocument();
+    expect(screen.getByText('Focused runtime delta')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /Clear History/i }));
     expect(onClearChat).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByRole('button', { name: /Inspect runtime state/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Live runtime/i }));
+    expect(screen.queryByTestId('runtime-inspector-panel')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Runtime details/i }));
     expect(screen.getByTestId('runtime-inspector-panel')).toBeInTheDocument();
     expect(screen.getByText('Workspace Selection')).toBeInTheDocument();
 

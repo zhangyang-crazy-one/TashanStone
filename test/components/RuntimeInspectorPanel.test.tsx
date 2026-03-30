@@ -47,12 +47,15 @@ function createInspection(overrides: Partial<AssistantRuntimeInspectionState> = 
 }
 
 describe('RuntimeInspectorPanel', () => {
-  it('shows session, lifecycle, stream, and context section details in a read-only panel', () => {
+  it('shows live runtime activity, delta details, and context sections in a read-only panel', () => {
     render(<RuntimeInspectorPanel inspection={createInspection()} />);
 
-    expect(screen.getByText('Runtime Inspector')).toBeInTheDocument();
+    expect(screen.getByText('Live runtime')).toBeInTheDocument();
     expect(screen.getByText('3 deltas · 128 chars')).toBeInTheDocument();
     expect(screen.getByText('streaming · assembling notebook context')).toBeInTheDocument();
+    expect(screen.getByText('Last delta')).toBeInTheDocument();
+    expect(screen.getByText('delta')).toBeInTheDocument();
+    expect(screen.getByText('Last update')).toBeInTheDocument();
     expect(screen.getByText('Workspace Selection')).toBeInTheDocument();
     expect(screen.getByText('Selected note.md and highlighted paragraph.')).toBeInTheDocument();
     expect(screen.getByText('Knowledge Context')).toBeInTheDocument();
@@ -75,5 +78,6 @@ describe('RuntimeInspectorPanel', () => {
     );
 
     expect(screen.getByText('No context sections assembled yet.')).toBeInTheDocument();
+    expect(screen.getByText('No runtime activity yet.')).toBeInTheDocument();
   });
 });
