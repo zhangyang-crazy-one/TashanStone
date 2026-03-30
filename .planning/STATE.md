@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
+status: verifying
 stopped_at: Completed 04-08-PLAN.md
-last_updated: "2026-03-30T03:21:20.408Z"
+last_updated: "2026-03-30T03:24:07.209Z"
 last_activity: 2026-03-30
 progress:
   total_phases: 7
@@ -25,12 +25,12 @@ See: `.planning/PROJECT.md` (updated 2026-03-30)
 
 ## Current Position
 
-Phase: 04 (in-app-assistant-parity) — EXECUTING
+Phase: 04 (in-app-assistant-parity) — VERIFYING
 Plan: 8 of 8
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-03-30
 
-Progress: [██████████] 95%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -58,6 +58,7 @@ Progress: [██████████] 95%
 | Phase 03 P01 | 6 min | 2 tasks | 5 files |
 | Phase 04-in-app-assistant-parity P06 | 8 min | 2 tasks | 8 files |
 | Phase 04-in-app-assistant-parity P07 | 9min | 2 tasks | 8 files |
+| Phase 04-in-app-assistant-parity P08 | 16min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -85,6 +86,8 @@ Recent decisions affecting current work:
 - [Phase 04-in-app-assistant-parity]: Thread the active session workspaceId through the chat-surface workspaceContext contract so future UI plans can expose session-bound grounding details without reopening shell plumbing.
 - [Phase 04-in-app-assistant-parity]: Keep workspace grounding visible as a dedicated chat-surface panel tied directly to the 04-06 context contract rather than duplicating local-only state inside the header.
 - [Phase 04-in-app-assistant-parity]: Implement composer keyboard behavior with a textarea plus native form submission dispatch so Enter submit, Shift+Enter newline, and existing voice-input append all share the same input state.
+- [Phase 04-in-app-assistant-parity]: Keep isolated-thread discoverability on the canonical session model instead of introducing UI-owned thread state.
+- [Phase 04-in-app-assistant-parity]: Auto-open runtime inspection for active lifecycle phases and expose the control as labeled live-runtime status in the chat header.
 
 ### Pending Todos
 
@@ -96,6 +99,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-30T03:21:20.406Z
+Last session: 2026-03-30T03:24:07.207Z
 Stopped at: Completed 04-08-PLAN.md
 Resume file: None

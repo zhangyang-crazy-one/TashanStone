@@ -15,8 +15,8 @@ requires:
   - 04-07
 provides:
   - Self-explanatory isolated-thread UX on the default chat surface
-  - Live runtime visibility that surfaces streaming phase and delta activity without hidden icon-only discovery
-  - Final parity coverage for context controls, runtime visibility, and preserved notebook-centric actions
+  - Live runtime visibility with labeled status and auto-surfaced inspection during active runs
+  - Final parity coverage for context controls, voice/injected input flows, and notebook-centric chat actions
 affects:
   - components/ChatPanel.tsx
   - components/ChatPanel/ChatHeader.tsx
@@ -27,69 +27,94 @@ affects:
 tech-stack:
   added: []
   patterns:
-    - explain isolated chat sessions with explicit thread copy instead of generic session labels
-    - auto-surface runtime inspection during active phases while keeping the panel manually inspectable afterward
+    - explain isolated assistant sessions as threads instead of exposing raw session labels
+    - auto-surface read-only runtime inspection during active phases while keeping manual toggle access afterward
 key-files:
-  created:
-    - test/components/AssistantSessionBar.test.tsx
-    - test/components/RuntimeInspectorPanel.test.tsx
+  created: []
   modified:
     - components/ChatPanel.tsx
     - components/ChatPanel/ChatHeader.tsx
     - components/ChatPanel/AssistantSessionBar.tsx
     - components/ChatPanel/RuntimeInspectorPanel.tsx
-    - test/components/ChatPanelParity.test.tsx
     - utils/translations.ts
+    - test/components/AssistantSessionBar.test.tsx
+    - test/components/RuntimeInspectorPanel.test.tsx
+    - test/components/ChatPanelParity.test.tsx
 decisions:
-  - Frame in-app conversations as isolated threads with explicit explanatory copy so users can understand separation of history and context at a glance.
-  - Promote runtime visibility to a labeled live-runtime control with phase and delta badges, and auto-open the inspector while activity is in-flight.
+  - Keep the thread-discoverability rewrite on top of the canonical session callbacks and IDs instead of introducing local-only chat-thread state.
+  - Promote runtime inspection into a labeled live-status control and auto-open the inspector for active lifecycle phases so streaming activity is visible without icon discovery.
+patterns-established:
+  - "Assistant session UX should explain isolation in user language while still delegating create/select operations to the shared runtime session model."
+  - "Header-level observability controls should be labeled and stateful, not icon-only, when they represent parity-critical runtime behavior."
 requirements-completed:
   - APP-02
   - APP-03
-completed: 2026-03-30T11:20:03+08:00
+duration: 16min
+completed: 2026-03-30T11:21:37+08:00
 ---
 
 # Phase 04 Plan 08: Discoverable Threads And Live Runtime Visibility Summary
 
-The in-app assistant now explains isolated threads plainly and surfaces live runtime activity from the default chat surface, completing the user-facing parity work without regressing notebook-centric actions.
+**Isolated chat threads with explicit separation copy, plus a labeled live-runtime surface that shows phase and delta activity directly inside the parity chat shell**
 
-## Outcome
+## Performance
 
-Tasks completed: 2/2
+- **Duration:** 16 min
+- **Started:** 2026-03-30T03:06:00Z
+- **Completed:** 2026-03-30T03:21:37Z
+- **Tasks:** 2
+- **Files modified:** 8
 
-- Reworked the session strip into explicit isolated-thread UX with active-thread labeling and explanatory copy about separate history and context.
-- Promoted runtime visibility from a hidden inspector icon to a labeled live-runtime control with phase and delta badges, and auto-surfaced the inspector during active phases.
-- Extended final parity coverage so visible context controls, thread discoverability, live runtime state, voice append, and injected-message flows all coexist in the same chat shell.
+## Accomplishments
 
-## Verification
-
-- `bun run vitest run test/components/AssistantSessionBar.test.tsx test/components/RuntimeInspectorPanel.test.tsx test/components/ChatPanelParity.test.tsx`
-- `bun run tsc --noEmit`
+- Reworked the session strip into an isolated-thread surface with active-thread labeling and explicit copy that explains separate history and context.
+- Replaced the hidden runtime icon with a labeled live-runtime control that exposes lifecycle and delta state in the header and auto-opens the inspector during active runs.
+- Extended parity coverage so workspace-context controls, clear/compact actions, stop streaming, voice append, and injected-message flows remain intact after the final chat-shell rewrite.
 
 ## Task Commits
 
-1. `a6a162b` `test(04-08): add failing thread discoverability tests`
-2. `7cbb295` `feat(04-08): clarify isolated chat threads`
-3. `0ab0850` `test(04-08): add failing live runtime visibility tests`
-4. `2380e21` `feat(04-08): surface live runtime activity`
+Each task was committed atomically:
+
+1. **Task 1: Make isolated-thread session UX self-explanatory in the main chat surface** - `a6a162b` (test), `7cbb295` (feat)
+2. **Task 2: Surface live runtime activity without requiring a hidden icon toggle** - `0ab0850` (test), `2380e21` (feat)
+
+**Plan metadata:** pending final docs commit
 
 ## Files Created/Modified
 
-- `components/ChatPanel/AssistantSessionBar.tsx` - Reframes sessions as isolated threads with active-thread affordances and explanatory copy.
-- `components/ChatPanel/ChatHeader.tsx` - Adds the labeled live-runtime control and phase/delta badges.
-- `components/ChatPanel/RuntimeInspectorPanel.tsx` - Presents live runtime details, last delta, last update, and assembled context in a clearer read-only layout.
-- `components/ChatPanel.tsx` - Auto-surfaces the runtime inspector during active phases and threads inspection state into the header.
-- `utils/translations.ts` - Adds the user-facing thread and live-runtime copy in English and Chinese.
-- `test/components/AssistantSessionBar.test.tsx` - Verifies isolated-thread copy and active-thread discoverability.
-- `test/components/RuntimeInspectorPanel.test.tsx` - Verifies live runtime fields and idle-state visibility.
-- `test/components/ChatPanelParity.test.tsx` - Verifies thread discoverability, live runtime visibility, and preserved notebook-centric chat actions together.
+- `components/ChatPanel/AssistantSessionBar.tsx` - Reframes sessions as isolated threads with explanatory copy and an active-thread affordance.
+- `components/ChatPanel/ChatHeader.tsx` - Adds a labeled live-runtime control with visible phase and delta badges.
+- `components/ChatPanel/RuntimeInspectorPanel.tsx` - Exposes last-delta and last-update details alongside existing session, lifecycle, and context inspection fields.
+- `components/ChatPanel.tsx` - Auto-surfaces the runtime inspector while active lifecycle phases are in flight.
+- `utils/translations.ts` - Adds English and Chinese thread/runtime discoverability strings.
+- `test/components/AssistantSessionBar.test.tsx` - Verifies isolated-thread copy, active-thread labeling, and canonical callbacks.
+- `test/components/RuntimeInspectorPanel.test.tsx` - Verifies live-runtime fields and idle-state visibility.
+- `test/components/ChatPanelParity.test.tsx` - Verifies the final chat shell preserves context controls and notebook-centric actions while adding thread/runtime discoverability.
+
+## Decisions Made
+
+- Kept the discoverability work inside the existing chat drawer and canonical session model, preserving parity with the shared runtime instead of creating UI-owned thread state.
+- Treated active runtime phases as the trigger for auto-surfacing the inspector, which keeps live execution obvious without forcing the panel open after activity has finished.
 
 ## Deviations from Plan
 
 None - plan executed exactly as written.
 
+## Issues Encountered
+
+None.
+
+## User Setup Required
+
+None - no external service configuration required.
+
 ## Next Phase Readiness
 
-Phase 04 gap-closure work is complete. The in-app assistant now has truthful settings, explicit workspace context controls, a multiline composer, discoverable isolated threads, and visible runtime activity, so the phase is ready for phase-level verification and completion.
+- Phase 04 gap-closure work is complete on the code path covered by this plan.
+- The in-app assistant now presents truthful settings, visible workspace context, a multiline composer, discoverable isolated threads, and visible runtime activity on the default chat surface.
 
 ## Self-Check: PASSED
+
+---
+*Phase: 04-in-app-assistant-parity*
+*Completed: 2026-03-30*

@@ -13,7 +13,7 @@ This roadmap turns TashanStone into a notebook-native assistant platform by firs
 - [x] **Phase 1: Assistant Runtime Foundation** - Establish the shared notebook-native runtime that all assistant surfaces will use.
 - [x] **Phase 2: Session Routing and Persistence** - Introduce isolated sessions, routing rules, and durable conversation state. (completed 2026-03-29)
 - [ ] **Phase 3: Tools and Multimodal Delivery** - Unify tool execution, media normalization, and outbound delivery behavior.
-- [ ] **Phase 4: In-App Assistant Parity** - Move the desktop assistant experience onto the shared runtime without regressing notebook workflows.
+- [x] **Phase 4: In-App Assistant Parity** - Move the desktop assistant experience onto the shared runtime without regressing notebook workflows. (completed 2026-03-30)
 - [ ] **Phase 5: WhatsApp Channel Launch** - Deliver the first external channel on top of the shared runtime with reply metadata support.
 - [ ] **Phase 6: QQ Channel and Adapter Generalization** - Add QQ Channel and prove adapter-specific policies without forking core logic.
 - [ ] **Phase 7: Safety and Operations Controls** - Add runtime guardrails and debugging visibility for cross-surface operation.
@@ -125,7 +125,7 @@ Plans:
 | 1. Assistant Runtime Foundation | 4/4 | Complete   | 2026-03-28 |
 | 2. Session Routing and Persistence | 4/4 | Complete   | 2026-03-29 |
 | 3. Tools and Multimodal Delivery | 0/4 | Not started | - |
-| 4. In-App Assistant Parity | 7/8 | In Progress|  |
+| 4. In-App Assistant Parity | 8/8 | Complete | 2026-03-30 |
 | 5. WhatsApp Channel Launch | 0/TBD | Not started | - |
 | 6. QQ Channel and Adapter Generalization | 0/TBD | Not started | - |
 | 7. Safety and Operations Controls | 0/TBD | Not started | - |
