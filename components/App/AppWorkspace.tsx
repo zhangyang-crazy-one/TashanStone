@@ -126,6 +126,7 @@ export const AppWorkspace = memo((props: AppWorkspaceProps) => {
         isOpen={isChatOpen}
         onClose={onCloseChat}
         messages={messages}
+        activeFileName={activeFileName}
         workspaceContext={workspaceContext}
         contextScope={contextScope}
         setContextScope={setContextScope}

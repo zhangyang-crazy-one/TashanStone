@@ -43,6 +43,7 @@ interface ChatPanelProps {
   isOpen: boolean;
   onClose: () => void;
   messages: ChatMessage[];
+  activeFileName?: string;
   workspaceContext: AssistantWorkspaceContext;
   contextScope: AssistantContextScope;
   setContextScope: Dispatch<SetStateAction<AssistantContextScope>>;
@@ -77,6 +78,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   isOpen,
   onClose,
   messages,
+  activeFileName,
   workspaceContext,
   contextScope,
   setContextScope,
@@ -324,7 +326,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         {showWorkspaceContext && (
           <WorkspaceContextPanel
             workspaceContext={workspaceContext}
-            activeFileName={workspaceContext.activeFileId}
+            activeFileName={activeFileName}
             contextScope={contextScope}
             includeSelectedText={includeSelectedText}
             onContextScopeChange={setContextScope}
