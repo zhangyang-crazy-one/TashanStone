@@ -99,7 +99,7 @@
     "remark-math": "^6.0.0",
     "sherpa-onnx": "^1.12.19",
     "sherpa-onnx-node": "^1.12.19",
-    "tailwind-merge": "^2.2.0"
+    "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.1",
