@@ -2,7 +2,7 @@
 //!
 //! Provides centralized color definitions for consistent UI.
 
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::Color;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 

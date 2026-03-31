@@ -13,7 +13,7 @@ This roadmap turns TashanStone into a notebook-native assistant platform by firs
 - [x] **Phase 1: Assistant Runtime Foundation** - Establish the shared notebook-native runtime that all assistant surfaces will use.
 - [x] **Phase 2: Session Routing and Persistence** - Introduce isolated sessions, routing rules, and durable conversation state. (completed 2026-03-29)
 - [ ] **Phase 3: Tools and Multimodal Delivery** - Unify tool execution, media normalization, and outbound delivery behavior.
-- [x] **Phase 4: In-App Assistant Parity** - Move the desktop assistant experience onto the shared runtime without regressing notebook workflows. (completed 2026-03-30)
+- [ ] **Phase 4: In-App Assistant Parity** - Move the desktop assistant experience onto the shared runtime without regressing notebook workflows. (reopened 2026-03-30 after TUI UAT gaps; code complete, awaiting TUI re-verification)
 - [ ] **Phase 5: WhatsApp Channel Launch** - Deliver the first external channel on top of the shared runtime with reply metadata support.
 - [ ] **Phase 6: QQ Channel and Adapter Generalization** - Add QQ Channel and prove adapter-specific policies without forking core logic.
 - [ ] **Phase 7: Safety and Operations Controls** - Add runtime guardrails and debugging visibility for cross-surface operation.
@@ -76,7 +76,7 @@ Plans:
   1. A user can chat in the in-app assistant interface through the shared runtime and receive streamed responses.
   2. A user can inspect session state, streaming state, and assembled assistant context from the in-app view.
   3. A user can keep using notebook editing, knowledge retrieval, and existing in-app workflows after the runtime extraction.
-**Plans**: 9 plans
+**Plans**: 10 plans
 Plans:
 - [x] 04-01-PLAN.md — Define inspectable runtime/session/context parity contracts and an app-facing inspection bridge.
 - [x] 04-02-PLAN.md — Replace placeholder notebook-context assembly with real workspace state and preserve runtime-backed notebook workflows.
@@ -87,6 +87,7 @@ Plans:
 - [x] 04-07-PLAN.md — Add visible workspace-context controls plus a multiline auto-growing composer to the in-app assistant surface.
 - [x] 04-08-PLAN.md — Make isolated threads and live runtime inspection discoverable from the default chat surface.
 - [x] 04-09-PLAN.md — Close the active-note-title truthfulness gap so the visible workspace-context panel shows real note titles instead of file ids.
+- [x] 04-10-PLAN.md — Bring the real `tui-notebook` chat surface to parity with isolated threads, visible streaming, and multiline conversation controls.
 **UI hint**: yes
 
 ### Phase 5: WhatsApp Channel Launch
@@ -126,7 +127,7 @@ Plans:
 | 1. Assistant Runtime Foundation | 4/4 | Complete   | 2026-03-28 |
 | 2. Session Routing and Persistence | 4/4 | Complete   | 2026-03-29 |
 | 3. Tools and Multimodal Delivery | 0/4 | Not started | - |
-| 4. In-App Assistant Parity | 9/9 | Complete | 2026-03-30 |
+| 4. In-App Assistant Parity | 10/10 | Awaiting re-verification | - |
 | 5. WhatsApp Channel Launch | 0/TBD | Not started | - |
 | 6. QQ Channel and Adapter Generalization | 0/TBD | Not started | - |
 | 7. Safety and Operations Controls | 0/TBD | Not started | - |

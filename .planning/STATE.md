@@ -2,16 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: completed
-stopped_at: Completed 04-09-PLAN.md
-last_updated: "2026-03-30T04:01:20.324Z"
+status: in_progress
+stopped_at: Added Phase 08 pretext-text-rendering to roadmap
+last_updated: "2026-03-30T11:10:00Z"
 last_activity: 2026-03-30
+Current position: Phase: 8
+Plan: TBD
+Status: Added Phase 08 pretext-text-rendering - pending research
 progress:
   total_phases: 7
-  completed_phases: 4
-  total_plans: 21
-  completed_plans: 21
-  percent: 100
+  completed_phases: 2
+  total_plans: 22
+  completed_plans: 19
+  percent: 86
 ---
 
 # Project State
@@ -21,45 +24,38 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-03-30)
 
 **Core value:** TashanStone must provide an OpenClaw-class assistant core that feels native to the notebook product while remaining reusable across in-app and channel-based conversations.
-**Current focus:** Phase 04 — in-app-assistant-parity (complete)
+**Current focus:** Phase 04 — in-app-assistant-parity (TUI gap closure executed, awaiting re-verification)
 
 ## Current Position
 
-Phase: 5
-Plan: Not started
-Status: Completed 04-09 gap closure
+Phase: 4
+Plan: 10
+Status: Gap closure executed for `tui-notebook` parity; waiting on manual Chinese UAT rerun
 Last activity: 2026-03-30
 
-Progress: [██████████] 100%
+Progress: [███████░░░] 79%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 4
-- Average duration: 10 min
-- Total execution time: 0.7 hours
+- Total plans completed: 19
+- Latest completed plan: 04-10
+- Current execution mode: gap closure complete, waiting on human verification
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01-assistant-runtime-foundation | 4 | 39 min | 10 min |
+| 01-assistant-runtime-foundation | 4/4 | Complete | 10 min |
+| 02-session-routing-and-persistence | 4/4 | Complete | - |
+| 03-tools-and-multimodal-delivery | 1/4 | In progress | - |
+| 04-in-app-assistant-parity | 10/10 | Awaiting re-verification | - |
 
 **Recent Trend:**
 
-- Last 5 plans: 01-04 (6 min), 01-03 (16 min), 01-02 (8 min), 01-01 (9 min)
-- Trend: Stable
-
-| Phase 01-assistant-runtime-foundation P01 | 9min | 2 tasks | 7 files |
-| Phase 01-assistant-runtime-foundation P02 | 8min | 2 tasks | 6 files |
-| Phase 01-assistant-runtime-foundation P03 | 16min | 2 tasks | 9 files |
-| Phase 01-assistant-runtime-foundation P04 | 6min | 2 tasks | 6 files |
-| Phase 03 P01 | 6 min | 2 tasks | 5 files |
-| Phase 04-in-app-assistant-parity P06 | 8 min | 2 tasks | 8 files |
-| Phase 04-in-app-assistant-parity P07 | 9min | 2 tasks | 8 files |
-| Phase 04-in-app-assistant-parity P08 | 16min | 2 tasks | 8 files |
-| Phase 04-in-app-assistant-parity P09 | 8 min | 2 tasks | 5 files |
+- Latest execution: 04-10 closed the user-reported TUI parity gaps in code and tests.
+- Next gate: rerun Chinese Phase 04 UAT against the real `tui-notebook` surface.
 
 ## Accumulated Context
 
@@ -90,17 +86,19 @@ Recent decisions affecting current work:
 - [Phase 04-in-app-assistant-parity]: Keep isolated-thread discoverability on the canonical session model instead of introducing UI-owned thread state.
 - [Phase 04-in-app-assistant-parity]: Auto-open runtime inspection for active lifecycle phases and expose the control as labeled live-runtime status in the chat header.
 - [Phase 04-in-app-assistant-parity]: Cover the active-note-title fix at both the app-shell contract level and the rendered chat-shell level so the UI cannot silently regress back to opaque ids.
+- [Phase 04-in-app-assistant-parity]: Treat `tui-notebook` as a first-class parity surface and expose session switching, multiline input, and runtime-state affordances directly inside the terminal chat UI.
+- [Phase 04-in-app-assistant-parity]: Model TUI streaming as cancellable incremental delivery so the user sees visible progress even when the provider path is not yet native token streaming.
 
 ### Pending Todos
 
-- 开始第一阶段实际工作的调研 — planning
+- 重新执行第 4 阶段中文 UAT，重点复验 TUI 的线程切换、流式输出、多行输入与清空/压缩/停止控制
 
 ### Blockers/Concerns
 
-None yet.
+None at the code level. Phase 04 remains open only because manual TUI re-verification has not been rerun yet.
 
 ## Session Continuity
 
-Last session: 2026-03-30T03:51:58.928Z
-Stopped at: Completed 04-09-PLAN.md
+Last session: 2026-03-30T04:52:32Z
+Stopped at: Executed 04-10-PLAN.md and updated Phase 04 bookkeeping
 Resume file: None

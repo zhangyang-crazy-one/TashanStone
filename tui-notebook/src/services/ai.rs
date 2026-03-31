@@ -3,7 +3,11 @@
 //! Supports OpenAI, Gemini, Ollama, and Anthropic providers.
 
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+use tokio::time::{sleep, Duration};
 use tokio::sync::RwLock;
 
 /// AI provider type
@@ -464,11 +468,76 @@ impl AiService {
     }
 
     /// Stream chat completion (placeholder - streaming implementation is complex)
-    pub async fn chat_streaming(
+    pub async fn chat_streaming<F>(
         &self,
-        _messages: Vec<ChatMessage>,
-    ) -> Result<Box<dyn tokio::io::AsyncRead + Send>, AiError> {
-        Err(AiError::Config("Streaming not implemented".to_string()))
+        messages: Vec<ChatMessage>,
+        cancel_flag: Arc<AtomicBool>,
+        mut on_chunk: F,
+    ) -> Result<(), AiError>
+    where
+        F: FnMut(String) + Send,
+    {
+        let response = self.chat(messages).await?;
+        Self::emit_streaming_text(response.content, cancel_flag, &mut on_chunk).await;
+        Ok(())
+    }
+
+    pub fn stream_chunks(content: &str) -> Vec<String> {
+        let trimmed = content.trim();
+        if trimmed.is_empty() {
+            return vec![String::new()];
+        }
+
+        let mut chunks = Vec::new();
+        let mut current = String::new();
+        let mut current_len = 0usize;
+
+        for token in trimmed.split_whitespace() {
+            let addition = if current.is_empty() {
+                token.len()
+            } else {
+                token.len() + 1
+            };
+
+            if current_len + addition > 48 && !current.is_empty() {
+                chunks.push(std::mem::take(&mut current));
+                current_len = 0;
+            }
+
+            if !current.is_empty() {
+                current.push(' ');
+                current_len += 1;
+            }
+
+            current.push_str(token);
+            current_len += token.len();
+        }
+
+        if !current.is_empty() {
+            chunks.push(current);
+        }
+
+        if chunks.is_empty() {
+            chunks.push(trimmed.to_string());
+        }
+
+        chunks
+    }
+
+    pub async fn emit_streaming_text<F>(
+        content: String,
+        cancel_flag: Arc<AtomicBool>,
+        on_chunk: &mut F,
+    ) where
+        F: FnMut(String) + Send,
+    {
+        for chunk in Self::stream_chunks(&content) {
+            if cancel_flag.load(Ordering::Relaxed) {
+                break;
+            }
+            on_chunk(chunk);
+            sleep(Duration::from_millis(24)).await;
+        }
     }
 }
 

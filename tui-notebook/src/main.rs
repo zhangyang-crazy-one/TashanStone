@@ -7,18 +7,10 @@
 //! - Knowledge base with semantic search
 //! - Learning tools (SRS, quizzes)
 
-mod action;
-mod app;
-mod components;
-mod i18n;
-mod models;
-mod services;
-mod theme;
-mod tui;
-
 use anyhow::Result;
 use std::env;
 use std::path::PathBuf;
+use tui_notebook::app::App;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -97,7 +89,7 @@ fn main() -> Result<()> {
         .build()?;
 
     runtime.block_on(async {
-        let mut app = app::App::new()?;
+        let mut app = App::new()?;
         app.run()
     })?;
 

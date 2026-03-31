@@ -114,11 +114,18 @@ pub enum SearchAction {
 /// AI Chat actions
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ChatAction {
-    Send(String),
-    Cancel,
-    Clear,
+    Send { session_id: String, message: String },
+    Cancel { session_id: String },
+    Clear { session_id: String },
+    Compact { session_id: String },
+    CreateSession,
+    SelectNextSession,
+    SelectPrevSession,
     LoadHistory,
-    StreamResponse(String),
+    StreamStarted { session_id: String },
+    StreamResponse { session_id: String, chunk: String },
+    StreamFinished { session_id: String },
+    StreamFailed { session_id: String, error: String },
     SetModel(ChatModel),
 }
 

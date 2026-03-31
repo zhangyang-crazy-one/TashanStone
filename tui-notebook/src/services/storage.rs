@@ -3,8 +3,6 @@
 //! Handles reading, writing, and watching notebook files.
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use tokio::sync::RwLock;
 
 /// File change event
 #[derive(Debug, Clone)]

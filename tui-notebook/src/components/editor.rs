@@ -1752,7 +1752,7 @@ fn wrap_inline_lines_with_hits(
             for ch in text.chars() {
                 let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
 
-                let mut flush_segment =
+                let flush_segment =
                     |render: &mut PreviewRender,
                      line: &mut Vec<Span<'static>>,
                      buffer: &mut String,

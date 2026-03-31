@@ -43,7 +43,11 @@ use crate::services::workspace::{GraphRoot, WorkspaceIndex, WorkspaceLinkPreview
 use crate::theme::{Theme, ThemeManager};
 use crate::tui::Tui;
 use std::path::{Path, PathBuf};
-use std::sync::{mpsc as std_mpsc, Arc};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    mpsc as std_mpsc,
+    Arc,
+};
 
 /// Container for all UI components (to separate borrows)
 struct Components<'a> {
@@ -206,6 +210,9 @@ pub struct App {
     /// Action channel for async events
     action_tx: mpsc::UnboundedSender<Action>,
     action_rx: mpsc::UnboundedReceiver<Action>,
+
+    /// Cancellation flag for the currently active chat request
+    active_chat_cancel: Option<Arc<AtomicBool>>,
 }
 
 impl App {
@@ -253,6 +260,7 @@ impl App {
             should_quit: false,
             action_tx,
             action_rx,
+            active_chat_cancel: None,
         };
 
         let initial_settings = app.config_service.settings().clone();
@@ -284,6 +292,10 @@ impl App {
         self.editor.set_language(self.language);
         self.search.set_language(self.language);
         self.chat.set_language(self.language);
+        self.chat.set_runtime_preferences(
+            settings.runtime.session_policy.clone(),
+            settings.models.streaming_enabled,
+        );
         self.knowledge.set_language(self.language);
         self.graph_explorer.set_language(self.language);
         self.status.set_language(self.language);
@@ -1598,6 +1610,8 @@ impl App {
         if self.focus_manager.focused() == ComponentId::Editor {
             self.editor.paste_text(&text);
             self.refresh_link_preview_for_focus();
+        } else if self.focus_manager.focused() == ComponentId::Chat {
+            self.chat.insert_text(&text);
         }
 
         None
@@ -1660,15 +1674,17 @@ impl App {
             },
             Action::Chat(chat) => {
                 match &chat {
-                    ChatAction::Send(msg) => {
+                    ChatAction::Send { session_id, message } => {
                         // Get current chat model config
                         let model_config = self.chat.get_model_config();
-                        let user_message = msg.clone();
+                        let user_message = message.clone();
+                        let session_id = session_id.clone();
+                        let streaming_enabled = self.chat.streaming_enabled();
 
                         // Build messages from chat history
                         let messages: Vec<ChatMessage> = self
                             .chat
-                            .get_messages()
+                            .get_messages_for_session(&session_id)
                             .iter()
                             .map(|m| ChatMessage {
                                 role: match m.role {
@@ -1694,6 +1710,8 @@ impl App {
                         // We need to use spawn_blocking or block_on properly
                         let messages = messages;
                         let model_config = model_config;
+                        let cancel_flag = Arc::new(AtomicBool::new(false));
+                        self.active_chat_cancel = Some(Arc::clone(&cancel_flag));
 
                         std::thread::spawn(move || {
                             // Create a new runtime for this thread
@@ -1753,39 +1771,87 @@ impl App {
                                 );
 
                                 let ai_service = AiService::with_config(model_config);
-                                match ai_service.chat(final_messages).await {
-                                    Ok(response) => {
-                                        tracing::info!(
-                                            "AI chat: Got response, length: {}",
-                                            response.content.len()
-                                        );
-                                        if action_tx
-                                            .send(Action::Chat(ChatAction::StreamResponse(
-                                                response.content,
-                                            )))
-                                            .is_err()
-                                        {
-                                            tracing::error!(
-                                                "AI chat: Failed to send chat response to UI"
-                                            );
+                                if streaming_enabled {
+                                    let _ = action_tx.send(Action::Chat(ChatAction::StreamStarted {
+                                        session_id: session_id.clone(),
+                                    }));
+                                    let stream_tx = action_tx.clone();
+                                    let stream_session_id = session_id.clone();
+                                    match ai_service
+                                        .chat_streaming(
+                                            final_messages,
+                                            Arc::clone(&cancel_flag),
+                                            move |chunk| {
+                                                let _ = stream_tx.send(Action::Chat(
+                                                    ChatAction::StreamResponse {
+                                                        session_id: stream_session_id.clone(),
+                                                        chunk,
+                                                    },
+                                                ));
+                                            },
+                                        )
+                                        .await
+                                    {
+                                        Ok(()) => {
+                                            if !cancel_flag.load(Ordering::Relaxed) {
+                                                let _ = action_tx.send(Action::Chat(
+                                                    ChatAction::StreamFinished {
+                                                        session_id: session_id.clone(),
+                                                    },
+                                                ));
+                                            }
+                                        }
+                                        Err(e) => {
+                                            let _ = action_tx.send(Action::Chat(
+                                                ChatAction::StreamFailed {
+                                                    session_id: session_id.clone(),
+                                                    error: e.to_string(),
+                                                },
+                                            ));
                                         }
                                     }
-                                    Err(e) => {
-                                        tracing::error!("AI chat: Error: {}", e);
-                                        if action_tx
-                                            .send(Action::Chat(ChatAction::StreamResponse(
-                                                format!("Error: {}", e),
-                                            )))
-                                            .is_err()
-                                        {
-                                            tracing::error!(
-                                                "AI chat: Failed to send error response to UI"
+                                } else {
+                                    match ai_service.chat(final_messages).await {
+                                        Ok(response) => {
+                                            tracing::info!(
+                                                "AI chat: Got response, length: {}",
+                                                response.content.len()
                                             );
+                                            let _ = action_tx.send(Action::Chat(
+                                                ChatAction::StreamResponse {
+                                                    session_id: session_id.clone(),
+                                                    chunk: response.content,
+                                                },
+                                            ));
+                                            let _ = action_tx.send(Action::Chat(
+                                                ChatAction::StreamFinished {
+                                                    session_id: session_id.clone(),
+                                                },
+                                            ));
+                                        }
+                                        Err(e) => {
+                                            tracing::error!("AI chat: Error: {}", e);
+                                            let _ = action_tx.send(Action::Chat(
+                                                ChatAction::StreamFailed {
+                                                    session_id: session_id.clone(),
+                                                    error: e.to_string(),
+                                                },
+                                            ));
                                         }
                                     }
                                 }
                             });
                         });
+                    }
+                    ChatAction::Cancel { .. } => {
+                        if let Some(cancel_flag) = self.active_chat_cancel.take() {
+                            cancel_flag.store(true, Ordering::Relaxed);
+                        }
+                        self.chat.handle_action(&chat);
+                    }
+                    ChatAction::StreamFinished { .. } | ChatAction::StreamFailed { .. } => {
+                        self.active_chat_cancel = None;
+                        self.chat.handle_action(&chat);
                     }
                     _ => {
                         self.chat.handle_action(&chat);

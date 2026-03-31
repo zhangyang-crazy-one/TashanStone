@@ -124,7 +124,7 @@ fn test_learning_service_due_cards() {
     assert!(!due.is_empty());
 
     // Review the second card to schedule it in the future
-    service.review_card(&card_id, ReviewQuality::Good);
+    let _ = service.review_card(&card_id, ReviewQuality::Good);
 }
 
 #[test]
